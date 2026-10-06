@@ -13,6 +13,7 @@ license-files = ["LICENSE"]
 readme = "README.md"
 
 [project.urls]
+Documentation = "https://flatppl.org/flatppl-python/"
 Repository = "https://github.com/flatppl/flatppl-python"
 
 [project.optional-dependencies]

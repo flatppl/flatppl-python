@@ -52,4 +52,7 @@ directly, and the existing package test executes that file.
 
 CI builds the HTML separately and executes documentation examples against the
 Linux x86-64 wheel. The package's full runtime tests run on all three wheel targets.
-CI uploads the rendered site as an artifact. Publishing requires a separate deployment step.
+After all checks pass on `main`, CI publishes the rendered site to
+[GitHub Pages](https://flatppl.org/flatppl-python/).
+Pull requests build the site and upload a preview artifact without deploying.
+To redeploy, run the **Python wheels** workflow manually on `main`.

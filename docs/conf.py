@@ -13,5 +13,6 @@ nitpicky = True
 myst_heading_anchors = 3
 html_theme = "furo"
 html_title = project
+html_baseurl = "https://flatppl.org/flatppl-python/"
 html_show_sourcelink = False
 html_show_copyright = False

@@ -1,0 +1,5 @@
+# Enzyme 0.0.15's index metadata labels the Python 3.12 wheels as Python 3.11.
+# The wheel metadata is correct. Select the official files directly, with hashes.
+enzyme-ad @ https://files.pythonhosted.org/packages/6f/2f/0010946ada82dd570033e5420734579a7b38ef846720cd6a87a018b83378/enzyme_ad-0.0.15-py312-none-macosx_11_0_arm64.whl#sha256=12b21ea673d915adb65f17ab64839d524b1915fe33fa3e83621de2411257d566 ; sys_platform == "darwin" and platform_machine == "arm64"
+enzyme-ad @ https://files.pythonhosted.org/packages/28/05/31bf8e9a5771757040218ac026c07a4b722f4c2c044f98640e67bf79118f/enzyme_ad-0.0.15-py312-none-manylinux2014_aarch64.whl#sha256=22840c1bbfdee0ef064ce0387d143e96d085fc63114bc1b645379d717057e37e ; sys_platform == "linux" and platform_machine == "aarch64"
+enzyme-ad @ https://files.pythonhosted.org/packages/36/c7/fdb6f870c0d833817bed0d0f3c472b0dbcb791680256239990ed13c1990d/enzyme_ad-0.0.15-py312-none-manylinux2014_x86_64.whl#sha256=e02680be2929dd70adeeab63180c2fe9d73c1ffa4e89591078bf31989f7930b2 ; sys_platform == "linux" and platform_machine == "x86_64"

@@ -1,0 +1,7 @@
+.pixi/
+__pycache__/
+.pytest_cache/
+*.so
+*.dylib
+dist/
+target/

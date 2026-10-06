@@ -4,6 +4,12 @@ Compile FlatPPL modules into JAX callables through the Rust StableHLO emitter.
 Enzyme-JAX supplies differentiation. JAX/XLA compiles and executes the function.
 Inference libraries such as BlackJAX consume the callable separately.
 
+Documentation: [installation](docs/installation.md), [quickstart](docs/quickstart.md),
+[modules and contexts](docs/modules.md), [Python values](docs/values.md),
+[JAX support](docs/jax.md), [BlackJAX sampling](docs/blackjax.md),
+and [API reference](docs/api.md).
+See [development](docs/development.md) to build the documentation locally.
+
 ```python
 from flatppl import Context, flatppl
 
@@ -55,9 +61,14 @@ The pinned Enzyme-JAX release supports JIT and tested first derivatives for scal
 The qualification probe found no batching rule for `vmap`, a second-derivative failure, and a three-output gradient failure.
 Those upstream limits also apply here. The wrapper provides no replacement AD or batching system.
 
-Build the mixed Python/Rust package with `maturin build --release` from this directory.
+Build the mixed Python/Rust package with
+`maturin build --release --locked --interpreter python --out dist` from this directory.
 The wheel bundles the native compiler from the Rust revision pinned in `Cargo.toml` and `Cargo.lock`.
 Consumers do not need the Rust CLI or a Rust toolchain.
+
+Reusable compiler contexts and query exports live in `flatppl-rust/crates/host`.
+The PyO3 adapter lives in `flatppl-rust/crates/python-api`.
+This repository owns the Python API, JAX adapter, and wheel packaging.
 
 Install a built wheel with:
 
@@ -69,7 +80,7 @@ Enzyme 0.0.15's package index labels its Python 3.12 wheels as Python 3.11.
 The [constraints file](constraints.txt) selects the official wheels by platform and hash.
 Keep `-c constraints.txt` when installing from source or adding the test extra.
 
-The initial dependency set is Python 3.12, JAX/jaxlib 0.10.2, and enzyme-ad 0.0.15.
+The tested dependency set is Python 3.12, JAX/jaxlib 0.11.2, and enzyme-ad 0.0.15.
 Wheel CI targets Linux x86-64/ARM64 and macOS 26 ARM64, using native runners.
 Linux builds use Maturin's Zig linker for manylinux compatibility.
 Enzyme's macOS binary requires macOS 26.5+, despite its macOS 11 wheel tag.

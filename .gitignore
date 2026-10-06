@@ -5,3 +5,4 @@ __pycache__/
 *.dylib
 dist/
 target/
+docs/_build/

@@ -1,7 +1,5 @@
-//! Immutable FlatPPL source contexts and StableHLO exports for Python hosts.
-
-pub mod compiler;
-pub mod export;
-
 #[cfg(feature = "extension")]
-mod native;
+#[pyo3::pymodule]
+fn _native(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
+    flatppl_python_api::register_module(m)
+}

@@ -6,6 +6,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pandas as pd
 import pytest
 from flatppl import CompilationError, Context, flatppl
 
@@ -80,7 +81,7 @@ def test_promoted_table_data_changes_without_source_io():
     function = flatppl(r"""
         data = load_data("absent.csv", cartpow(cartprod(x = reals, y = reals), 3))
         inputs = data
-        outputs = record(total = sum(data.x), residual = data.y .- data.x)
+        outputs = record(total = sum(data.x), residual = data.y .- data.x, count = lengthof(data))
     """).compile()
     first = function({"y": jnp.array([3.0, 7.0, 5.0]), "x": jnp.array([1.0, 2.0, 3.0])})
     second = function(
@@ -90,6 +91,66 @@ def test_promoted_table_data_changes_without_source_io():
     np.testing.assert_allclose(first["residual"], [2, 5, 2])
     np.testing.assert_allclose(second["total"], 12)
     np.testing.assert_allclose(second["residual"], [1, 3, -1])
+    np.testing.assert_array_equal([first["count"], second["count"]], [3, 3])
+
+
+def test_numpy_vectors_and_pandas_tables_use_query_precision():
+    summarize = flatppl(r"""
+        data = external(cartpow(cartprod(x = reals, y = reals), 3))
+        inputs = data
+        outputs = sum(data.y .- data.x)
+    """).compile()
+    columns = {"y": np.array([3.0, 7.0, 5.0]), "x": np.array([1.0, 2.0, 3.0])}
+    table = pd.DataFrame(columns, index=[4, 2, 9])
+    np.testing.assert_allclose(summarize(data=columns), 9)
+    np.testing.assert_allclose(summarize(data=table), 9)
+    table["x"] *= 2
+    np.testing.assert_allclose(summarize(data=table), 3)
+    assert summarize(data=table).dtype == jnp.float32
+
+
+def test_bound_sizes_arrays_and_registered_models_keep_their_snapshots():
+    context = Context()
+    source = flatppl(r"""
+        n = external(posintegers)
+        weights = external(cartpow(reals, [2, n]))
+        data = external(cartpow(reals, n))
+        inputs = data
+        outputs = sum(weights * data) / lengthof(data)
+    """, context=context)
+    weights = np.array([[1., 2., 3.], [4., 5., 6.]])
+    bound = source.set(n=3, weights=weights)
+    weights[:] = 99
+    context.register("weighted.flatppl", bound)
+    imported = flatppl(r"""
+        data = external(cartpow(reals, 3))
+        m = load_module("weighted.flatppl", data = data)
+        inputs = data
+        outputs = m.outputs
+    """, context=context).compile()
+    direct = bound.compile()
+    other = source.set(**{"n": 2, "weights": [[2., 3.], [4., 5.]]}).compile()
+    np.testing.assert_allclose(direct([1., 2., 3.]), 46 / 3)
+    np.testing.assert_allclose(imported([1., 2., 3.]), 46 / 3)
+    np.testing.assert_allclose(other([2., 4.]), 22)
+    np.testing.assert_allclose(jax.grad(direct)(jnp.ones(3)), [5/3, 7/3, 3])
+    np.testing.assert_allclose(direct([3., 2., 1.]), 38 / 3)
+
+
+def test_imported_values_inside_expressions_preserve_parameters():
+    context = Context()
+    context.register("values.flatppl", flatppl("offset = 3.0\nx = elementof(reals)\nvalue = x + offset", context=context))
+    function = flatppl(r"""
+        p = elementof(cartprod(z = reals, a = cartpow(reals, 2)))
+        left = load_module("values.flatppl", x = p.z)
+        right = load_module("values.flatppl", x = sum(p.a))
+        inputs = p
+        outputs = left.value + 2.0 * right.value + left.offset
+    """, context=context).compile()
+    value, gradient = jax.jit(jax.value_and_grad(function))({"z": 1., "a": jnp.array([2., 4.])})
+    np.testing.assert_allclose(value, 25)
+    np.testing.assert_allclose(gradient["z"], 1)
+    np.testing.assert_allclose(gradient["a"], [2, 2])
 
 
 def test_context_snapshots_and_registration_lifecycle(tmp_path):
@@ -337,3 +398,21 @@ def test_precision_and_repeated_device_calls():
     with jax.enable_x64():
         double = module.compile(dtype="float64")
         np.testing.assert_array_equal(double(jnp.float64(2**24)), 1)
+
+
+def test_array_axis_order_matches_explicit_matrices():
+    evaluate = flatppl(r"""
+        data = external(cartpow(reals, 6))
+        rows = array(data, [2, 3], [1, 2])
+        columns = array(data, [2, 3], [2, 1])
+        inputs = data
+        outputs = (rows, columns, lengthof(transpose(data)))
+    """).compile()
+    data = np.arange(1, 7, dtype=np.float64)
+    rows, columns, length = evaluate(data)
+    np.testing.assert_array_equal(rows, [[1, 2, 3], [4, 5, 6]])
+    np.testing.assert_array_equal(columns, [[1, 3, 5], [2, 4, 6]])
+    assert int(length) == 6
+    np.testing.assert_array_equal(evaluate(data.tolist())[0], rows)
+    with pytest.raises(TypeError):
+        evaluate([jnp.asarray(1 + 2j)] * 6)

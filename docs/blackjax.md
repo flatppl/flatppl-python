@@ -51,3 +51,26 @@ bit for bit across platforms.
 The package test checks these moments against their Monte Carlo standard errors,
 requires effective sample sizes above 400, and checks for zero divergences.
 That test validates this example, not arbitrary models or sampler settings.
+
+## Matrix data and vector parameters
+
+{download}`regression.py <../examples/regression.py>` uses a Gaussian regression
+with runtime `X` and `y` arrays and a vector coefficient `beta`. Size constants
+are bound before the model is registered and the query is compiled. The query
+accepts new data with the same shape without recompilation.
+
+```sh
+python examples/regression.py
+```
+
+The prior is `beta ~ Normal(0, 4 I)` and the observation variance is `0.25`.
+The exact posterior precision and mean are:
+
+```text
+precision = I / 4 + X.T @ X / 0.25
+mean = solve(precision, X.T @ y / 0.25)
+```
+
+Tests compare values and gradients with the analytic log joint. They compare
+posterior mean and covariance after whitening draws by the exact precision,
+using effective sample sizes and Monte Carlo standard errors.

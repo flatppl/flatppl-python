@@ -16,7 +16,7 @@ The tested dependency set is JAX/jaxlib 0.11.2 with Enzyme 0.0.15.
 | `jax.vmap` | Unavailable: Enzyme's imported primitive has no batching rule |
 | Second derivatives | The qualification probe fails |
 | Gradients through multiple outputs | A three-output qualification probe fails |
-| GPU execution | Unqualified |
+| GPU execution | Tested on NVIDIA A100 with CUDA 12 |
 
 Support also depends on the operations in the query. The default
 `compile(autodiff=True)` selects the Rust emitter's Enzyme compatibility mode.
@@ -62,8 +62,8 @@ with jax.enable_x64():
 1.0
 ```
 
-The wrapper never changes global JAX settings. Match array dtypes to the query,
-even when JAX's current default differs from the ABI dtype.
+The wrapper never changes global JAX settings. Real input arrays convert to the
+query's precision. Use matching JAX dtypes to avoid conversions on repeated calls.
 
 ## Pass a FlatPPL random state
 
@@ -93,8 +93,9 @@ and does not require a FlatPPL random-state input to evaluate a density.
 
 The wrapper returns JAX arrays and does not select a CPU backend.
 Create inputs on the desired device before calling the function.
-The package tests repeated calls with JAX's transfer guard, but has no GPU
-acceptance gate yet.
+The package tests repeated calls with JAX's transfer guard. The full package
+suite also passed on an NVIDIA A100 with CUDA 12, including the analytic vector
+regression and BlackJAX tests. Hosted CI continues to test CPU wheels.
 
 For GPU setup, follow the matching version's
 [JAX installation instructions](https://docs.jax.dev/en/latest/installation.html).

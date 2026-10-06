@@ -9,9 +9,9 @@ constant query. Omit `inputs` when no runtime arguments are needed.
 | FlatPPL value | Python input | Python result |
 | --- | --- | --- |
 | Scalar | Python scalar or scalar array | Scalar JAX array |
-| Array | Array with the declared shape and dtype | JAX array |
+| Array | NumPy/JAX array or numeric list with the declared shape | JAX array |
 | Record | Dictionary with exactly the declared fields | Dictionary |
-| Table | Dictionary of column arrays | Dictionary of JAX arrays |
+| Table | Dictionary of column arrays or numeric pandas DataFrame | Dictionary of JAX arrays |
 | Tuple | Tuple or list of components | Tuple |
 | Multiple outputs | — | Tuple in declared order |
 
@@ -43,9 +43,54 @@ print(gradient["values"].tolist())
 [1.0, 1.0, 1.0]
 ```
 
-Array shapes are static. Use a new query with a different declared shape when
-the data length changes. Array inputs with an existing dtype must match the ABI
-exactly, including NumPy arrays that default to float64.
+Real inputs convert to the query's precision, including NumPy arrays that default
+to float64. Integer and Boolean arrays must match the declared dtype. Complex and
+ragged arrays are not accepted by this adapter. Numeric DataFrame columns are
+selected by name; the row index is ignored. pandas is optional.
+
+JAX transformations accept JAX pytrees. Pass dictionaries of JAX column arrays
+inside `jax.jit` or `jax.grad`. A DataFrame works when calling the compiled
+function directly, where the wrapper converts its columns before the internal JIT.
+
+## Bind sizes before compilation
+
+Array shapes are static. Declare size constants as `external` and bind them with
+`query.set(**kwargs)` before compiling. The same source can serve different sizes.
+
+```{testcode}
+import numpy as np
+
+query = flatppl(r"""
+    n = external(posintegers)
+    data = external(cartpow(reals, n))
+    inputs = data
+    outputs = sum(data) / lengthof(data)
+""")
+data = np.array([1.0, 2.0, 6.0])
+summarize = query.set(**{"n": len(data)}).compile()
+print(float(summarize(data)))
+print(float(query.set(n=2).compile()([2.0, 4.0])))
+```
+
+```{testoutput}
+3.0
+3.0
+```
+
+`lengthof(data)` uses the declared vector length or table row count. For a matrix,
+declare `cartpow(reals, [n, p])` and bind both sizes. FlatPPL distinguishes a
+multidimensional array from a vector of vectors.
+
+`.set(...)` returns a new module. It fixes only declared `external` bindings,
+checks their domains, and removes bound values from `inputs` if present.
+The original module and earlier compiled functions keep their own snapshots.
+Bind a different size on the original module and compile a new function.
+
+Bind arrays, records, or tables the same way when their values must be fixed at
+compile time. Binding copies the supplied values, including device arrays, to
+host constants. Pass changing data through runtime inputs to reuse compilation.
+Fixed numeric arrays must be nonempty. Python binding currently accepts finite
+real constants, integers, and Booleans; complex constants are unsupported.
 
 ## Supply data without reading a file
 

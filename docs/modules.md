@@ -90,6 +90,11 @@ An inline import that matches different registry and file definitions fails as a
 Pass changing data through declared inputs to reuse a compiled query.
 Create a new `Context` when source definitions change.
 
+Use `bound = model.set(n=100)` to fix declared external constants before a query.
+Register `bound` under a fresh logical filename. A query loading that name sees
+the bound sizes and values. The original `model` stays reusable for other sizes.
+See [size binding](values.md#bind-sizes-before-compilation).
+
 A context never replaces a registered name or rereads an existing file snapshot.
 Register modules from the same context. An already loaded module retains its
 dependency definitions when more names enter the registry.

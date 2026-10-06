@@ -1,6 +1,6 @@
 # API reference
 
-The top-level package exports `flatppl`, `Context`, `Module`, `Binding`, and
+The top-level package exports `flatppl`, `Context`, `Module`, `Binding`, `Integration`, and
 `CompilationError`.
 
 ## Inline source
@@ -69,7 +69,7 @@ The original module remains reusable. Register the returned module in its owning
 context to import the specialized definition from another query.
 ```
 
-```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True)
+```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True, integration=None)
 
 Compile the explicit `inputs` and `outputs` signature into a reusable JAX callable.
 
@@ -77,9 +77,25 @@ Compile the explicit `inputs` and `outputs` signature into a reusable JAX callab
   Float64 requires JAX x64 to be enabled.
 - `autodiff`: Enable the Rust emitter's Enzyme compatibility mode by default.
   `False` selects generic forward emission and rejects differentiation.
+- `integration`: Pass `Integration(...)` to enable numerical scalar marginals
+  and normalizers when no exact rule applies. The default requires exact lowering.
 
 Compilation raises `CompilationError` for compiler diagnostics and `ValueError`
 for unsupported precision settings. Queries with 64-bit ABI values require JAX x64.
+```
+
+## Integration
+
+```{py:class} flatppl.Integration(rtol=1e-5, atol=0.0, max_intervals=128)
+
+Frozen settings for adaptive scalar quadrature. Tolerances apply to the estimated
+absolute error of the integral, before taking its logarithm:
+`error <= max(atol, rtol * integral)`. They do not bound gradient error.
+Both tolerances must be finite and nonnegative, with at least one positive.
+`max_intervals` bounds the interval buffer and must lie in `2..=2**31-1`.
+
+Failed convergence returns NaN. See the [integration guide](integration.md)
+for supported measures, gradients, and limits.
 ```
 
 ## Binding

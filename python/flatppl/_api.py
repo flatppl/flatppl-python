@@ -45,6 +45,19 @@ class Binding:
     span: tuple[int, int] | None
 
 
+@dataclass(frozen=True)
+class Integration:
+    """Adaptive scalar quadrature settings. Tolerances bound estimated value error.
+
+    Derivatives follow the selected quadrature mesh. The error estimate does
+    not bound derivative error. Failed convergence returns NaN.
+    """
+
+    rtol: float = 1e-5
+    atol: float = 0.0
+    max_intervals: int = 128
+
+
 class Context:
     """An append-only collection of source snapshots and explicit module names."""
 
@@ -119,16 +132,23 @@ class Module:
         native = _native_call(self._context._native.set, self._native, values)
         return Module(native, self._context)
 
-    def compile(self, *, dtype="float32", autodiff=True):
+    def compile(self, *, dtype="float32", autodiff=True, integration=None):
         """Compile the explicit signature into a reusable JAX callable.
 
         Set ``autodiff=False`` for value-only queries, including sampling.
         These use generic emission and reject JAX differentiation.
+        Set ``integration=Integration(...)`` to allow numerical scalar marginals
+        and normalizers when no exact rule applies.
         """
         from ._jax import CompiledFunction, float_dtype
 
         dtype = float_dtype(dtype)
-        exported = json.loads(_native_call(self._native.export, dtype, autodiff))
+        if integration is not None and not isinstance(integration, Integration):
+            raise TypeError("integration must be an Integration instance or None")
+        settings = None if integration is None else (
+            integration.rtol, integration.atol, integration.max_intervals
+        )
+        exported = json.loads(_native_call(self._native.export, dtype, autodiff, settings))
         return CompiledFunction(exported, autodiff=autodiff)
 
 

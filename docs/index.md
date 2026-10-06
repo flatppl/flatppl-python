@@ -38,6 +38,7 @@ quickstart
 modules
 values
 jax
+integration
 blackjax
 corpus
 ```

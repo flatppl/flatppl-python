@@ -35,6 +35,11 @@ CASES = {
         {"mu_a": 0.0, "sigma_a": 2.0, "a": [0.0] * 3, "b": 0.0},
         {"sigma_a": [0, None]},
     ),
+    "hgf-binary-2level": ({"omega": -2.0, "log_noise": 0.0}, {}),
+    "hgf-binary-3level": (
+        {"omega": -2.0, "omega_vol": -4.0, "log_noise": 0.0},
+        {"omega": [-4, -1], "omega_vol": [-6, -2]},
+    ),
     "linear-regression": (
         {"alpha": 0.55, "beta": 2.34, "sigma": 0.5},
         {"sigma": [0, None]},
@@ -65,15 +70,15 @@ CASES = {
     "zero-inflated-binomial": ({"p": 0.3, "psi": 0.7}, {"p": [0, 1], "psi": [0, 1]}),
     "minimal": ([1.0, 1.5, 2.0], [None, None]),
     "dminus-to-3pi-amplitude": ([1.0, 0.35], [[0.27914078, -1.0], [1.73007961, 1.0]]),
-    "resonance-chebyshev-mixture": (1.5, [0.5, 2.5]),
     "bayesian_inference_priors": (0.5, [None, None]),
     "bayesian_inference_common": (0.5, [None, None]),
 }
 
 TARGETS = {
+    "hgf-binary-2level": "posterior",
+    "hgf-binary-3level": "posterior",
     "minimal": "dist",
     "dminus-to-3pi-amplitude": "amplitude_measure",
-    "resonance-chebyshev-mixture": "mixture",
     "bayesian_inference_priors": "theta1_dist",
     "bayesian_inference_common": "theta1_dist",
 }
@@ -86,7 +91,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
     import jax.numpy as jnp
     import numpy as np
     from jax.flatten_util import ravel_pytree
-    from flatppl import Context, flatppl
+    from flatppl import Context, Integration, flatppl
 
     result = {"model": name, "stage": "load", "device": str(jax.devices()[0])}
     start = time.monotonic()
@@ -108,7 +113,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
             shape = np.shape(value)
             return f"cartpow(reals, {list(shape)})" if shape else "reals"
 
-        target = TARGETS.get(name, "posterior")
+        target = TARGETS.get(name, "Pi_post")
         query = flatppl(
             f"""m = load_module("model.flatppl")
             point = elementof({domain(initial)})
@@ -117,7 +122,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
             context=context,
         )
         result["stage"] = "compile"
-        density = query.compile()
+        density = query.compile(integration=Integration() if name == "minimal" else None)
         initial = (
             {k: jnp.asarray(v, dtype=jnp.float32) for k, v in initial.items()}
             if isinstance(initial, dict)
@@ -231,6 +236,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
             chains = np.stack(chains)
             if not np.all(np.isfinite(chains)):
                 raise ValueError("nonfinite retained samples")
+            result.update(stage="sampled", draws_finite=True, draws_per_chain=samples)
             ess = np.asarray(blackjax.ess(chains))
             rhat = np.asarray(blackjax.rhat(chains))
             if not np.all(np.isfinite(ess)) or not np.all(np.isfinite(rhat)):

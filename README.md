@@ -59,6 +59,16 @@ Build the mixed Python/Rust package with `maturin build --release` from this dir
 The wheel bundles the native compiler from the Rust revision pinned in `Cargo.toml` and `Cargo.lock`.
 Consumers do not need the Rust CLI or a Rust toolchain.
 
+Install a built wheel with:
+
+```sh
+python -m pip install -c constraints.txt dist/*.whl
+```
+
+Enzyme 0.0.15's package index labels its Python 3.12 wheels as Python 3.11.
+The [constraints file](constraints.txt) selects the official wheels by platform and hash.
+Keep `-c constraints.txt` when installing from source or adding the test extra.
+
 The initial dependency set is Python 3.12, JAX/jaxlib 0.10.2, and enzyme-ad 0.0.15.
 Wheel CI targets Linux x86-64/ARM64 and macOS ARM64, using native runners.
 Linux builds use Maturin's Zig linker for manylinux compatibility.

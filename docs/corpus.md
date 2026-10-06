@@ -30,16 +30,16 @@ ESS is the minimum over coordinates; Rhat is the maximum. Divergences count both
 | `bayesian_inference_priors` | 1252 / 1.001 / 0 | 1252 / 1.001 / 0 |
 | `best-estimation` | 2274 / 1.001 / 0 | 2544 / 1.001 / 0 |
 | `capture-recapture` | 978 / 1.002 / 0 | 1250 / 1.002 / 0 |
-| `dissimilar-mixture` | 1192 / 1.005 / 0 | 1124 / 1.002 / 0 |
+| `dissimilar-mixture` | 1192 / 1.005 / 0 | 1161 / 1.002 / 0 |
 | `eight-schools` | 250 / 1.028 / 51 | 287 / 1.020 / 11 |
 | `gamma-reparam` | 1244 / 1.000 / 0 | 1253 / 1.002 / 0 |
 | `hierarchical-logistic` | 993 / 1.002 / 660 | 1039 / 1.001 / 634 |
-| `linear-regression` | 1299 / 1.004 / 0 | 1061 / 1.005 / 0 |
+| `linear-regression` | 1299 / 1.004 / 0 | 1009 / 1.004 / 0 |
 | `partial-pooling` | 2199 / 1.003 / 0 | 2283 / 1.003 / 0 |
 | `poisson-glm-link` | 694 / 1.002 / 0 | 962 / 1.002 / 0 |
 | `poisson-model` | 1336 / 1.000 / 0 | 1336 / 1.000 / 0 |
-| `rasch-1pl` | 4084 / 1.001 / 0 | 4031 / 1.001 / 0 |
-| `signal-background-counting` | 747 / 1.002 / 0 | 793 / 1.003 / 0 |
+| `rasch-1pl` | 4084 / 1.001 / 0 | 4032 / 1.001 / 0 |
+| `signal-background-counting` | 747 / 1.002 / 0 | 875 / 1.001 / 0 |
 | `zero-inflated-binomial` | 2585 / 1.001 / 0 | 2894 / 1.000 / 0 |
 
 `bayesian_inference_common` and `bayesian_inference_priors` are helper priors,

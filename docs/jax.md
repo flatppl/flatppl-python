@@ -27,6 +27,16 @@ This mode rejects known unsupported AD operations, including sampling, `probit`,
 and real `cumprod`. The package provides no substitute differentiation or
 batching implementation for unsupported Enzyme transformations.
 
+FlatPPL `scan` lowers to a native loop with fixed state shapes. Its body stays
+compact as the input length grows. Record and array states are supported.
+General real metric contractions support runtime indefinite matrices, repeated
+indices, batches, and raised outputs. Scalar complex intermediates can feed real
+projections such as `abs2`; complex inputs and outputs remain unsupported.
+
+For numerical scalar marginals and normalizers, enable
+[integration](integration.md) explicitly. These support first derivatives of
+smooth integrands, with separate limits on the quadrature error estimate.
+
 ## Evaluate without derivatives
 
 Use `compile(autodiff=False)` for forward evaluation when the generic StableHLO

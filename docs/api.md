@@ -55,6 +55,20 @@ Obtain modules through `flatppl(...)` or `Context.load(...)`.
 Attribute access such as `module.steve` returns a `Binding` unless a Python
 attribute already uses that name. Use `module.bindings[name]` for those collisions.
 
+```{py:method} flatppl.Module.set(**constants)
+
+Return a new module with declared `external` bindings fixed to supplied values.
+Accept keyword arguments or a splatted dictionary. Resolve dependent dimensions
+after all substitutions, validate domains, and remove bound names from `inputs`.
+
+Values may be scalars, numeric arrays, records, or tables. Field names follow the
+declaration. Constants are copied at binding time. Unresolved domains and values
+outside the declared domain raise `CompilationError`.
+
+The original module remains reusable. Register the returned module in its owning
+context to import the specialized definition from another query.
+```
+
 ```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True)
 
 Compile the explicit `inputs` and `outputs` signature into a reusable JAX callable.

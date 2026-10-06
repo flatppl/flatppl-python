@@ -104,6 +104,21 @@ class Module:
         except KeyError:
             raise AttributeError(name) from None
 
+    def set(self, **constants) -> Module:
+        """Return a new module with declared externals bound to fixed values.
+
+        Bind sizes before compiling. Reuse the original module for other sizes.
+        Array constants are copied into the compiler's immutable source snapshot.
+        """
+        from ._constants import constant
+
+        values = json.dumps(
+            [(name, constant(value)) for name, value in constants.items()],
+            allow_nan=False,
+        )
+        native = _native_call(self._context._native.set, self._native, values)
+        return Module(native, self._context)
+
     def compile(self, *, dtype="float32", autodiff=True):
         """Compile the explicit signature into a reusable JAX callable.
 

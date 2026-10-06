@@ -15,7 +15,8 @@ Enzyme's native binary, despite its upstream wheel tag claiming macOS 11 support
 This Enzyme release has no Intel macOS wheel. Windows is not qualified.
 
 The package's CI tests CPU execution on all three wheel targets.
-GPU execution remains unqualified. See [JAX and differentiation](jax.md).
+The package tests also passed on an NVIDIA A100 using CUDA 12.
+See [JAX and differentiation](jax.md).
 
 ## Install a wheel
 
@@ -25,13 +26,13 @@ There is no published PyPI release yet.
 1. Open the [Python wheels workflow](https://github.com/flatppl/flatppl-python/actions/workflows/test.yml).
 2. Select a successful run on `main`.
 3. Download the artifact for your platform while signed into GitHub.
-4. Extract the artifact, which contains `dist/` and `constraints.txt`.
+4. Extract the artifact, which contains `dist/`, `requirements.txt`, and `constraints.txt`.
 5. Run these commands from the extracted directory.
 
 ```sh
 python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install -c constraints.txt dist/*.whl
+python -m pip install -r requirements.txt
 ```
 
 | Platform | Artifact |
@@ -40,12 +41,22 @@ python -m pip install -c constraints.txt dist/*.whl
 | Linux ARM64 | `flatppl-python-ubuntu-24.04-arm` |
 | macOS ARM64 | `flatppl-python-macos-26` |
 
-Keep the constraints file beside the wheel. Enzyme 0.0.15's package index
+Keep the extracted files together. Enzyme 0.0.15's package index
 incorrectly labels its Python 3.12 wheels as requiring Python 3.11.
 The constraints select the official wheels by platform, URL, and hash.
+The requirements file applies those constraints and selects the local FlatPPL wheel.
 
 The FlatPPL wheel contains the native compiler. Using it requires neither the
 Rust toolchain nor the FlatPPL CLI.
+
+For the tested NVIDIA setup, add JAX's CUDA 12 runtime in the same environment:
+
+```sh
+python -m pip install -c constraints.txt "jax[cuda12]==0.11.2"
+```
+
+Follow the [JAX driver requirements](https://docs.jax.dev/en/latest/installation.html)
+for your GPU. GPU qualification used an A100 and driver 570.124.06.
 
 ## Check the installation
 
@@ -83,7 +94,7 @@ python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install "maturin==1.15.0"
 maturin build --release --locked --interpreter python --out dist
-python -m pip install -c constraints.txt dist/*.whl
+python -m pip install -r requirements.txt
 ```
 
 Cargo fetches the exact Rust compiler revision pinned in `Cargo.toml` and

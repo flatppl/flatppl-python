@@ -43,9 +43,15 @@ def _pack(schema, value, leaves, path):
     if kind == "tensor":
         dtype = jnp.dtype(schema["dtype"])
         supplied_dtype = getattr(value, "dtype", None)
-        if supplied_dtype is not None and jnp.dtype(supplied_dtype) != dtype:
-            raise TypeError(f"{path} requires {dtype}, got {supplied_dtype}")
-        array = jnp.asarray(value)
+        if supplied_dtype is not None:
+            supplied = jnp.dtype(supplied_dtype)
+            if supplied.kind == "c" or (dtype.kind != "f" and supplied != dtype):
+                raise TypeError(f"{path} requires {dtype}, got {supplied_dtype}")
+        elif dtype.kind == "f" and any(
+            jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(value)
+        ):
+            raise TypeError(f"{path} requires real values")
+        array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)
         if dtype.kind in "biu" and array.dtype.kind != dtype.kind:
             raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
         if array.shape != tuple(schema["shape"]):
@@ -60,7 +66,8 @@ def _pack(schema, value, leaves, path):
             _pack(child, item, leaves, f"{path}[{index}]")
     else:
         names = {item["name"] for item in schema["fields"]}
-        if not isinstance(value, Mapping) or set(value) != names:
+        fields = value if isinstance(value, Mapping) else getattr(value, "columns", ())
+        if set(fields) != names:
             raise TypeError(f"{path} requires fields {sorted(names)}")
         for item in schema["fields"]:
             name = item["name"]

@@ -39,6 +39,7 @@ modules
 values
 jax
 blackjax
+corpus
 ```
 
 ```{toctree}

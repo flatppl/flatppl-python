@@ -63,4 +63,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: flatppl-python-${{ matrix.os }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            constraints.txt

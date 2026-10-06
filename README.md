@@ -70,8 +70,10 @@ The [constraints file](constraints.txt) selects the official wheels by platform 
 Keep `-c constraints.txt` when installing from source or adding the test extra.
 
 The initial dependency set is Python 3.12, JAX/jaxlib 0.10.2, and enzyme-ad 0.0.15.
-Wheel CI targets Linux x86-64/ARM64 and macOS ARM64, using native runners.
+Wheel CI targets Linux x86-64/ARM64 and macOS 26 ARM64, using native runners.
 Linux builds use Maturin's Zig linker for manylinux compatibility.
+Enzyme's macOS binary requires macOS 26.5+, despite its macOS 11 wheel tag.
+The macOS 14 CI probe failed while loading Enzyme's C++ runtime symbols.
 Enzyme does not publish an Intel macOS wheel for this release.
 GPU execution follows the installed JAX backend; the local acceptance run covers macOS CPU.
 

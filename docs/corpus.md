@@ -1,7 +1,7 @@
 # Example corpus qualification
 
-The 2026-10-06 sweep covers every tracked FlatPPL source in
-[`flatppl-examples`](https://github.com/flatppl/flatppl-examples/tree/336152f11040fa57eb06f769fc433bdc43b61b49/examples).
+The 2026-10-07 sweep covers every tracked FlatPPL source in
+[`flatppl-examples`](https://github.com/flatppl/flatppl-examples/tree/b9ed33856b7fb1969d4ed92e4cd61f872ed5c1fe/examples).
 All 24 distribution targets produce finite BlackJAX NUTS draws on Apple silicon
 CPU and NVIDIA A100. The remaining file, `aggregates`, is deterministic and
 matches independent matrix/reduction values on both devices.
@@ -40,6 +40,41 @@ cover both HGF recurrences, the Dalitz amplitude and the `minimal` predictive
 law. Separate metric tests cover runtime indefinite matrices, pivoting, batches,
 repeated selectors, reordered outputs and derivatives. Package tests also check
 analytic vector Gaussian regression and integration values and gradients.
+
+Integration regressions also check live internal cuts, narrow support intervals,
+clipping, and infinite tails against analytic values and gradients on CPU/A100
+in float32 and float64. These checks have the [integration derivative limits](integration.md#gradients-and-supported-scope).
+
+Shared-latent record tests compare the correlated joint density and its
+derivatives with closed forms. They cover explicit `kchain`, live prior bounds,
+query order, captured draws, Gamma–Poisson count masses and transformed observations.
+Finite-latent checks cover Bernoulli, Categorical, Categorical0, Binomial and
+scalar Dirac. They compare shared records, live weights and interior gradients
+with analytic mixtures. Boundary tests also check deterministic Bernoulli and
+Binomial density values and gradients.
+Mixed atomic/continuous latent tests compare scalar and shared-record marginals
+with analytic Gaussian mixtures. Reweighted finite priors normalize exactly.
+Additional checks cover common log-weight scaling and quadrature failure.
+
+Normalizer tests cover iid densities, independent inner normalization, live
+interval bounds, query order and convergence failure. Truncated Gamma, Beta and
+Pareto tests cover numerical interval masses, support clipping, tail intervals
+and parameter derivatives. Normal and Cauchy retain exact CDF normalization.
+Both package tests and
+the executed compiler corpus use analytic densities and derivatives.
+
+Varying broadcast normalizers also have analytic value and gradient checks.
+Package tests cover live bounds and cuts, table parameters, singleton axes,
+nested vector cells, and isolation of a failed lane.
+
+Matrix qualification also checks Cholesky factors and symmetric derivatives,
+MvNormal mean/covariance/point gradients, Wishart matrix right-hand sides and
+singular determinant cofactor gradients.
+The compiler corpus freezes independent analytic gradients. Package tests add
+InverseWishart and LKJ derivatives, inverses, log determinants, native matrix
+batches and shared covariance.
+Separate CPU/A100 probes cover both precisions and numerical scale limits.
+See [matrix derivatives](jax.md#matrix-derivatives) for the supported domain.
 
 The JavaScript backend still has separate gaps for Dalitz and numerical
 integration. Those corpus cases explicitly select StableHLO. No example case

@@ -44,8 +44,10 @@ print(gradient["values"].tolist())
 ```
 
 Real inputs convert to the query's precision, including NumPy arrays that default
-to float64. Integer and Boolean arrays must match the declared dtype. Complex and
-ragged arrays are not accepted by this adapter. Numeric DataFrame columns are
+to float64. Host integer arrays and lists convert when every value fits the query's
+integer dtype. Overflow raises `ValueError` before conversion. JAX integer arrays
+and Boolean arrays must match the declared dtype. Complex and ragged arrays are
+not accepted by this adapter. Numeric DataFrame columns are
 selected by name; the row index is ignored. pandas is optional.
 
 JAX transformations accept JAX pytrees. Pass dictionaries of JAX column arrays
@@ -79,7 +81,8 @@ print(float(query.set(n=2).compile()([2.0, 4.0])))
 
 `lengthof(data)` uses the declared vector length or table row count. For a matrix,
 declare `cartpow(reals, [n, p])` and bind both sizes. FlatPPL distinguishes a
-multidimensional array from a vector of vectors.
+multidimensional array from a vector of vectors. `sizeof(data)` returns the outer
+array dimensions. `zeros(size)`, `ones(size)`, and `eye(n)` use these static sizes.
 
 `.set(...)` returns a new module. It fixes only declared `external` bindings,
 checks their domains, and removes bound values from `inputs` if present.
@@ -91,6 +94,38 @@ compile time. Binding copies the supplied values, including device arrays, to
 host constants. Pass changing data through runtime inputs to reuse compilation.
 Fixed numeric arrays must be nonempty. Python binding currently accepts finite
 real constants, integers, and Booleans; complex constants are unsupported.
+
+## Runtime indices and categories
+
+`values[index]` uses one-based FlatPPL indices. `get0(values, index)` uses
+zero-based indices. Indices can change between calls without recompiling.
+Scalar selection also works inside FlatPPL broadcasts over vector cells.
+Array selectors must remain within the declared extent.
+
+Categorical observations can be runtime integers, vectors, or table columns.
+`Categorical` uses categories 1 through n. `Categorical0` uses 0 through n-1.
+Both return negative infinity outside that support.
+
+```{testcode}
+category_score = flatppl("""
+    p = elementof(stdsimplex(3))
+    observed = external(cartpow(integers, 3))
+    inputs = (p, observed)
+    outputs = logdensityof(iid(Categorical(p), 3), observed)
+""").compile()
+
+observed = np.array([2, 3, 3])
+value, gradient = jax.value_and_grad(lambda p: category_score(p, observed))(
+    jnp.array([0.0, 0.25, 0.75])
+)
+print(round(float(value), 6))
+print([round(float(g), 6) for g in gradient])
+```
+
+```{testoutput}
+-1.961658
+[0.0, 4.0, 2.666667]
+```
 
 ## Supply data without reading a file
 

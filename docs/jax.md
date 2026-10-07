@@ -35,7 +35,41 @@ projections such as `abs2`; complex inputs and outputs remain unsupported.
 
 For numerical scalar marginals and normalizers, enable
 [integration](integration.md) explicitly. These support first derivatives of
-smooth integrands, with separate limits on the quadrature error estimate.
+smooth integrands and explicit scalar breakpoints, subject to the documented
+ordering restrictions. The quadrature error estimate does not bound gradient error.
+
+## Matrix derivatives
+
+`lower_cholesky`, `MvNormal`, `Wishart`, `InverseWishart` and `LKJ` support first
+derivatives through their real matrix inputs. Matrices must have fixed dimensions
+and satisfy the distribution's positive-definite or correlation-matrix domain.
+The compiler adds no diagonal jitter or regularization.
+
+The default Enzyme compatibility mode decomposes Cholesky and triangular solves
+into portable StableHLO loops. Covariance gradients use a symmetric matrix
+extension. Both off-diagonal entries share the derivative, so a scalar used in
+both entries receives their sum. Forward-only compilation retains native matrix
+Cholesky and triangular solves.
+
+`inv`, `det` and `logabsdet` accept fixed-size real square matrices and support
+native FlatPPL broadcasts. Inverse and log-determinant gradients require an
+invertible matrix. `det` also supports first derivatives at singular matrices,
+using complete pivoting to preserve the cofactor gradient. Rank decisions use
+exact zero pivots. A singular `logabsdet` returns `-inf`; its gradient is undefined.
+
+Determinant gradient checks cover finite values and cofactors representable in
+the chosen precision, including singular determinants. They do not qualify
+gradients after a nonsingular determinant underflows or overflows. `linsolve`
+remains unsupported because its required singular-input runtime error needs an
+execution error channel.
+
+FlatPPL callable broadcasts, `lower_cholesky.(matrices)`, `MvNormal.(means, covs)`
+and iid multivariate-normal observations support matrix cells. These are FlatPPL
+batches. JAX `vmap` still has the separate limitation listed above.
+
+Independent CPU and A100 probes cover float32 and float64, changing means,
+covariances and observations, matrix right-hand sides, numerical scales and
+conditioned covariances. Poor conditioning still limits floating-point accuracy.
 
 ## Evaluate without derivatives
 

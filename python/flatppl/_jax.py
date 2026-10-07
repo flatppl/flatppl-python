@@ -7,6 +7,7 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from enzyme_ad.jax import hlo_call
 
 
@@ -42,6 +43,17 @@ def _pack(schema, value, leaves, path):
     kind = schema["kind"]
     if kind == "tensor":
         dtype = jnp.dtype(schema["dtype"])
+        if dtype.kind in "iu" and not any(
+            isinstance(leaf, (jax.Array, jax.core.Tracer)) for leaf in jax.tree.leaves(value)
+        ):
+            host = np.asarray(value)
+            if host.dtype.kind not in "iu":
+                raise TypeError(f"{path} requires {dtype}, got {host.dtype}")
+            if host.size and not np.can_cast(host.dtype, dtype, casting="safe"):
+                limits = np.iinfo(dtype)
+                if int(host.min()) < limits.min or int(host.max()) > limits.max:
+                    raise ValueError(f"{path} contains integers outside the range of {dtype}")
+            value = host.astype(dtype, copy=False)
         supplied_dtype = getattr(value, "dtype", None)
         if supplied_dtype is not None:
             supplied = jnp.dtype(supplied_dtype)
@@ -52,7 +64,7 @@ def _pack(schema, value, leaves, path):
         ):
             raise TypeError(f"{path} requires real values")
         array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)
-        if dtype.kind in "biu" and array.dtype.kind != dtype.kind:
+        if dtype.kind in "biu" and array.dtype != dtype:
             raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
         if array.shape != tuple(schema["shape"]):
             raise ValueError(

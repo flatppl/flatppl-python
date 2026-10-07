@@ -124,7 +124,7 @@ It is not a separate top-level package export.
 
 Arguments follow the declared input order and names. Missing, duplicate, or
 unknown arguments raise `TypeError`. Invalid field sets and dtypes raise
-`TypeError`. Tensor shape mismatches raise `ValueError`.
+`TypeError`. Tensor shape mismatches and host integer overflow raise `ValueError`.
 
 Results follow the [Python value mapping](values.md). A query without runtime
 inputs is called as `function()`.

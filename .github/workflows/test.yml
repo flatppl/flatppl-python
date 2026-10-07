@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-26]
+        os: [ubuntu-24.04, macos-26]
         python: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7.0.0
@@ -43,7 +43,7 @@ jobs:
       - name: Build native macOS wheel
         if: runner.os == 'macOS'
         env:
-          MACOSX_DEPLOYMENT_TARGET: "26.5"
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
         run: maturin build --release --locked --interpreter python --out dist
 
       - name: Build portable Linux wheel

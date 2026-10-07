@@ -19,7 +19,7 @@ function in the [quickstart](quickstart.md).**
 Models and queries use the same `Module` type. You choose their names and roles.
 The wrapper exposes the declared computation and contains no inference algorithms.
 
-The package supports Python 3.12–3.14 on Linux and Apple silicon macOS.
+The alpha package supports Python 3.12–3.14 on Linux x86-64 and Apple silicon macOS.
 See [installation](installation.md) for the exact platform requirements and
 [JAX support](jax.md#supported-transformations) for differentiation limits.
 

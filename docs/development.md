@@ -22,7 +22,7 @@ lifecycle, module imports, random-state chaining, device transfers, and BlackJAX
 
 ## Build the documentation
 
-From the repository root, use a Python 3.12 environment and run:
+From the repository root, use a Python 3.14 environment and run:
 
 ```sh
 python -m pip install -r docs/requirements.txt
@@ -51,7 +51,8 @@ check the displayed results. The BlackJAX guide includes `examples/nuts.py`
 directly, and the existing package test executes that file.
 
 CI builds the HTML separately and executes documentation examples against the
-Linux x86-64 wheel. The package's full runtime tests run on all three wheel targets.
+Linux x86-64 wheels. The package's full runtime tests run on Python 3.12–3.14
+for all three wheel targets.
 After all checks pass on `main`, CI publishes the rendered site to
 [GitHub Pages](https://flatppl.org/flatppl-python/).
 Pull requests build the site and upload a preview artifact without deploying.

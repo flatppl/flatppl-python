@@ -4,7 +4,7 @@
 
 | Component | Qualified version or platform |
 | --- | --- |
-| Python | 3.12 |
+| Python | 3.12, 3.13, 3.14 |
 | JAX and jaxlib | 0.11.2 |
 | Enzyme (`enzyme-ad`) | 0.0.15 |
 | Linux | x86-64 and ARM64, wheels tagged `manylinux_2_28` |
@@ -14,8 +14,8 @@ The package pins JAX and Enzyme together. The macOS requirement comes from
 Enzyme's native binary, despite its upstream wheel tag claiming macOS 11 support.
 This Enzyme release has no Intel macOS wheel. Windows is not qualified.
 
-The package's CI tests CPU execution on all three wheel targets.
-The package tests also passed on an NVIDIA A100 using CUDA 12.
+The package's CI tests each supported Python version on all three wheel targets.
+The package tests also passed on an NVIDIA A100 using Python 3.12 and CUDA 12.
 See [JAX and differentiation](jax.md).
 
 ## Install a wheel
@@ -25,25 +25,28 @@ There is no published PyPI release yet.
 
 1. Open the [Python wheels workflow](https://github.com/flatppl/flatppl-python/actions/workflows/test.yml).
 2. Select a successful run on `main`.
-3. Download the artifact for your platform while signed into GitHub.
+3. Download the artifact for your platform and Python version while signed into GitHub.
 4. Extract the artifact, which contains `dist/`, `requirements.txt`, and `constraints.txt`.
 5. Run these commands from the extracted directory.
 
 ```sh
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
 | Platform | Artifact |
 | --- | --- |
-| Linux x86-64 | `flatppl-python-ubuntu-24.04` |
-| Linux ARM64 | `flatppl-python-ubuntu-24.04-arm` |
-| macOS ARM64 | `flatppl-python-macos-26` |
+| Linux x86-64 | `flatppl-python-ubuntu-24.04-py3.14` |
+| Linux ARM64 | `flatppl-python-ubuntu-24.04-arm-py3.14` |
+| macOS ARM64 | `flatppl-python-macos-26-py3.14` |
+
+The table shows Python 3.14 artifacts. Choose the corresponding `py3.12` or
+`py3.13` artifact when using either earlier supported version.
 
 Keep the extracted files together. Enzyme 0.0.15's package index
-incorrectly labels its Python 3.12 wheels as requiring Python 3.11.
-The constraints select the official wheels by platform, URL, and hash.
+incorrectly labels its Python 3.12–3.14 wheels as requiring Python 3.11.
+The constraints select the official wheels by Python version, platform, URL, and hash.
 The requirements file applies those constraints and selects the local FlatPPL wheel.
 
 The FlatPPL wheel contains the native compiler. Using it requires neither the
@@ -85,12 +88,12 @@ BlackJAX is optional. The [sampling guide](blackjax.md) shows the complete examp
 
 ## Build from source
 
-Install a Rust toolchain and Python 3.12, then run:
+Install a Rust toolchain and Python 3.14, then run:
 
 ```sh
 git clone https://github.com/flatppl/flatppl-python.git
 cd flatppl-python
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 . .venv/bin/activate
 python -m pip install "maturin==1.15.0"
 maturin build --release --locked --interpreter python --out dist

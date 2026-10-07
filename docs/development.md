@@ -52,7 +52,7 @@ directly, and the existing package test executes that file.
 
 CI builds the HTML separately and executes documentation examples against the
 Linux x86-64 wheels. The package's full runtime tests run on Python 3.12–3.14
-for all three wheel targets.
+for both wheel targets.
 After all checks pass on `main`, CI publishes the rendered site to
 [GitHub Pages](https://flatppl.org/flatppl-python/).
 Pull requests build the site and upload a preview artifact without deploying.

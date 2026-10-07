@@ -6,7 +6,8 @@ derivative rules for the imported program.
 
 ## Supported transformations
 
-The tested dependency set is JAX/jaxlib 0.11.2 with Enzyme 0.0.15.
+The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
+`0.0.15+flatppl.1` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -14,8 +15,8 @@ The tested dependency set is JAX/jaxlib 0.11.2 with Enzyme 0.0.15.
 | `jax.grad` and `jax.value_and_grad` for scalar density outputs | Tested for the package's examples |
 | `jax.lax.scan` around BlackJAX steps | Tested by the NUTS example |
 | `jax.vmap` | Unavailable: Enzyme's imported primitive has no batching rule |
-| Second derivatives | The qualification probe fails |
-| Gradients through multiple outputs | A three-output qualification probe fails |
+| Second derivatives | Tested for a pure scalar program through the fork's joint derivative path |
+| Gradients through multiple outputs | Tested for pure static tensor programs |
 | GPU execution | Tested on NVIDIA A100 with CUDA 12 |
 
 Support also depends on the operations in the query. The default
@@ -29,6 +30,12 @@ batching implementation for unsupported Enzyme transformations.
 
 FlatPPL `scan` lowers to a native loop with fixed state shapes. Its body stays
 compact as the input length grows. Record and array states are supported.
+For pure static tensor programs, the Enzyme fork shares forward work between
+values and pullbacks. `jax.jit(jax.value_and_grad(f))` reuses saved residuals
+instead of repeating the forward scan. Unsupported joint derivatives, effectful
+programs, and retained module symbols use the existing differentiation path.
+Higher derivatives remain limited by the operations and differentiation path.
+
 General real metric contractions support runtime indefinite matrices, repeated
 indices, batches, and raised outputs. Scalar complex intermediates can feed real
 projections such as `abs2`; complex inputs and outputs remain unsupported.

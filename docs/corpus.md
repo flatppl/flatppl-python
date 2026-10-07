@@ -8,7 +8,8 @@ matches independent matrix/reduction values on both devices.
 
 Each sampling smoke run uses float32, two chains, 64 warmup steps and 64 retained
 draws per chain. Seeds are 827 and 828. The tested stack is JAX/jaxlib 0.11.2,
-Enzyme 0.0.15 and BlackJAX 1.7.1. The A100 uses CUDA 12.
+released Enzyme 0.0.15 and BlackJAX 1.7.1. The A100 uses CUDA 12.
+The package now pins our Enzyme fork's `0.0.15+flatppl.1` alpha wheels.
 These runs check compilation, first derivatives and sampler execution.
 They do not establish mixing or posterior convergence.
 

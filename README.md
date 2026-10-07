@@ -30,7 +30,7 @@ example, [modules and contexts](https://flatppl.org/flatppl-python/modules.html)
 for reusable queries, and the [BlackJAX guide](https://flatppl.org/flatppl-python/blackjax.html)
 for sampling.
 
-The package supports Python 3.12–3.14 on Linux and Apple silicon macOS.
+The alpha package supports Python 3.12–3.14 on Linux x86-64 and Apple silicon macOS.
 Wheels include the native compiler. Follow the
 [installation guide](https://flatppl.org/flatppl-python/installation.html) for wheel
 downloads and platform requirements.

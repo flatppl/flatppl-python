@@ -32,7 +32,7 @@ Documentation = "https://flatppl.org/flatppl-python/"
 Repository = "https://github.com/flatppl/flatppl-python"
 
 [project.optional-dependencies]
-test = ["pytest>=8", "blackjax==1.7.1", "pandas==3.0.6"]
+test = ["pytest>=8", "blackjax==1.7.1", "pandas==3.0.6", "pyhf==0.7.6"]
 
 [tool.maturin]
 features = ["extension"]

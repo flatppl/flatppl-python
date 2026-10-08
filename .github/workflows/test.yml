@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           python -m venv "$RUNNER_TEMP/consumer"
-          "$RUNNER_TEMP/consumer/bin/python" -m pip install -r requirements.txt "pytest>=8" "blackjax==1.7.1" "pandas==3.0.6"
+          "$RUNNER_TEMP/consumer/bin/python" -m pip install -r requirements.txt "pytest>=8" "blackjax==1.7.1" "pandas==3.0.6" "pyhf==0.7.6"
           cp -R tests examples docs pyproject.toml "$RUNNER_TEMP/consumer/"
 
       - name: Test installed wheel outside the checkout

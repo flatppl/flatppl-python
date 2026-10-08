@@ -1,6 +1,6 @@
 # API reference
 
-The top-level package exports `flatppl`, `Context`, `Module`, `Binding`, `Integration`, and
+The top-level package exports `flatppl`, `from_pyhf`, `Context`, `Module`, `Binding`, `Integration`, and
 `CompilationError`.
 
 ## Inline source
@@ -15,6 +15,28 @@ Parse a FlatPPL source string and return a `Module`.
 - `source_path`: Host source filename for relative file imports. Accepts a string or path-like object.
 
 Compiler failures raise `CompilationError`.
+```
+
+## pyhf import
+
+```{py:function} flatppl.from_pyhf(source, *, context=None, name=None)
+
+Convert a pyhf model or workspace into a `Module` using the bundled Rust converter.
+No Python pyhf installation is required for conversion.
+
+- `source`: JSON text, a string or path-like filename, or a readable text/binary stream.
+- `context`: Owning context. Omitting it creates a new context.
+- `name`: Optional logical source origin. Register import names separately.
+
+Strings beginning with `{` or `[` after whitespace are JSON text. Other strings
+are filenames. Use `Path` for ambiguous filenames. Files and byte streams use
+UTF-8, including an optional byte-order mark. Streams are read from their current
+position and remain open. Each import creates a new immutable module snapshot.
+
+`Module.source` contains generated FlatPPL. Conversion errors raise
+`CompilationError` with stage `pyhf`; filesystem and decoding errors retain
+their Python exception types. Later inference and compilation use their usual
+diagnostic stages. See the [pyhf guide](pyhf.md).
 ```
 
 ## Context
@@ -42,13 +64,13 @@ Names cannot be replaced. Registration does not change the module's origin.
 ```{py:class} flatppl.Module
 
 An immutable definition with its dependency closure.
-Obtain modules through `flatppl(...)` or `Context.load(...)`.
+Obtain modules through `flatppl(...)`, `from_pyhf(...)`, or `Context.load(...)`.
 ```
 
 | Property | Meaning |
 | --- | --- |
 | `context` | Owning context |
-| `source` | Original source text |
+| `source` | FlatPPL source text, generated for imported pyhf models |
 | `source_name` | Source label used in diagnostics |
 | `bindings` | Read-only mapping from public names to binding handles |
 

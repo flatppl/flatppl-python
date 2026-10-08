@@ -134,6 +134,9 @@ inputs is called as `function()`.
 | `stablehlo` | Emitted StableHLO text |
 | `schema` | Read-only mapping describing the emitted interface |
 
+These attributes describe the original unbatched query. JAX transformations
+leave them unchanged. See [batching and sharding](jax.md) for mapped calls.
+
 The schema contains:
 
 | Key | Meaning |

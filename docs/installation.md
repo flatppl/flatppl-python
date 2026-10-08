@@ -6,20 +6,20 @@
 | --- | --- |
 | Python | 3.12, 3.13, 3.14 |
 | JAX and jaxlib | 0.11.2 |
-| Enzyme (`enzyme-ad`) | 0.0.15+flatppl.1, FlatPPL fork |
+| Enzyme (`enzyme-ad`) | 0.0.15+flatppl.2, FlatPPL fork |
 | Linux | x86-64, glibc 2.35 or newer, such as Ubuntu 22.04 |
 | macOS | Apple silicon, macOS 14 or newer |
 
 The package pins JAX and Enzyme together. Enzyme wheels come from the
-[FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.1)
-and include shared forward work for values and gradients, plus stable real
-reciprocal-square-root derivatives at extreme scales.
+[FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.2)
+and include shared forward work for values and gradients, stable real
+reciprocal-square-root derivatives, batching rules, and sharding support.
 These are alpha builds. Linux ARM64, Intel macOS, and Windows are not packaged.
 Package metadata selects the Enzyme wheel by Python version and platform, with
 a pinned URL and SHA-256 hash. No separate constraints file is needed.
 
 The package's CI tests each supported Python version on both wheel targets.
-The package tests also passed on an NVIDIA A100 using Python 3.12 and CUDA 12.
+The package tests also passed on two NVIDIA A100s using Python 3.14 and CUDA 12.
 See [JAX and differentiation](jax.md).
 
 ## Install from GitHub with Pixi

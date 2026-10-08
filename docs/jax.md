@@ -7,14 +7,16 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.1` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.2` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
 | Direct calls and `jax.jit` | Tested |
 | `jax.grad` and `jax.value_and_grad` for scalar density outputs | Tested for the package's examples |
 | `jax.lax.scan` around BlackJAX steps | Tested by the NUTS example |
-| `jax.vmap` | Unavailable: Enzyme's imported primitive has no batching rule |
+| `jax.vmap` | Nested maps, shared inputs, nonleading axes, structured outputs, and first derivatives |
+| `jax.shard_map` and sharded `jax.jit` | Values and gradients, including shared-parameter reductions |
+| `jax.pmap` | Compatible; prefer `shard_map` for new code |
 | Second derivatives | Tested for a pure scalar program through the fork's joint derivative path |
 | Gradients through multiple outputs | Tested for pure static tensor programs |
 | GPU execution | Tested on NVIDIA A100 with CUDA 12 |
@@ -25,8 +27,7 @@ It preserves the tested first-gradient rules for products and selections,
 including products containing zero.
 
 This mode rejects known unsupported AD operations, including sampling, `probit`,
-and real `cumprod`. The package provides no substitute differentiation or
-batching implementation for unsupported Enzyme transformations.
+and real `cumprod`. Batching does not add derivative rules for these operations.
 
 FlatPPL `scan` lowers to a native loop with fixed state shapes. Its body stays
 compact as the input length grows. Record and array states are supported.
@@ -44,6 +45,93 @@ For numerical scalar marginals and normalizers, enable
 [integration](integration.md) explicitly. These support first derivatives of
 smooth integrands and explicit scalar breakpoints, subject to the documented
 ordering restrictions. The quadrature error estimate does not bound gradient error.
+
+## Batch calls with vmap
+
+Use standard JAX axes. `None` shares an input across calls:
+
+```{testcode}
+import jax
+import jax.numpy as jnp
+from flatppl import flatppl
+
+density = flatppl(r"""
+    x = elementof(reals)
+    scale = elementof(reals)
+    inputs = (x, scale)
+    outputs = -0.5*scale*x*x
+""").compile()
+points = jnp.array([-1.0, 0.0, 2.0])
+batched = jax.jit(jax.vmap(density, in_axes=(0, None)))
+print(batched(points, jnp.float32(2)).tolist())
+values, gradients = jax.jit(
+    jax.vmap(jax.value_and_grad(density), in_axes=(0, None))
+)(points, jnp.float32(2))
+print(gradients.tolist())
+```
+
+```{testoutput}
+[-1.0, -0.0, -4.0]
+[2.0, -0.0, -4.0]
+```
+
+Nested maps, nonleading axes, empty batches, and record or tuple results work.
+Use positional arguments for explicit `in_axes`; JAX maps keyword arguments over
+their leading axis. Both `vmap(grad(f))` and gradients of reduced `vmap(f)` results
+work. A shared parameter's gradient sums contributions from the reduced calls.
+BlackJAX remains a separate consumer. Its `init` and `step` functions can be
+mapped over independent chains with distinct JAX random keys.
+
+The Rust StableHLO emitter owns batch shapes and lowering. Other host languages
+can request the same exports through `flatppl_host::BatchSpec` and
+`LoadedModule::compile_batched`. Python translates JAX axes into this API.
+Batch axes remain separate from a query's authored cell dimensions, so
+`lengthof` and reductions keep their original meaning. New static batch shapes
+trigger compilation. Each compiled function caches up to 32 batch exports.
+
+The emitter tensorizes supported pointwise operations and cell reductions.
+Other operations, including scans and sampling, use device loops around the
+scalar program. Enzyme-created derivative programs also use device loops when
+mapped. This preserves semantics but can be much slower than native JAX batching,
+especially on GPUs. `vmap` support does not promise equal throughput.
+
+## Shard calls across devices
+
+Use [JAX sharding](https://docs.jax.dev/en/latest/201/sharding.html) to choose
+device placement. For explicit local work, combine `shard_map` with `vmap`:
+
+```{testcode}
+import numpy as np
+from jax.sharding import Mesh, PartitionSpec as P
+
+mesh = Mesh(np.array(jax.devices()), ("devices",))
+evaluate = jax.jit(jax.shard_map(
+    jax.vmap(density, in_axes=(0, None)),
+    mesh=mesh,
+    in_specs=(P("devices"), P()),
+    out_specs=P("devices"),
+))
+points = jnp.ones(2 * jax.device_count())
+print(bool(jnp.all(evaluate(points, jnp.float32(2)) == -1)))
+```
+
+```{testoutput}
+True
+```
+
+Each device receives a local batch. Its size must match the query's cell shapes
+after `vmap` removes the local batch axis. Shared-input gradients include the
+required cross-device sums. Keep collectives and device operations in the
+surrounding JAX function.
+
+Automatic partitioning also works with `NamedSharding` and `jax.jit`'s
+`in_shardings` and `out_shardings`. When using an `AxisType.Explicit` mesh, wrap
+the function in `jax.sharding.auto_axes(function, out_sharding=...)` to let XLA
+partition the imported program. Direct Explicit-axis propagation is unsupported.
+
+`pmap` remains compatible. JAX recommends
+[`shard_map`](https://docs.jax.dev/en/latest/_autosummary/jax.pmap.html)
+for new code. Qualification covers four logical CPU devices and two A100 GPUs.
 
 ## Matrix derivatives
 
@@ -71,8 +159,8 @@ remains unsupported because its required singular-input runtime error needs an
 execution error channel.
 
 FlatPPL callable broadcasts, `lower_cholesky.(matrices)`, `MvNormal.(means, covs)`
-and iid multivariate-normal observations support matrix cells. These are FlatPPL
-batches. JAX `vmap` still has the separate limitation listed above.
+and iid multivariate-normal observations support matrix cells. JAX `vmap` adds
+independent host batch axes around those cells.
 
 Independent CPU and A100 probes cover float32 and float64, changing means,
 covariances and observations, matrix right-hand sides, numerical scales and

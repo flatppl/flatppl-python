@@ -145,11 +145,23 @@ class Module:
         dtype = float_dtype(dtype)
         if integration is not None and not isinstance(integration, Integration):
             raise TypeError("integration must be an Integration instance or None")
-        settings = None if integration is None else (
-            integration.rtol, integration.atol, integration.max_intervals
+        settings = (
+            None
+            if integration is None
+            else (integration.rtol, integration.atol, integration.max_intervals)
         )
-        exported = json.loads(_native_call(self._native.export, dtype, autodiff, settings))
-        return CompiledFunction(exported, autodiff=autodiff)
+        exported = json.loads(
+            _native_call(self._native.export, dtype, autodiff, settings)
+        )
+
+        def export_batch(shape, axes):
+            return json.loads(
+                _native_call(
+                    self._native.export, dtype, autodiff, settings, (shape, axes)
+                )
+            )
+
+        return CompiledFunction(exported, autodiff=autodiff, export_batch=export_batch)
 
 
 def flatppl(

@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache, partial
 from types import MappingProxyType
 from typing import Any
 
@@ -9,6 +10,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from enzyme_ad.jax import hlo_call
+from jax.custom_batching import custom_vmap
+from jax.custom_derivatives import SymbolicZero
 
 
 def float_dtype(dtype) -> str:
@@ -44,7 +47,8 @@ def _pack(schema, value, leaves, path):
     if kind == "tensor":
         dtype = jnp.dtype(schema["dtype"])
         if dtype.kind in "iu" and not any(
-            isinstance(leaf, (jax.Array, jax.core.Tracer)) for leaf in jax.tree.leaves(value)
+            isinstance(leaf, (jax.Array, jax.core.Tracer))
+            for leaf in jax.tree.leaves(value)
         ):
             host = np.asarray(value)
             if host.dtype.kind not in "iu":
@@ -52,7 +56,9 @@ def _pack(schema, value, leaves, path):
             if host.size and not np.can_cast(host.dtype, dtype, casting="safe"):
                 limits = np.iinfo(dtype)
                 if int(host.min()) < limits.min or int(host.max()) > limits.max:
-                    raise ValueError(f"{path} contains integers outside the range of {dtype}")
+                    raise ValueError(
+                        f"{path} contains integers outside the range of {dtype}"
+                    )
             value = host.astype(dtype, copy=False)
         supplied_dtype = getattr(value, "dtype", None)
         if supplied_dtype is not None:
@@ -94,6 +100,59 @@ def _unpack(schema, leaves):
     return {item["name"]: _unpack(item["value"], leaves) for item in schema["fields"]}
 
 
+def _compiled_call(exported, export_batch, autodiff):
+    @lru_cache(maxsize=32)
+    def specialize(shape, input_axes):
+        source = (exported if not shape else export_batch(shape, input_axes))[
+            "stablehlo"
+        ]
+
+        @jax.jit
+        def raw(*args):
+            return tuple(hlo_call(*args, source=source))
+
+        mapped = custom_vmap(raw)
+
+        @mapped.def_vmap
+        def batch(size, in_batched, *args):
+            axes = tuple(
+                (0 if mapped else None,)
+                + tuple(None if axis is None else axis + int(mapped) for axis in old)
+                for mapped, old in zip(in_batched, input_axes)
+            )
+            result = specialize((size, *shape), axes)(*args)
+            return result, tuple(True for _ in result)
+
+        call = jax.custom_jvp(mapped)
+
+        @partial(call.defjvp, symbolic_zeros=True)
+        def derivative(primals, tangents):
+            if not autodiff:
+                raise TypeError("query was compiled with autodiff=False")
+            active = tuple(
+                i
+                for i, tangent in enumerate(tangents)
+                if not isinstance(tangent, SymbolicZero)
+            )
+
+            def differentiate(*values):
+                args = list(primals)
+                for i, value in zip(active, values):
+                    args[i] = value
+                return raw(*args)
+
+            return jax.jvp(
+                differentiate,
+                tuple(primals[i] for i in active),
+                tuple(tangents[i] for i in active),
+            )
+
+        return jax.jit(call)
+
+    count = sum(1 for item in exported["inputs"] for _ in _leaves(item["value"]))
+    return specialize((), ((),) * count)
+
+
 @dataclass(frozen=True, eq=False, init=False)
 class CompiledFunction:
     """A JAX-transformable callable with immutable source ABI metadata."""
@@ -104,7 +163,7 @@ class CompiledFunction:
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
 
-    def __init__(self, exported, *, autodiff):
+    def __init__(self, exported, *, autodiff, export_batch):
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
@@ -122,17 +181,7 @@ class CompiledFunction:
                 "enable JAX x64 to represent this query's 64-bit ABI values"
             )
 
-        # hlo_call requires JIT even for an eager call or eager value_and_grad.
-        @jax.jit
-        def call(*args):
-            return tuple(hlo_call(*args, source=source))
-
-        if not autodiff:
-            call = jax.custom_jvp(call)
-
-            @call.defjvp
-            def no_derivative(primals, tangents):
-                raise TypeError("query was compiled with autodiff=False")
+        call = _compiled_call(exported, export_batch, autodiff)
 
         object.__setattr__(self, "stablehlo", source)
         object.__setattr__(self, "schema", schema)

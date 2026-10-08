@@ -19,7 +19,7 @@ The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
 | `jax.pmap` | Compatible; prefer `shard_map` for new code |
 | Second derivatives | Tested for a pure scalar program through the fork's joint derivative path |
 | Gradients through multiple outputs | Tested for pure static tensor programs |
-| GPU execution | Tested on NVIDIA A100 with CUDA 12 |
+| GPU execution | Tested on NVIDIA A100 with CUDA 12 and GH200 with CUDA 13 |
 
 Support also depends on the operations in the query. The default
 `compile(autodiff=True)` selects the Rust emitter's Enzyme compatibility mode.
@@ -152,6 +152,33 @@ partition the imported program. Direct Explicit-axis propagation is unsupported.
 `pmap` remains compatible. JAX recommends
 [`shard_map`](https://docs.jax.dev/en/latest/_autosummary/jax.pmap.html)
 for new code. Qualification covers four logical CPU devices and two A100 GPUs.
+
+## Keep dynamic GPU loops on the device
+
+XLA's default GPU execution can copy a loop-condition Boolean to the CPU and
+synchronize for each dynamic loop check. This also affects native JAX programs,
+including BlackJAX's NUTS trajectory loops. The emitted StableHLO is unchanged.
+
+On supported NVIDIA GPUs, enable XLA's CUDA command-buffer loop execution before
+starting Python:
+
+```sh
+XLA_FLAGS="${XLA_FLAGS:+$XLA_FLAGS }--xla_gpu_enable_command_buffer=+WHILE" python sample.py
+```
+
+The `+WHILE` flag adds loop support to XLA's existing command-buffer defaults.
+It applies to the whole JAX process, including the outer sampler compilation.
+It does not change FlatPPL's compilation API or require an Enzyme option.
+
+This opt-in was tested with JAX 0.11.2 and CUDA 13 on GH200. A matched trace of
+100 NUTS transitions per chain across four chains changed from 19,600
+loop-condition transfers to none. Full Belle II
+float32 sampling passed the same convergence checks. Performance gains depend on
+the query and sampler. GPU arithmetic still dominates some workloads.
+
+The flag is an XLA backend option, not a portable StableHLO guarantee. See
+[XLA's command-buffer settings](https://github.com/openxla/xla/blob/main/xla/debug_options_flags.cc)
+and [dynamic-loop execution](https://github.com/openxla/xla/blob/main/xla/backends/gpu/runtime/while_thunk.cc).
 
 ## Matrix derivatives
 

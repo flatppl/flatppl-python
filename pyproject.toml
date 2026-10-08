@@ -7,7 +7,19 @@ name = "flatppl"
 version = "0.1.0"
 description = "FlatPPL modules compiled to differentiable JAX functions through StableHLO"
 requires-python = ">=3.12,<3.15"
-dependencies = ["jax==0.11.2", "jaxlib==0.11.2", "enzyme-ad==0.0.15+flatppl.1", "numpy>=2"]
+dependencies = [
+    "jax==0.11.2",
+    "jaxlib==0.11.2",
+    "numpy>=2",
+    # Require the fork even on targets without a matching wheel.
+    "enzyme-ad==0.0.15+flatppl.1",
+    'enzyme-ad @ https://github.com/BJMCox/Enzyme-JAX/releases/download/flatppl-alpha.1/enzyme_ad-0.0.15%2Bflatppl.1-cp312-cp312-macosx_14_0_arm64.whl#sha256=96b3f4b7f11ceaad5af208fdaeff34b922a4e3eb25e0f414ec95e91ef5dc39f8 ; python_version == "3.12" and sys_platform == "darwin" and platform_machine == "arm64"',
+    'enzyme-ad @ https://github.com/BJMCox/Enzyme-JAX/releases/download/flatppl-alpha.1/enzyme_ad-0.0.15%2Bflatppl.1-cp312-cp312-manylinux_2_35_x86_64.whl#sha256=a4d079c2cd63edee8e3902b4ea4a91a71e06066c6edf38e436b988aaac5d1134 ; python_version == "3.12" and sys_platform == "linux" and platform_machine == "x86_64"',
+    'enzyme-ad @ https://github.com/BJMCox/Enzyme-JAX/releases/download/flatppl-alpha.1/enzyme_ad-0.0.15%2Bflatppl.1-cp313-cp313-macosx_14_0_arm64.whl#sha256=197a7e94619cb8179c18e3566a186fd9b91d9569ade405e26d375362fba58358 ; python_version == "3.13" and sys_platform == "darwin" and platform_machine == "arm64"',
+    'enzyme-ad @ https://github.com/BJMCox/Enzyme-JAX/releases/download/flatppl-alpha.1/enzyme_ad-0.0.15%2Bflatppl.1-cp313-cp313-manylinux_2_35_x86_64.whl#sha256=ad65df6ef019b03ce81ef2ea9164a33d6eabef7ca55a16fb094c82d91aa41a26 ; python_version == "3.13" and sys_platform == "linux" and platform_machine == "x86_64"',
+    'enzyme-ad @ https://github.com/BJMCox/Enzyme-JAX/releases/download/flatppl-alpha.1/enzyme_ad-0.0.15%2Bflatppl.1-cp314-cp314-macosx_14_0_arm64.whl#sha256=2503dabdee63b964faec465fc03679b2c283466b6519fc7f6194099ac5f18548 ; python_version == "3.14" and sys_platform == "darwin" and platform_machine == "arm64"',
+    'enzyme-ad @ https://github.com/BJMCox/Enzyme-JAX/releases/download/flatppl-alpha.1/enzyme_ad-0.0.15%2Bflatppl.1-cp314-cp314-manylinux_2_35_x86_64.whl#sha256=203b3538c903a70ba7e19823cc9a9d514c3f8586c492596a5e5bd4a2df0e8f0b ; python_version == "3.14" and sys_platform == "linux" and platform_machine == "x86_64"',
+]
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"

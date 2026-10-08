@@ -59,6 +59,8 @@ jobs:
 
       - name: Test installed wheel outside the checkout
         shell: bash
+        env:
+          JAX_NUM_CPU_DEVICES: "4"
         run: |
           cd "$RUNNER_TEMP/consumer"
           bin/python -m pytest tests -q

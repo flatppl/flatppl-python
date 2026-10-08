@@ -76,7 +76,6 @@ jobs:
           name: flatppl-python-${{ matrix.os }}-py${{ matrix.python }}
           path: |
             dist/*.whl
-            constraints.txt
             requirements.txt
 
   docs:

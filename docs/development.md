@@ -13,7 +13,7 @@ Build and install the wheel using the [source instructions](installation.md#buil
 Then install the test tools and run the public tests:
 
 ```sh
-python -m pip install -c constraints.txt "pytest>=8" "blackjax==1.7.1" "pandas==3.0.6"
+python -m pip install "pytest>=8" "blackjax==1.7.1" "pandas==3.0.6"
 python -m pytest tests -q
 ```
 

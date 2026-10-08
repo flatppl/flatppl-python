@@ -15,10 +15,38 @@ The package pins JAX and Enzyme together. Enzyme wheels come from the
 and include shared forward work for values and gradients, plus stable real
 reciprocal-square-root derivatives at extreme scales.
 These are alpha builds. Linux ARM64, Intel macOS, and Windows are not packaged.
+Package metadata selects the Enzyme wheel by Python version and platform, with
+a pinned URL and SHA-256 hash. No separate constraints file is needed.
 
 The package's CI tests each supported Python version on both wheel targets.
 The package tests also passed on an NVIDIA A100 using Python 3.12 and CUDA 12.
 See [JAX and differentiation](jax.md).
+
+## Install from GitHub with Pixi
+
+Install [Pixi](https://pixi.prefix.dev/latest/installation/) and Rust 1.96 or newer.
+Install the platform build tools: Xcode Command Line Tools on macOS, or a C
+compiler and linker on Linux.
+
+Create a project and install FlatPPL from its Git repository:
+
+```sh
+pixi init flatppl-demo
+cd flatppl-demo
+pixi add "python=3.14"
+pixi add --pypi "flatppl @ git+https://github.com/flatppl/flatppl-python.git"
+```
+
+Pixi builds the native FlatPPL extension and installs JAX, NumPy, and the matching
+Enzyme wheel automatically. Enzyme itself needs no local build.
+Pixi records the Git commit and dependency versions in `pixi.lock`.
+Use `pixi run python` to run Python in the project environment.
+
+For the sampling example, add BlackJAX separately:
+
+```sh
+pixi add --pypi "blackjax==1.7.1"
+```
 
 ## Install a wheel
 
@@ -28,7 +56,7 @@ There is no published PyPI release yet.
 1. Open the [Python wheels workflow](https://github.com/flatppl/flatppl-python/actions/workflows/test.yml).
 2. Select a successful run on `main`.
 3. Download the artifact for your platform and Python version while signed into GitHub.
-4. Extract the artifact, which contains `dist/`, `requirements.txt`, and `constraints.txt`.
+4. Extract the artifact, which contains `dist/` and `requirements.txt`.
 5. Run these commands from the extracted directory.
 
 ```sh
@@ -45,9 +73,8 @@ python -m pip install -r requirements.txt
 The table shows Python 3.14 artifacts. Choose the corresponding `py3.12` or
 `py3.13` artifact when using either earlier supported version.
 
-Keep the extracted files together. The constraints select our fork's Enzyme
-wheels by Python version, platform, URL, and hash.
-The requirements file applies those constraints and selects the local FlatPPL wheel.
+Keep the extracted files together. The requirements file selects the local
+FlatPPL wheel, whose metadata supplies all runtime dependencies.
 
 The FlatPPL wheel contains the native compiler. Using it requires neither the
 Rust toolchain nor the FlatPPL CLI.
@@ -55,7 +82,7 @@ Rust toolchain nor the FlatPPL CLI.
 For the tested NVIDIA setup, add JAX's CUDA 12 runtime in the same environment:
 
 ```sh
-python -m pip install -c constraints.txt "jax[cuda12]==0.11.2"
+python -m pip install "jax[cuda12]==0.11.2"
 ```
 
 Follow the [JAX driver requirements](https://docs.jax.dev/en/latest/installation.html)
@@ -81,14 +108,14 @@ Continue with the [quickstart](quickstart.md).
 After installing FlatPPL, install the version used by the package's tests:
 
 ```sh
-python -m pip install -c constraints.txt "blackjax==1.7.1"
+python -m pip install "blackjax==1.7.1"
 ```
 
 BlackJAX is optional. The [sampling guide](blackjax.md) shows the complete example.
 
 ## Build from source
 
-Install a Rust toolchain and Python 3.14, then run:
+Install Rust 1.96 or newer, the platform build tools, and Python 3.14, then run:
 
 ```sh
 git clone https://github.com/flatppl/flatppl-python.git

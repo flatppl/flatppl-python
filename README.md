@@ -32,8 +32,8 @@ for sampling.
 
 The alpha package supports Python 3.12–3.14 on Linux x86-64 and Apple silicon macOS.
 Wheels include the native compiler. Follow the
-[installation guide](https://flatppl.org/flatppl-python/installation.html) for wheel
-downloads and platform requirements.
+[installation guide](https://flatppl.org/flatppl-python/installation.html) for Pixi
+installation from GitHub, wheel downloads, and platform requirements.
 
 See [development](https://flatppl.org/flatppl-python/development.html) to build,
 test, or contribute documentation.

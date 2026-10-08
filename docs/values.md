@@ -11,7 +11,7 @@ constant query. Omit `inputs` when no runtime arguments are needed.
 | Scalar | Python scalar or scalar array | Scalar JAX array |
 | Array | NumPy/JAX array or numeric list with the declared shape | JAX array |
 | Record | Dictionary with exactly the declared fields | Dictionary |
-| Table | Dictionary of column arrays or numeric pandas DataFrame | Dictionary of JAX arrays |
+| Table | Dictionary of column arrays, pandas/Polars DataFrame, or PyArrow table/record batch | Dictionary of JAX arrays |
 | Tuple | Tuple or list of components | Tuple |
 | Multiple outputs | — | Tuple in declared order |
 
@@ -47,8 +47,41 @@ Real inputs convert to the query's precision, including NumPy arrays that defaul
 to float64. Host integer arrays and lists convert when every value fits the query's
 integer dtype. Overflow raises `ValueError` before conversion. JAX integer arrays
 and Boolean arrays must match the declared dtype. Complex and ragged arrays are
-not accepted by this adapter. Numeric DataFrame columns are
-selected by name; the row index is ignored. pandas is optional.
+not accepted by this adapter.
+
+Tables use the standard
+[Arrow PyCapsule interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html).
+Any producer implementing `__arrow_c_stream__` or tabular `__arrow_c_array__`
+works, including pandas, Polars, and PyArrow. The older `__dataframe__` protocol
+is a fallback. PyArrow consumes the protocol; pandas and Polars are optional.
+
+Columns must have unique names and Boolean, integer, or real values. Names come
+from the exported Arrow schema and must match the query. Row order is preserved,
+including sliced and chunked data.
+Row-index columns identified by Arrow's pandas metadata are ignored. Null values
+raise an error; fill or filter missing data explicitly before binding it.
+Both direct calls and `query.set(data=table)` accept these tables.
+
+```{testcode}
+import polars as pl
+
+table = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [3.0, 7.0, 5.0]})
+residual = flatppl("""
+    data = external(cartpow(cartprod(x=reals, y=reals), 3))
+    inputs = data
+    outputs = sum(data.y .- data.x)
+""").compile()
+print(float(residual(table)))
+print(float(residual(table.to_arrow())))
+```
+
+```{testoutput}
+9.0
+9.0
+```
+
+Conversion borrows host buffers when possible. Combining chunks, unpacking
+Boolean columns, changing precision, or transferring to a GPU can require copies.
 
 JAX transformations accept JAX pytrees. Pass dictionaries of JAX column arrays
 inside `jax.jit` or `jax.grad`. A DataFrame works when calling the compiled

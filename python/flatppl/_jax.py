@@ -13,6 +13,8 @@ from enzyme_ad.jax import hlo_call
 from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
 
+from ._tables import columns as table_columns
+
 
 def float_dtype(dtype) -> str:
     dtype = jnp.dtype(dtype)
@@ -83,6 +85,10 @@ def _pack(schema, value, leaves, path):
         for index, (child, item) in enumerate(zip(schema["items"], value)):
             _pack(child, item, leaves, f"{path}[{index}]")
     else:
+        if not isinstance(value, Mapping):
+            columns = table_columns(value)
+            if columns is not None:
+                value = columns
         names = {item["name"] for item in schema["fields"]}
         fields = value if isinstance(value, Mapping) else getattr(value, "columns", ())
         if set(fields) != names:

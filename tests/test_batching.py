@@ -69,6 +69,106 @@ def test_empty_map_and_invariant_outputs():
     np.testing.assert_array_equal(constants, [7, 7, 7])
 
 
+@pytest.mark.parametrize("selection", ["[1, 3, 3]", "indices", "indices[1]"])
+@pytest.mark.parametrize("axes", [(0, None), (None, 0), (0, 0)])
+def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes):
+    output = f"x[{selection}]" if selection == "indices[1]" else f"sum(x[{selection}])"
+    function = flatppl(f"""
+        x = elementof(cartpow(reals, 5))
+        indices = external(cartpow(integers, 3))
+        inputs = (x, indices)
+        outputs = {output}
+    """).compile()
+    x = jnp.arange(20, dtype=jnp.float32).reshape(4, 5) / 7
+    indices = jnp.array([[1, 3, 3], [5, 2, 4], [2, 2, 2], [4, 1, 5]])
+    arguments = tuple(v[0] if axis is None else v for v, axis in zip((x, indices), axes))
+
+    def oracle(x, indices):
+        selected = jnp.array([1, 3, 3]) if selection.startswith("[") else indices
+        if selection == "indices[1]":
+            selected = selected[0]
+        return jnp.sum(x[selected - 1])
+
+    mapped = jax.vmap(function, in_axes=axes)
+    reference = jax.vmap(oracle, in_axes=axes)
+    compiled = jax.jit(mapped).lower(*arguments).compile()
+    np.testing.assert_allclose(compiled(*arguments), reference(*arguments))
+    assert not re.search(r"\bwhile\(", compiled.as_text())
+    for actual, expected in (
+        (jax.vmap(jax.value_and_grad(function), in_axes=axes),
+         jax.vmap(jax.value_and_grad(oracle), in_axes=axes)),
+        (jax.grad(lambda x, i: jnp.sum(mapped(x, i))),
+         jax.grad(lambda x, i: jnp.sum(reference(x, i)))),
+    ):
+        found = jax.jit(actual)(*arguments)
+        wanted = expected(*arguments)
+        for value, target in zip(jax.tree.leaves(found), jax.tree.leaves(wanted)):
+            np.testing.assert_allclose(value, target)
+
+
+def test_empty_gather_map_keeps_empty_values_and_gradients():
+    function = flatppl("""
+        x = external(cartpow(reals, 3))
+        i = external(integers)
+        inputs = (x, i)
+        outputs = x[i]
+    """).compile()
+    x = jnp.empty((0, 3))
+    i = jnp.empty((0,), dtype=jnp.int32)
+    mapped = jax.vmap(function)
+    np.testing.assert_array_equal(jax.jit(mapped)(x, i), np.empty(0))
+    gradient = jax.jit(jax.grad(lambda x: jnp.sum(mapped(x, i))))(x)
+    np.testing.assert_array_equal(gradient, np.empty((0, 3)))
+
+
+def test_composed_primitives_keep_host_axes_separate_from_callable_axes():
+    function = flatppl("""
+        rows = external(cartpow(cartpow(reals, 4), 3))
+        score(x) = atan(x) + loggamma(1.0 + x*x)
+        inputs = rows
+        outputs = score(sum(sum.(rows)))
+    """).compile()
+    rows = jnp.linspace(-0.2, 0.4, 120).reshape(2, 3, 5, 4)
+
+    def oracle(rows):
+        total = jnp.sum(rows)
+        return jnp.arctan(total) + jax.scipy.special.gammaln(1 + total*total)
+
+    def mapped(f):
+        return jax.vmap(jax.vmap(f, in_axes=1))
+
+    compiled = jax.jit(mapped(function)).lower(rows).compile()
+    np.testing.assert_allclose(compiled(rows), mapped(oracle)(rows), rtol=2e-5, atol=2e-6)
+    assert not re.search(r"\bwhile\(", compiled.as_text())
+    found = jax.jit(mapped(jax.value_and_grad(function)))(rows)
+    wanted = mapped(jax.value_and_grad(oracle))(rows)
+    for value, target in zip(jax.tree.leaves(found), jax.tree.leaves(wanted)):
+        np.testing.assert_allclose(value, target, rtol=2e-5, atol=2e-6)
+
+
+def test_nested_gathers_keep_original_cell_axes():
+    function = flatppl("""
+        rows = external(cartpow(cartpow(reals, 4), 3))
+        indices = external(cartpow(integers, 2))
+        inputs = (rows, indices)
+        outputs = rows[indices]
+    """).compile()
+    rows = jnp.arange(60, dtype=jnp.float32).reshape(3, 5, 4)
+    indices = jnp.array([[3, 1], [2, 2]])
+
+    def mapped(f):
+        return jax.vmap(jax.vmap(f, in_axes=(1, None)), in_axes=(None, 0))
+
+    actual = mapped(function)
+    reference = mapped(lambda rows, indices: rows[indices - 1])
+    compiled = jax.jit(actual).lower(rows, indices).compile()
+    np.testing.assert_array_equal(compiled(rows, indices), reference(rows, indices))
+    assert not re.search(r"\bwhile\(", compiled.as_text())
+    found = jax.jit(jax.grad(lambda rows: actual(rows, indices).sum()))(rows)
+    wanted = jax.grad(lambda rows: reference(rows, indices).sum())(rows)
+    np.testing.assert_array_equal(found, wanted)
+
+
 def test_inactive_singular_derivative_stays_inactive():
     function = flatppl("""
         x = elementof(reals)

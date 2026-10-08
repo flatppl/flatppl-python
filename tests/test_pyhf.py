@@ -1,6 +1,7 @@
 import io
 import json
 import math
+import re
 
 import jax
 import jax.numpy as jnp
@@ -105,5 +106,7 @@ def test_sliced_reduction_counts_support_vmap():
         outputs = aggregate(sum, [.col], rows[.row, .col])
     ''').compile()
     values = jnp.arange(24, dtype=jnp.float32).reshape(2, 4, 3)
-    actual = jax.jit(jax.vmap(evaluate))(values)
+    compiled = jax.jit(jax.vmap(evaluate)).lower(values).compile()
+    actual = compiled(values)
     np.testing.assert_allclose(actual, np.asarray(values)[:, [0, 2], :].sum(axis=1))
+    assert not re.search(r"\bwhile\(", compiled.as_text())

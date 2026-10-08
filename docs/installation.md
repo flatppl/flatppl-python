@@ -7,19 +7,22 @@
 | Python | 3.12, 3.13, 3.14 |
 | JAX and jaxlib | 0.11.2 |
 | Enzyme (`enzyme-ad`) | 0.0.15+flatppl.3, FlatPPL fork |
-| Linux | x86-64, glibc 2.35 or newer, such as Ubuntu 22.04 |
+| Linux x86-64 | glibc 2.35 or newer, such as Ubuntu 22.04 |
+| Linux ARM64 | glibc 2.28 or newer |
 | macOS | Apple silicon, macOS 14 or newer |
 
 The package pins JAX and Enzyme together. Enzyme wheels come from the
 [FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.3)
 and include shared forward work for values and gradients, stable real
 reciprocal-square-root derivatives, batching rules, and sharding support.
-These are alpha builds. Linux ARM64, Intel macOS, and Windows are not packaged.
+These are alpha builds. Intel macOS and Windows are not packaged.
 Package metadata selects the Enzyme wheel by Python version and platform, with
 a pinned URL and SHA-256 hash. No separate constraints file is needed.
 
-The package's CI tests each supported Python version on both wheel targets.
-The package tests also passed on two NVIDIA A100s using Python 3.14 and CUDA 12.
+CI tests each supported Python version on Linux x86-64 and macOS ARM64.
+Linux ARM64 wheels are built and checked on an ARM server for each release.
+GPU checks use two NVIDIA A100s with CUDA 12 and a GH200 with CUDA 13, both
+using Python 3.14.
 See [JAX and differentiation](jax.md).
 
 ## Install from GitHub with Pixi
@@ -79,14 +82,24 @@ FlatPPL wheel, whose metadata supplies all runtime dependencies.
 The FlatPPL wheel contains the native compiler. Using it requires neither the
 Rust toolchain nor the FlatPPL CLI.
 
-For the tested NVIDIA setup, add JAX's CUDA 12 runtime in the same environment:
+Linux ARM64 users can install from GitHub with Pixi or build from source.
+The adapter installs a prebuilt Enzyme wheel on that platform too.
+
+The A100 checks use JAX's CUDA 12 runtime:
 
 ```sh
 python -m pip install "jax[cuda12]==0.11.2"
 ```
 
+The GH200 ARM64 checks use CUDA 13:
+
+```sh
+python -m pip install "jax[cuda13]==0.11.2"
+```
+
 Follow the [JAX driver requirements](https://docs.jax.dev/en/latest/installation.html)
-for your GPU. GPU qualification used an A100 and driver 570.124.06.
+for your GPU. Qualification used driver 570.124.06 on the A100s and
+595.71.05 on the GH200.
 
 ## Check the installation
 

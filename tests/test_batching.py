@@ -1,9 +1,12 @@
 """Host batch axes preserve each query's cell shapes, activity, and RNG state."""
 
+import re
+
 import blackjax
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from flatppl import Integration, flatppl
 
@@ -112,6 +115,44 @@ def test_scan_map_matches_independent_recurrences():
     )
     expected = jax.vmap(jax.value_and_grad(oracle), in_axes=(0, None))(alpha, xs)
     np.testing.assert_allclose(found, expected, rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize("length", [1, 7])
+@pytest.mark.parametrize("batches", [0, 2])
+def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches):
+    function = flatppl("""
+        alpha = 0.5
+        n = external(integers)
+        xs = external(cartpow(reals, n))
+        step(s, x) = record(total=tanh(alpha*s.total+x), square=s.square+x^2)
+        states = scan(step, record(total=0.0, square=0.0), xs)
+        inputs = (alpha, xs)
+        outputs = sum(states.total) + sum(states.square)
+    """).set(n=length).compile()
+
+    def oracle(alpha, xs):
+        def step(state, x):
+            next_state = (jnp.tanh(alpha * state[0] + x), state[1] + x * x)
+            return next_state, next_state[0] + next_state[1]
+
+        return jax.lax.scan(step, (jnp.float32(0), jnp.float32(0)), xs)[1].sum()
+
+    alpha = jnp.array([[0.2, 0.5, 0.8], [0.1, -0.3, 0.4]])[:batches]
+    xs = jnp.linspace(-0.3, 0.7, length * 3 * batches).reshape(length, 3, batches)
+
+    def mapped(f):
+        return jax.vmap(jax.vmap(f, in_axes=(0, 1)), in_axes=(0, 2))
+
+    compiled = jax.jit(mapped(function)).lower(alpha, xs).compile()
+    np.testing.assert_allclose(
+        compiled(alpha, xs), mapped(oracle)(alpha, xs), rtol=3e-5, atol=3e-5
+    )
+    if length > 1 and batches:
+        assert len(re.findall(r"\bwhile\(", compiled.as_text())) == 1
+    found = jax.jit(mapped(jax.value_and_grad(function, argnums=(0, 1))))(alpha, xs)
+    expected = mapped(jax.value_and_grad(oracle, argnums=(0, 1)))(alpha, xs)
+    for value, reference in zip(jax.tree.leaves(found), jax.tree.leaves(expected)):
+        np.testing.assert_allclose(value, reference, rtol=3e-5, atol=3e-5)
 
 
 def test_mapped_integration_matches_exponential_normalizer():

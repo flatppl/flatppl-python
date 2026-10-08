@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.2` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.3` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -89,11 +89,20 @@ Batch axes remain separate from a query's authored cell dimensions, so
 `lengthof` and reductions keep their original meaning. New static batch shapes
 trigger compilation. Each compiled function caches up to 32 batch exports.
 
-The emitter tensorizes supported pointwise operations and cell reductions.
-Other operations, including scans and sampling, use device loops around the
-scalar program. Enzyme-created derivative programs also use device loops when
-mapped. This preserves semantics but can be much slower than native JAX batching,
-especially on GPUs. `vmap` support does not promise equal throughput.
+The emitter tensorizes supported pointwise operations, cell reductions, and
+fixed-shape scans. A supported mapped scan keeps one loop over time and processes all
+batch lanes together. It does not add a loop over lanes. Record states,
+captured shared parameters, and nonleading input axes use the same path.
+
+The Enzyme fork tensorizes supported imported StableHLO derivative programs.
+Both derivative orders above retain tensor batching. Values and pullbacks share
+forward residuals, so a mapped value-and-gradient scan has one forward time loop
+and one reverse time loop.
+
+Sampling, data-dependent loops, and operations without a tensor batching rule
+retain pointwise device loops. This fallback preserves each lane's semantics,
+including its RNG state. These cases can be slower than native JAX batching,
+especially on GPUs.
 
 ## Shard calls across devices
 

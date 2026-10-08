@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.3` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.4` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -89,18 +89,29 @@ Batch axes remain separate from a query's authored cell dimensions, so
 `lengthof` and reductions keep their original meaning. New static batch shapes
 trigger compilation. Each compiled function caches up to 32 batch exports.
 
-The emitter tensorizes supported pointwise operations, cell reductions, and
-fixed-shape scans. A supported mapped scan keeps one loop over time and processes all
-batch lanes together. It does not add a loop over lanes. Record states,
-captured shared parameters, and nonleading input axes use the same path.
+The emitter batches the scalar program's typed primitive graph. Pointwise
+operations, reshapes, broadcasts, slices, transposes, concatenations, gathers,
+and cell reductions compose without a list of supported FlatPPL function names.
+Queries built from these primitives gain tensor batching automatically.
+Gathers support shared and mapped indices, including repeated selections.
+
+Specialized paths remain available. A supported mapped scan keeps one loop over
+time and processes all batch lanes together. It does not add a loop over lanes.
+Record states, captured shared parameters, and nonleading input axes use the
+same scan path.
 
 The Enzyme fork tensorizes supported imported StableHLO derivative programs.
 Both derivative orders above retain tensor batching. Values and pullbacks share
 forward residuals, so a mapped value-and-gradient scan has one forward time loop
 and one reverse time loop.
 
-Sampling, data-dependent loops, and operations without a tensor batching rule
-retain pointwise device loops. This fallback preserves each lane's semantics,
+Padding and closed scatter-update regions also batch, including gather pullbacks
+with repeated indices. The fork optimizes loop-free tensor graphs after batching
+to simplify newly exposed broadcasts, gathers, and reductions. It leaves existing
+loops outside this extra optimization stage.
+
+Sampling, data-dependent loops, and programs without a complete tensor batching
+path retain pointwise device loops. This fallback preserves each lane's semantics,
 including its RNG state. These cases can be slower than native JAX batching,
 especially on GPUs.
 

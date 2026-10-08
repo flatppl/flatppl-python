@@ -9,7 +9,7 @@ matches independent matrix/reduction values on both devices.
 Each sampling smoke run uses float32, two chains, 64 warmup steps and 64 retained
 draws per chain. Seeds are 827 and 828. The tested stack is JAX/jaxlib 0.11.2,
 released Enzyme 0.0.15 and BlackJAX 1.7.1. The A100 uses CUDA 12.
-The package now pins our Enzyme fork's `0.0.15+flatppl.3` alpha wheels.
+The package now pins our Enzyme fork's `0.0.15+flatppl.4` alpha wheels.
 These runs check compilation, first derivatives and sampler execution.
 They do not establish mixing or posterior convergence.
 
@@ -24,6 +24,13 @@ batching and differentiation. Compiled pointwise gradients have no lane loop.
 Supported mapped scans have one forward time loop and one reverse time loop
 for value-and-gradient calls. The checks preserve exact RNG states and
 data-dependent control flow through the pointwise fallback.
+
+The general primitive batching checks cover shared and mapped gather indices,
+repeated indices, empty batches, crossed axes, and composed reductions. They
+check values and gradients against independent JAX expressions and inspect the
+compiled program for unwanted loops over batch lanes. The published Belle II
+combined likelihood also passes local float64 comparisons against pyhf for
+batched densities and all 232 gradient components.
 
 ## Compiler coverage
 

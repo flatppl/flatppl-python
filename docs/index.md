@@ -36,6 +36,7 @@ quickstart
 :caption: Guides
 
 modules
+pyhf
 values
 jax
 integration

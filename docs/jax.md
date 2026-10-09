@@ -106,7 +106,8 @@ Gathers support shared and mapped indices, including repeated selections.
 Specialized paths remain available. A supported mapped scan keeps one loop over
 time and processes all batch lanes together. It does not add a loop over lanes.
 Record states, captured shared parameters, and nonleading input axes use the
-same scan path.
+same scan path. Scans followed by dotted `invlogit` and Bernoulli likelihoods,
+including HGF models with Uniform interval priors, also retain one time loop.
 
 The Enzyme fork tensorizes supported imported StableHLO derivative programs.
 Both derivative orders above retain tensor batching. Values and pullbacks share

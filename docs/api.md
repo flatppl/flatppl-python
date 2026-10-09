@@ -91,7 +91,7 @@ The original module remains reusable. Register the returned module in its owning
 context to import the specialized definition from another query.
 ```
 
-```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True, integration=None)
+```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True, integration=None, optimize_forward=False)
 
 Compile the explicit `inputs` and `outputs` signature into a reusable JAX callable.
 
@@ -101,6 +101,9 @@ Compile the explicit `inputs` and `outputs` signature into a reusable JAX callab
   `False` selects generic forward emission and rejects differentiation.
 - `integration`: Pass `Integration(...)` to enable numerical scalar marginals
   and normalizers when no exact rule applies. The default requires exact lowering.
+- `optimize_forward`: Apply extra Enzyme optimization passes to forward calls.
+  Defaults to `False`. Programs containing loops retain the default forward path.
+  Differentiation and shared value-and-gradient work keep their existing pass order.
 
 Compilation raises `CompilationError` for compiler diagnostics and `ValueError`
 for unsupported precision settings. Queries with 64-bit ABI values require JAX x64.

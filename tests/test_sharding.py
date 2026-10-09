@@ -17,7 +17,7 @@ def test_sharded_batches_sum_shared_parameter_gradients():
         scale = elementof(reals)
         inputs = (x, scale)
         outputs = scale*x*x + x*x*x
-    """).compile()
+    """).compile(optimize_forward=True)
     mesh = Mesh(np.array(jax.devices()), ("devices",))
     x = jnp.linspace(-1.0, 2.0, 2 * jax.device_count())
     scale = jnp.float32(2)
@@ -26,6 +26,9 @@ def test_sharded_batches_sum_shared_parameter_gradients():
         mesh=mesh,
         in_specs=(P("devices"), P()),
         out_specs=P("devices"),
+    )
+    np.testing.assert_allclose(
+        jax.jit(mapped)(x, scale), scale * x * x + x**3, rtol=2e-6
     )
     value, (gx, gs) = jax.jit(
         jax.value_and_grad(lambda x, s: mapped(x, s).sum(), argnums=(0, 1))

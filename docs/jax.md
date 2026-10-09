@@ -37,6 +37,14 @@ instead of repeating the forward scan. Unsupported joint derivatives, effectful
 programs, and retained module symbols use the existing differentiation path.
 Higher derivatives remain limited by the operations and differentiation path.
 
+Use `module.compile(optimize_forward=True)` to apply extra Enzyme optimization
+passes to forward calls. This can reduce GPU kernel work, but the benefit depends
+on the model and device. Benchmark your workload before enabling it.
+Programs containing loops, including scans and numerical integration, retain
+their existing forward path while Enzyme's loop optimizer has counter-type limits.
+The option leaves differentiation and shared `value_and_grad` work unchanged.
+Forward and differentiated primal values can differ slightly through rounding.
+
 General real metric contractions support runtime indefinite matrices, repeated
 indices, batches, and raised outputs. Scalar complex intermediates can feed real
 projections such as `abs2`; complex inputs and outputs remain unsupported.

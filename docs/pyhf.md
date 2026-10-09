@@ -79,6 +79,11 @@ To bind observations before compilation instead, use
 `model.set(singlechannel_observed=[50.0, 60.0])` and register that returned module.
 The compiled function supports the same [JAX transformations](jax.md) as other queries.
 
+For several channels, `m.likelihood` includes all observations and auxiliary
+constraints. A named `<channel>_likelihood` selects only that channel's observations.
+The compiler batches compatible observation terms while preserving these query
+boundaries and the original parameter order.
+
 ## Names, precision, and statistical meaning
 
 Inspect `model.source` and `model.bindings` for the generated names.

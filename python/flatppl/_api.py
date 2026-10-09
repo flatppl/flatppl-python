@@ -132,13 +132,17 @@ class Module:
         native = _native_call(self._context._native.set, self._native, values)
         return Module(native, self._context)
 
-    def compile(self, *, dtype="float32", autodiff=True, integration=None):
+    def compile(
+        self, *, dtype="float32", autodiff=True, integration=None, optimize_forward=False
+    ):
         """Compile the explicit signature into a reusable JAX callable.
 
         Set ``autodiff=False`` for value-only queries, including sampling.
         These use generic emission and reject JAX differentiation.
         Set ``integration=Integration(...)`` to allow numerical scalar marginals
         and normalizers when no exact rule applies.
+        Set ``optimize_forward=True`` for extra Enzyme passes on loop-free
+        forward calls. Differentiation retains its existing optimization path.
         """
         from ._jax import CompiledFunction, float_dtype
 
@@ -161,7 +165,12 @@ class Module:
                 )
             )
 
-        return CompiledFunction(exported, autodiff=autodiff, export_batch=export_batch)
+        return CompiledFunction(
+            exported,
+            autodiff=autodiff,
+            export_batch=export_batch,
+            optimize_forward=optimize_forward,
+        )
 
 
 def flatppl(

@@ -1,5 +1,6 @@
 import gc
 import math
+import re
 import runpy
 from pathlib import Path
 
@@ -33,10 +34,24 @@ def test_product_density_gradient_at_zero_and_value_only_calls():
     value, gradient = jax.jit(jax.value_and_grad(module.compile()))(x)
     np.testing.assert_allclose(value, -math.log(2 * math.pi) / 2 - 0.5, atol=2e-6)
     np.testing.assert_allclose(gradient, [30, 0, 0, 24, 0, 0], atol=2e-6)
-    value_only = module.compile(autodiff=False)
+    value_only = module.compile(autodiff=False, optimize_forward=True)
     np.testing.assert_allclose(jax.jit(value_only)(x), value, atol=2e-6)
     with pytest.raises(TypeError):
         jax.grad(value_only)(x)
+
+
+def test_forward_optimization_preserves_values_and_shared_derivatives():
+    module = flatppl("x = elementof(reals)\ninputs = x\noutputs = exp(x*x)")
+    function = module.compile(optimize_forward=True)
+    x = jnp.float32(0.25)
+    expected = math.exp(float(x)**2)
+    np.testing.assert_allclose(jax.jit(function)(x), expected, rtol=2e-6)
+    np.testing.assert_allclose(function(x), module.compile()(x), rtol=2e-6)
+    value, tangent = jax.jit(lambda x: jax.jvp(function, (x,), (jnp.float32(1),)))(x)
+    np.testing.assert_allclose([value, tangent], [expected, 2*x*expected], rtol=2e-6)
+    joint = jax.jit(jax.value_and_grad(function)).lower(x).compile()
+    np.testing.assert_allclose(joint(x), [expected, 2*x*expected], rtol=2e-6)
+    assert len(re.findall(r"\bexponential\(", joint.as_text())) == 1
 
 
 def test_nested_inputs_use_schema_order_and_support_gradients():

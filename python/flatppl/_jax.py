@@ -9,7 +9,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import numpy as np
-from enzyme_ad.jax import hlo_call
+from enzyme_ad.jax import hlo_call, optimization_passes
 from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
 
@@ -106,7 +106,7 @@ def _unpack(schema, leaves):
     return {item["name"]: _unpack(item["value"], leaves) for item in schema["fields"]}
 
 
-def _compiled_call(exported, export_batch, autodiff):
+def _compiled_call(exported, export_batch, autodiff, optimize_forward):
     @lru_cache(maxsize=32)
     def specialize(shape, input_axes):
         source = (exported if not shape else export_batch(shape, input_axes))[
@@ -117,7 +117,16 @@ def _compiled_call(exported, export_batch, autodiff):
         def raw(*args):
             return tuple(hlo_call(*args, source=source))
 
-        mapped = custom_vmap(raw)
+        forward = raw
+        # Enzyme's optional loop optimizer does not preserve all counter types.
+        if optimize_forward and "stablehlo.while" not in source:
+            passes = optimization_passes(enable_loop_raising_passes=False)
+
+            @jax.jit
+            def forward(*args):
+                return tuple(hlo_call(*args, source=source, passes=passes))
+
+        mapped = custom_vmap(forward)
 
         @mapped.def_vmap
         def batch(size, in_batched, *args):
@@ -169,7 +178,7 @@ class CompiledFunction:
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
 
-    def __init__(self, exported, *, autodiff, export_batch):
+    def __init__(self, exported, *, autodiff, export_batch, optimize_forward=False):
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
@@ -187,7 +196,7 @@ class CompiledFunction:
                 "enable JAX x64 to represent this query's 64-bit ABI values"
             )
 
-        call = _compiled_call(exported, export_batch, autodiff)
+        call = _compiled_call(exported, export_batch, autodiff, optimize_forward)
 
         object.__setattr__(self, "stablehlo", source)
         object.__setattr__(self, "schema", schema)

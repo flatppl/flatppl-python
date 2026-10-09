@@ -17,7 +17,7 @@ def test_nested_maps_keep_cell_reductions_and_structured_outputs():
         data = external(cartpow(reals, 3))
         inputs = (p, data)
         outputs = record(score = p.scale * sum(p.x .+ data), vector = p.x, count = real(lengthof(p.x)))
-    """).compile()
+    """).compile(optimize_forward=True)
     x = jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4)
     scale = jnp.float32(2)
     data = jnp.array([0.5, -1.0, 2.0])
@@ -37,7 +37,7 @@ def test_both_gradient_orders_and_directional_derivatives():
         scale = elementof(reals)
         inputs = (x, scale)
         outputs = scale*x*x + x*x*x
-    """).compile()
+    """).compile(optimize_forward=True)
     x, scale = jnp.array([-2.0, 0.5, 3.0]), jnp.float32(2)
     mapped = jax.vmap(function, in_axes=(0, None))
     values, (gx, gs) = jax.jit(
@@ -193,7 +193,7 @@ def test_scan_map_matches_independent_recurrences():
         states = scan(update, 0.2, xs)
         inputs = (alpha, xs)
         outputs = sum(states)
-    """).compile()
+    """).compile(optimize_forward=True)
 
     def oracle(alpha, xs):
         def step(state, x):
@@ -262,7 +262,7 @@ def test_mapped_integration_matches_exponential_normalizer():
         measure = normalize(logweighted(weight, Lebesgue(interval(0.0, 1.0))))
         inputs = a
         outputs = logdensityof(measure, 0.25)
-    """).compile(integration=Integration())
+    """).compile(integration=Integration(), optimize_forward=True)
     a = jnp.array([0.5, 2.0, 4.0])
     expected = 0.25 * a - jnp.log(jnp.expm1(a) / a)
     np.testing.assert_allclose(
@@ -277,7 +277,7 @@ def test_mapped_sampling_preserves_each_explicit_key():
             shift = 0.0
             inputs = (state, shift)
             outputs = rand(state, Normal(shift, 1.0))
-        """).compile(autodiff=False)
+        """).compile(autodiff=False, optimize_forward=True)
         keys = jnp.array([[1729, 0], [37, 5], [91, 3]], dtype=jnp.uint64)
         shifts = jnp.array([-1.0, 0.0, 2.0], dtype=jnp.float32)
         for axes, supplied in (((0, 0), keys), ((None, 0), keys[0])):

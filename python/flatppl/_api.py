@@ -81,6 +81,7 @@ class Module:
     def __init__(self, native, context: Context):
         self._native = native
         self._context = context
+        self._exports = {}
         self._bindings = MappingProxyType(
             {
                 item["name"]: Binding(
@@ -133,7 +134,13 @@ class Module:
         return Module(native, self._context)
 
     def compile(
-        self, *, dtype="float32", autodiff=True, integration=None, optimize_forward=False
+        self,
+        *,
+        dtype="float32",
+        autodiff=True,
+        integration=None,
+        optimize_forward=False,
+        target=None,
     ):
         """Compile the explicit signature into a reusable JAX callable.
 
@@ -143,10 +150,13 @@ class Module:
         and normalizers when no exact rule applies.
         Set ``optimize_forward=True`` for extra Enzyme passes on loop-free
         forward calls. Differentiation retains its existing optimization path.
+        ``target`` picks the "cpu" or "gpu" lowering profile and defaults to the
+        JAX backend. Both profiles run anywhere and give the same values.
         """
-        from ._jax import CompiledFunction, float_dtype
+        from ._jax import CompiledFunction, float_dtype, lowering_target
 
         dtype = float_dtype(dtype)
+        target = lowering_target(target)
         if integration is not None and not isinstance(integration, Integration):
             raise TypeError("integration must be an Integration instance or None")
         settings = (
@@ -154,19 +164,22 @@ class Module:
             if integration is None
             else (integration.rtol, integration.atol, integration.max_intervals)
         )
-        exported = json.loads(
-            _native_call(self._native.export, dtype, autodiff, settings)
-        )
+
+        def export(batch=None):
+            key = (dtype, autodiff, settings, target, batch)
+            if key not in self._exports:
+                self._exports[key] = json.loads(
+                    _native_call(
+                        self._native.export, dtype, autodiff, settings, batch, target
+                    )
+                )
+            return self._exports[key]
 
         def export_batch(shape, axes):
-            return json.loads(
-                _native_call(
-                    self._native.export, dtype, autodiff, settings, (shape, axes)
-                )
-            )
+            return export((shape, axes))
 
         return CompiledFunction(
-            exported,
+            export(),
             autodiff=autodiff,
             export_batch=export_batch,
             optimize_forward=optimize_forward,

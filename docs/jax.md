@@ -45,6 +45,10 @@ their existing forward path while Enzyme's loop optimizer has counter-type limit
 The option leaves differentiation and shared `value_and_grad` work unchanged.
 Forward and differentiated primal values can differ slightly through rounding.
 
+The compiler picks a CPU or GPU lowering profile from `jax.default_backend()`.
+The profiles differ only in how equivalent operations are lowered, so there is
+nothing to configure. Pass `target="cpu"` or `target="gpu"` to override it.
+
 General real metric contractions support runtime indefinite matrices, repeated
 indices, batches, and raised outputs. Scalar complex intermediates can feed real
 projections such as `abs2`; complex inputs and outputs remain unsupported.

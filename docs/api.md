@@ -91,7 +91,7 @@ The original module remains reusable. Register the returned module in its owning
 context to import the specialized definition from another query.
 ```
 
-```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True, integration=None, optimize_forward=False)
+```{py:method} flatppl.Module.compile(*, dtype="float32", autodiff=True, integration=None, optimize_forward=False, target=None)
 
 Compile the explicit `inputs` and `outputs` signature into a reusable JAX callable.
 
@@ -104,6 +104,9 @@ Compile the explicit `inputs` and `outputs` signature into a reusable JAX callab
 - `optimize_forward`: Apply extra Enzyme optimization passes to forward calls.
   Defaults to `False`. Programs containing loops retain the default forward path.
   Differentiation and shared value-and-gradient work keep their existing pass order.
+- `target`: `"cpu"` or `"gpu"` lowering profile. The default follows
+  `jax.default_backend()`. Both profiles run on any backend and give the same
+  values. Exports are cached per dtype, autodiff mode, integration and target.
 
 Compilation raises `CompilationError` for compiler diagnostics and `ValueError`
 for unsupported precision settings. Queries with 64-bit ABI values require JAX x64.

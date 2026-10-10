@@ -25,6 +25,15 @@ def float_dtype(dtype) -> str:
     return dtype.name
 
 
+def lowering_target(target=None) -> str:
+    """Resolve the lowering profile, following the JAX backend by default."""
+    if target is None:
+        return "cpu" if jax.default_backend() == "cpu" else "gpu"
+    if target not in ("cpu", "gpu"):
+        raise ValueError('target must be "cpu", "gpu" or None')
+    return target
+
+
 def _freeze(value):
     if isinstance(value, dict):
         return MappingProxyType({key: _freeze(item) for key, item in value.items()})

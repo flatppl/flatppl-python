@@ -214,7 +214,23 @@ def _compiled_call(
 
 @dataclass(frozen=True, eq=False, init=False)
 class CompiledFunction:
-    """A JAX-transformable callable with immutable source ABI metadata."""
+    """A compiled query as a JAX function.
+
+    :meth:`flatppl.Module.compile` returns instances. Calls take the query's inputs
+    and return its outputs as described in :doc:`/values`. The function works
+    under ``jax.jit``, ``jax.grad``, ``jax.vmap`` and sharding; see
+    :doc:`/jax`.
+
+    Attributes:
+        stablehlo: The emitted StableHLO text of the unbatched query.
+        schema: A read-only description of the interface with the keys
+            ``entry_point``, ``inputs`` (entries with ``name`` and ``value``),
+            ``output``, ``multiple_outputs`` and ``output_names``. Each value
+            schema has a ``kind`` of ``tensor`` (with ``index``, ``dtype``,
+            ``shape`` and ``value_type``), ``record`` or ``table`` (with
+            ``fields``, and ``rows`` for a table), or ``tuple`` (with
+            ``items``).
+    """
 
     stablehlo: str
     schema: Mapping[str, Any]
@@ -258,6 +274,21 @@ class CompiledFunction:
         object.__setattr__(self, "_requires_x64", requires_x64)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Evaluate the query.
+
+        Args:
+            *args: Inputs in declared order.
+            **kwargs: Inputs by name, after the positional ones.
+
+        Returns:
+            An array, or a dict or tuple of arrays, as the query's outputs declare.
+
+        Raises:
+            TypeError: An input is missing, repeated or unknown, a record or
+                table has other fields, or a value has the wrong element type.
+            ValueError: An array has the wrong shape, an integer does not fit
+                its type, or the query needs JAX x64.
+        """
         if self._requires_x64 and not jax.config.x64_enabled:
             raise ValueError("this compiled query requires JAX x64")
         fields = self.schema["inputs"]

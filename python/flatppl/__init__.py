@@ -1,4 +1,8 @@
-"""FlatPPL source modules and JAX callables backed by the Rust compiler."""
+"""Compile FlatPPL modules into differentiable JAX functions.
+
+The Rust compiler parses and types FlatPPL source and emits StableHLO. JAX runs
+the program and Enzyme-JAX differentiates it. ``__all__`` lists the public API.
+"""
 
 from typing import TYPE_CHECKING
 

@@ -30,6 +30,8 @@ python examples/nuts.py
 ```
 
 Or download {download}`nuts.py <../examples/nuts.py>` and run `python nuts.py`.
+The [gallery page](examples/nuts.rst) shows the script with its output from the
+documentation build.
 
 The code below is included directly from the tested example:
 

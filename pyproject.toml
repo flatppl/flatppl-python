@@ -84,3 +84,5 @@ convention = "google"
 # These closures run inside the loop iteration that binds their variables.
 "tests/**" = ["D", "B023"]
 "examples/corpus.py" = ["B023"]
+# Gallery pages start with a reStructuredText title.
+"examples/**" = ["D205", "D415"]

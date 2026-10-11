@@ -1,12 +1,15 @@
 """Public attributes and documented argument errors that other tests do not reach."""
 
+import inspect
 import subprocess
 import sys
+from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
+import flatppl as package
 from flatppl import CompilationError, CompiledFunction, Context, flatppl
 
 SOURCE = """x = elementof(reals)
@@ -117,3 +120,18 @@ def test_compiled_function_is_exported_without_importing_jax() -> None:
         check=True,
     )
     assert imported.stdout.strip() == "False"
+
+
+def test_public_symbols_have_docstrings_and_reference_entries() -> None:
+    # Autodoc drops an undocumented member without a warning.
+    reference = (Path(__file__).parents[1] / "docs" / "api.md").read_text()
+    for name in package.__all__:
+        assert f"flatppl.{name}" in reference, name
+    for symbol in (getattr(package, name) for name in package.__all__):
+        assert symbol.__doc__, symbol
+        if not inspect.isclass(symbol):
+            continue
+        for name, member in vars(symbol).items():
+            public = not name.startswith("_") or name == "__call__"
+            if public and (inspect.isfunction(member) or isinstance(member, property)):
+                assert member.__doc__, f"{symbol.__name__}.{name}"

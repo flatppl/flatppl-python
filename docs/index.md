@@ -46,10 +46,18 @@ corpus
 
 ```{toctree}
 :maxdepth: 1
+:caption: Examples
+
+examples/index
+```
+
+```{toctree}
+:maxdepth: 1
 :caption: Reference
 
 api
 development
+changelog
 ```
 
 ## Related projects

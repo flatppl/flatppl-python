@@ -100,6 +100,28 @@ The JavaScript backend still has separate gaps for Dalitz and numerical
 integration. Those corpus cases explicitly select StableHLO. No example case
 uses an allowed skip to hide a failed compiler path.
 
+## Ordered cutpoint prior
+
+The 2026-10-11 checks cover the updated
+[`ordinal-cheese-tasting` model](https://github.com/flatppl/flatppl-examples/blob/31b994c0b060ea90d8de2adb7a066b2c4288a15a/examples/ordinal-cheese-tasting.flatppl).
+Its cutpoint prior is:
+
+```text
+cuts ~ tilt(iid(Normal(0, 5), 8), Lebesgue(ordered(8)))
+```
+
+This is the law of eight sorted independent `Normal(0, 5)` draws. On ordered
+points its density is `8!` times the product of the eight Normal densities.
+It matches Stan's `ordered[8] cuts;` with `cuts ~ normal(0, 5);`.
+Stan's target omits the constant `log(8!)`; the probability law is unchanged.
+
+Independent checks compare 100,000 prior draws per execution path with
+analytic order-statistic means, covariances, CDFs and quantiles. JavaScript
+and StableHLO on CPU/A100 pass, including float32 and float64. A separate
+four-chain Stan prior run, with 2,000 retained draws per chain, agrees with
+the same analytic oracle. Its maximum rank Rhat is 1.0007. These are prior
+checks, separate from the earlier BlackJAX corpus smoke runs.
+
 ## Reproduce a target
 
 Download {download}`corpus.py <../examples/corpus.py>` or use the repository copy.

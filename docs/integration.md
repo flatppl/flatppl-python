@@ -157,18 +157,48 @@ added directly. Each continuous component has its own quadrature budget.
 A failed component returns NaN for the result. Component error estimates do
 not bound the composed gradient error.
 
-Variate-dependent weights on finite priors also normalize by exact enumeration:
+Affine log weights use closed-form exponential tilts. They preserve live
+parameters and need no `Integration()` setting:
 
 ```{testcode}
 tilted = flatppl("""
-    tilt = 1.3
-    prior = normalize(logweighted(z -> tilt*z, Bernoulli(0.25)))
-    inputs = tilt
+    theta = 1.3
+    prior = normalize(logweighted(z -> theta*z, Bernoulli(0.25)))
+    inputs = theta
     outputs = logdensityof(prior, 1)
 """).compile()
 expected = np.log(0.25) + 1.3 - np.logaddexp(np.log(0.75), np.log(0.25)+1.3)
 np.testing.assert_allclose(tilted(1.3), expected, rtol=2e-5)
 ```
+
+The compiler recognizes `Normal`, `MvNormal`, `Gamma`, `Exponential`,
+`ChiSquared`, `Bernoulli`, `Binomial`, `Poisson`, `Geometric`,
+`NegativeBinomial` and `NegativeBinomial2`. A finite additive constant in the
+log weight cancels. The equivalent `tilt` form also works:
+
+```{testcode}
+shifted = flatppl("""
+    theta = 0.3
+    point = 0.4
+    B = Normal(0, 1)
+    M = logweighted(fn(theta * _), Lebesgue(reals))
+    inputs = (theta, point)
+    outputs = logdensityof(tilt(M, B), point)
+""").compile()
+expected = -0.5*np.log(2*np.pi) - 0.5*(0.4 - 0.3)**2
+np.testing.assert_allclose(shifted(0.3, 0.4), expected, rtol=2e-5)
+```
+
+This law is `Normal(theta, 1)`. For `MvNormal`, use
+`fn(sum(theta .* _))`; the mean becomes `mu + cov * theta`.
+The source reference must have unit density over the base support for this
+rewrite. Restricted references retain their support and may need integration.
+Gamma and Exponential require `theta < rate`, ChiSquared requires
+`theta < 0.5`, and the geometric/negative-binomial families also have finite
+MGF domains. Undefined normalizers return NaN.
+
+Other variate-dependent weights on finite priors can normalize by exact
+enumeration.
 
 Interval truncation uses a CDF when the target provides one. With integration
 enabled, other admitted continuous constructors use one integral over the

@@ -48,6 +48,12 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: closed-form exponential tilts for eleven
+  distribution families, with live parameters, gradients and batched evaluation.
+- Bundled Rust compiler update: Poisson sampling uses small- and large-rate
+  algorithms without the previous count cutoff. This also repairs
+  negative-binomial sampling. Seeded draws change, while deterministic replay
+  and RNG continuation remain.
 - Compiled programs live in one process-wide cache of up to 256 entries, so
   compiling the same query again reuses the XLA program.
 - `Module.set` sends arrays as one typed list and accepts infinite reals.

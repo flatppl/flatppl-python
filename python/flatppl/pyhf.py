@@ -309,7 +309,10 @@ class PyhfView:
         ``point`` holds the parameters as a record. With ``bind`` the loaded
         model takes them as values too, so its derived bindings are values.
         """
-        from ._query import _domain, _flat_component  # pyright: ignore[reportPrivateUsage]
+        from ._query import (
+            _domain,  # pyright: ignore[reportPrivateUsage]
+            _flat_component,  # pyright: ignore[reportPrivateUsage]
+        )
 
         bindings = self.module.bindings
         lines: list[str] = []

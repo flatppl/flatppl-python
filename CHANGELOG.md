@@ -17,6 +17,26 @@ tagged release.
   as doctests.
 - An example gallery that runs `nuts.py`, `regression.py` and `corpus.py` in
   the documentation build, each within a stated runtime budget.
+- `Binding.kind`, `domain`, `shape`, `size`, `source`, `location` and
+  `dependencies`, read from the compiler's inferred metadata.
+- `Module.parameters` with `flatppl.Parameters` and `flatppl.Parameter`.
+- `Module.constant` reads a literal binding back, with `flatppl.Fixed` and
+  `flatppl.Reference` for markers and references.
+- Readable reprs for modules, bindings and parameters, and `dir(module)`
+  lists the bindings attribute access reaches.
+- `CompiledFunction.example_input` builds inputs of the right structure, and
+  compiled functions have a readable repr.
+- `CompilationError.location` and `excerpt`, with `flatppl.Location`.
+  `str(error)` shows the line and column and the source line with a caret.
+
+### Changed
+
+- Compiled programs live in one process-wide cache of up to 256 entries, so
+  compiling the same query again reuses the XLA program.
+- `Module.set` sends arrays as one typed list and accepts infinite reals.
+- The float64 error names `jax_enable_x64`.
+- The compiler pin moves to flatppl-rust with binding metadata, located
+  diagnostics, literal readback, slicing and mathematics rendering.
 
 ### Known limitations
 

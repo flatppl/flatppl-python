@@ -99,7 +99,31 @@ can request the same exports through `flatppl_host::BatchSpec` and
 `LoadedModule::compile_batched`. Python translates JAX axes into this API.
 Batch axes remain separate from a query's authored cell dimensions, so
 `lengthof` and reductions keep their original meaning. New static batch shapes
-trigger compilation. Each compiled function caches up to 32 batch exports.
+trigger compilation.
+
+## Compilation caches
+
+A module caches its exports, so compiling it again with the same options skips
+the Rust compiler. The jitted programs live in one cache for the whole process,
+keyed by StableHLO text, batch axes, `autodiff` and `optimize_forward`. A second
+`compile()` of the same query, even from a new module, reuses the compiled XLA
+program. The cache holds up to 256 programs, one per unbatched query and one per
+batch shape, and drops the least recently used first. A cached program keeps
+the module that built it alive.
+
+JAX's persistent compilation cache also works for these programs. Set it up
+before the first compilation:
+
+```python
+import jax
+
+jax.config.update("jax_compilation_cache_dir", "/path/to/cache")
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
+```
+
+A second process then loads the compiled programs from disk. A 64-element
+value-and-gradient query showed 3 cache hits and no misses in the second
+process, and its first call fell from 0.13 s to 0.03 s on Apple M4.
 
 The emitter batches the scalar program's typed primitive graph. Pointwise
 operations, reshapes, broadcasts, slices, transposes, concatenations, gathers,

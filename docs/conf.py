@@ -26,8 +26,8 @@ extensions = [
 ]
 exclude_patterns = ["_build"]
 nitpicky = True
-# Napoleon writes typing.Any unqualified in attribute types.
-nitpick_ignore = [("py:class", "Any")]
+# Napoleon writes typing.Any and typing.Literal unqualified in attribute types.
+nitpick_ignore = [("py:class", "Any"), ("py:class", "Literal")]
 myst_heading_anchors = 3
 html_theme = "furo"
 html_title = project

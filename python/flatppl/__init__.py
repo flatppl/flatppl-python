@@ -6,7 +6,18 @@ the program and Enzyme-JAX differentiates it. ``__all__`` lists the public API.
 
 from typing import TYPE_CHECKING
 
-from ._api import Binding, CompilationError, Context, Integration, Module, flatppl
+from ._api import (
+    Binding,
+    CompilationError,
+    Context,
+    Integration,
+    Location,
+    Module,
+    Parameter,
+    Parameters,
+    flatppl,
+)
+from ._constants import Fixed, Reference
 from ._imports import from_pyhf
 
 if TYPE_CHECKING:
@@ -17,8 +28,13 @@ __all__ = [
     "CompilationError",
     "CompiledFunction",
     "Context",
+    "Fixed",
     "Integration",
+    "Location",
     "Module",
+    "Parameter",
+    "Parameters",
+    "Reference",
     "flatppl",
     "from_pyhf",
 ]

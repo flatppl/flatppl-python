@@ -1,12 +1,48 @@
-"""Convert fixed Python values to the shared host constant representation."""
+"""Convert fixed values between Python and the host constant representation."""
 
+import math
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 import numpy as np
 
-from ._schema import Constant
+from ._schema import ArrayData, Constant, Real
 from ._tables import columns as table_columns
+
+
+@dataclass(frozen=True)
+class Fixed:
+    """A value that a module's source marks as ``fixed(value)``.
+
+    :meth:`Module.constant` returns it for converter records, such as HS3
+    parameter points, where ``fixed`` pins a parameter.
+
+    Attributes:
+        value: The marked value.
+    """
+
+    value: object
+
+
+@dataclass(frozen=True)
+class Reference:
+    """A reference to another binding, read from a module's source.
+
+    :meth:`Module.constant` returns it where a record names a binding instead of
+    holding a value, such as the parameter of interest in a pyhf measurement.
+
+    Attributes:
+        name: The name of the referenced binding.
+    """
+
+    name: str
+
+
+def _real(value: float) -> Real:
+    if math.isinf(value):
+        return "inf" if value > 0 else "-inf"
+    return value
 
 
 def constant(value: Any) -> Constant:
@@ -17,7 +53,7 @@ def constant(value: Any) -> Constant:
     if isinstance(value, int):
         return {"kind": "integer", "value": value}
     if isinstance(value, float):
-        return {"kind": "real", "value": value}
+        return {"kind": "real", "value": _real(value)}
     if isinstance(value, str):
         return {"kind": "string", "value": value}
     if isinstance(value, tuple):
@@ -38,13 +74,42 @@ def constant(value: Any) -> Constant:
         raise TypeError("constant arrays require boolean, integer, or real values")
     if array.ndim == 0:
         return constant(array.item())
-    return {
-        "kind": "array",
-        "value": {
-            "shape": array.shape,
-            "data": [constant(item) for item in array.ravel().tolist()],
-        },
-    }
+    flat = array.ravel()
+    packed: ArrayData
+    if array.dtype.kind == "b":
+        packed = {"shape": list(array.shape), "dtype": "bool", "data": flat.tolist()}
+    elif array.dtype.kind in "iu":
+        packed = {"shape": list(array.shape), "dtype": "integer", "data": flat.tolist()}
+    else:
+        data: list[Real] = [_real(item) for item in flat.astype(float).tolist()]
+        packed = {"shape": list(array.shape), "dtype": "real", "data": data}
+    return {"kind": "array", "value": packed}
+
+
+def value(constant: Constant) -> object:
+    """Return the Python value of a host constant."""
+    kind, value_ = constant["kind"], constant["value"]
+    if kind == "real":
+        return float(cast(Real, value_))
+    if kind == "array":
+        array = cast(ArrayData, value_)
+        dtype = {"bool": np.bool_, "integer": np.int64, "real": np.float64}
+        data = (
+            [float(x) for x in array["data"]]
+            if array["dtype"] == "real"
+            else array["data"]
+        )
+        return np.asarray(data, dtype=dtype[array["dtype"]]).reshape(array["shape"])
+    if kind in ("record", "table"):
+        fields = cast(list[tuple[str, Constant]], value_)
+        return {name: value(item) for name, item in fields}
+    if kind == "tuple":
+        return tuple(value(item) for item in cast(list[Constant], value_))
+    if kind == "fixed":
+        return Fixed(value(cast(Constant, value_)))
+    if kind == "reference":
+        return Reference(cast(str, value_))
+    return value_
 
 
 def _fields(

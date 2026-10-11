@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from functools import lru_cache, partial
-from types import MappingProxyType
+from functools import partial
 from typing import Any, Literal, cast
 
 import jax
@@ -17,6 +17,7 @@ from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
 from jax.typing import DTypeLike
 
+from ._frozen import freeze
 from ._schema import Export, Schema, TensorSchema
 from ._tables import columns as table_columns
 
@@ -29,13 +30,23 @@ type _Call = Callable[..., tuple[jax.Array, ...]]
 # no stub for Device, so pyright sees Unknown at the JAX calls marked in this
 # module. Retry without the ignores after each JAX bump.
 
+# Jitted programs shared by every compiled function in the process, keyed by
+# StableHLO text, batch axes, autodiff and optimize_forward. The least recently
+# used program goes first. A cached program keeps the module that built it
+# alive, because its batching rule exports from that module.
+PROGRAM_CACHE_SIZE = 256
+_programs: OrderedDict[tuple[str, Axes, bool, bool], _Call] = OrderedDict()
+
 
 def float_dtype(dtype: DTypeLike) -> str:
     dtype = jnp.dtype(dtype)
     if dtype not in (jnp.dtype("float32"), jnp.dtype("float64")):
         raise ValueError("dtype must be float32 or float64")
     if dtype == jnp.dtype("float64") and not jax.config.x64_enabled:
-        raise ValueError("enable JAX x64 before compiling a float64 query")
+        raise ValueError(
+            "float64 needs JAX x64: call "
+            'jax.config.update("jax_enable_x64", True) before compiling'
+        )
     return dtype.name
 
 
@@ -46,16 +57,6 @@ def lowering_target(target: str | None = None) -> Literal["cpu", "gpu"]:
     if target not in ("cpu", "gpu"):
         raise ValueError('target must be "cpu", "gpu" or None')
     return target
-
-
-def _freeze(value: Any) -> Any:
-    if isinstance(value, dict):
-        fields = cast(dict[str, Any], value)
-        return MappingProxyType({key: _freeze(item) for key, item in fields.items()})
-    if isinstance(value, list):
-        items = cast(list[Any], value)
-        return tuple(_freeze(item) for item in items)
-    return value
 
 
 def _leaves(schema: Schema) -> Iterator[TensorSchema]:
@@ -145,11 +146,15 @@ def _compiled_call(
     autodiff: bool,
     optimize_forward: bool,
 ) -> _Call:
-    @lru_cache(maxsize=32)
     def specialize(shape: tuple[int, ...], input_axes: Axes) -> _Call:
         source = (exported if not shape else export_batch(shape, input_axes))[
             "stablehlo"
         ]
+        key = (source, input_axes, autodiff, optimize_forward)
+        cached = _programs.get(key)
+        if cached is not None:
+            _programs.move_to_end(key)
+            return cached
 
         @jax.jit  # pyright: ignore[reportUnknownMemberType]
         def raw(*args: jax.Array) -> tuple[jax.Array, ...]:
@@ -206,7 +211,11 @@ def _compiled_call(
                 tuple(tangents[i] for i in active),
             )
 
-        return jax.jit(call)  # pyright: ignore[reportUnknownMemberType]
+        program: _Call = jax.jit(call)  # pyright: ignore[reportUnknownMemberType]
+        _programs[key] = program
+        if len(_programs) > PROGRAM_CACHE_SIZE:
+            _programs.popitem(last=False)
+        return program
 
     count = sum(1 for item in exported["inputs"] for _ in _leaves(item["value"]))
     return specialize((), ((),) * count)
@@ -249,7 +258,7 @@ class CompiledFunction:
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
-        schema = _freeze(
+        schema = freeze(
             {key: value for key, value in exported.items() if key != "stablehlo"}
         )
         inputs = [
@@ -311,3 +320,59 @@ class CompiledFunction:
         for item in fields:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
         return _unpack(self.schema["output"], self._call(*leaves))
+
+    def example_input(self, fill: float = 0.0) -> dict[str, Any]:
+        """Build inputs of the right structure, shapes and dtypes.
+
+        The result maps each input name to arrays filled with ``fill``, in the
+        layout a call takes: records and tables as dicts, tuples as tuples.
+        Use it as a starting point for a sampler, a ``jax.vmap`` template or a
+        test value.
+
+        Args:
+            fill: The value of every element, cast to each element's dtype.
+
+        Returns:
+            The inputs by name, so ``function(**function.example_input())`` runs.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> query = flatppl('''
+            ... p = elementof(cartprod(mu = reals, x = cartpow(reals, 3)))
+            ... inputs = p
+            ... outputs = p.mu + sum(p.x)
+            ... ''').compile()
+            >>> point = query.example_input(1.0)
+            >>> point["p"]["x"].shape, float(query(**point))
+            ((3,), 4.0)
+        """
+        return {
+            item["name"]: _filled(item["value"], fill) for item in self.schema["inputs"]
+        }
+
+    def __repr__(self) -> str:
+        inputs = ", ".join(
+            f"{item['name']}: {_describe(item['value'])}"
+            for item in self.schema["inputs"]
+        )
+        return f"<CompiledFunction ({inputs}) -> {_describe(self.schema['output'])}>"
+
+
+def _filled(schema: Any, fill: float) -> Any:
+    if schema["kind"] == "tensor":
+        return jnp.full(tuple(schema["shape"]), fill, dtype=schema["dtype"])  # pyright: ignore[reportUnknownMemberType]
+    if schema["kind"] == "tuple":
+        return tuple(_filled(item, fill) for item in schema["items"])
+    return {item["name"]: _filled(item["value"], fill) for item in schema["fields"]}
+
+
+def _describe(schema: Any) -> str:
+    if schema["kind"] == "tensor":
+        return f"{schema['dtype']}{list(schema['shape'])}"
+    if schema["kind"] == "tuple":
+        return "(" + ", ".join(_describe(item) for item in schema["items"]) + ")"
+    fields = ", ".join(
+        f"{item['name']}: {_describe(item['value'])}" for item in schema["fields"]
+    )
+    rows = f"table[{schema['rows']}]" if schema["kind"] == "table" else ""
+    return f"{rows}{{{fields}}}"

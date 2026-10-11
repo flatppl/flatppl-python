@@ -246,6 +246,7 @@ class CompiledFunction:
     _call: _Call = field(repr=False)
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
+    _gradient: bool = field(repr=False)
 
     def __init__(
         self,
@@ -254,6 +255,7 @@ class CompiledFunction:
         autodiff: bool,
         export_batch: ExportBatch,
         optimize_forward: bool = False,
+        gradient: bool = False,
     ) -> None:
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
@@ -281,6 +283,7 @@ class CompiledFunction:
         object.__setattr__(self, "_call", call)
         object.__setattr__(self, "_input_count", len(inputs))
         object.__setattr__(self, "_requires_x64", requires_x64)
+        object.__setattr__(self, "_gradient", gradient)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Evaluate the query.
@@ -290,7 +293,10 @@ class CompiledFunction:
             **kwargs: Inputs by name, after the positional ones.
 
         Returns:
-            An array, or a dict or tuple of arrays, as the query's outputs declare.
+            An array, or a dict or tuple of arrays, as the query's outputs
+            declare. A query built with ``gradient=True`` returns
+            ``(outputs, jacobian)`` instead, with the Jacobian of the outputs
+            with respect to the first input.
 
         Raises:
             TypeError: An input is missing, repeated or unknown, a record or
@@ -316,8 +322,20 @@ class CompiledFunction:
         missing = [name for name in names if name not in values]
         if missing:
             raise TypeError(f"missing inputs: {', '.join(missing)}")
+        if not self._gradient:
+            return self._evaluate(values)
+        first = names[0]
+
+        def evaluate(value: Any) -> tuple[Any, Any]:
+            outputs = self._evaluate({**values, first: value})
+            return outputs, outputs
+
+        jacobian, outputs = jax.jacrev(evaluate, has_aux=True)(values[first])  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        return outputs, jacobian
+
+    def _evaluate(self, values: Mapping[str, Any]) -> Any:
         leaves: list[jax.Array | None] = [None] * self._input_count
-        for item in fields:
+        for item in self.schema["inputs"]:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
         return _unpack(self.schema["output"], self._call(*leaves))
 
@@ -355,7 +373,10 @@ class CompiledFunction:
             f"{item['name']}: {_describe(item['value'])}"
             for item in self.schema["inputs"]
         )
-        return f"<CompiledFunction ({inputs}) -> {_describe(self.schema['output'])}>"
+        outputs = _describe(self.schema["output"])
+        if self._gradient:
+            outputs = f"({outputs}, jacobian)"
+        return f"<CompiledFunction ({inputs}) -> {outputs}>"
 
 
 def _filled(schema: Any, fill: float) -> Any:

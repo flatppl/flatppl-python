@@ -126,6 +126,7 @@ RESERVED = [
     "constant",
     "context",
     "parameters",
+    "query",
     "set",
     "source",
     "source_name",

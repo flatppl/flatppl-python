@@ -57,7 +57,7 @@ Use `module.bindings["compile"]` when a FlatPPL name collides with a Python
 attribute. The mapping contains every public binding exposed by the compiler.
 These names are Python attributes of a module, so attribute access never
 returns a binding with one of them: `bindings`, `compile`, `constant`,
-`context`, `parameters`, `set`, `source` and `source_name`. Later releases add
+`context`, `parameters`, `query`, `set`, `source` and `source_name`. Later releases add
 names to this list, so prefer `module.bindings[name]` in library code.
 `dir(module)` lists the bindings that attribute access reaches.
 
@@ -85,6 +85,41 @@ draw ('mu', 'sigma')
 ['mu', 'sigma']
 [1. 2.]
 ```
+
+## Query from Python
+
+`module.query(outputs)` writes the query module for you. Outputs are binding
+names or expressions over the model's bindings, and the free parameters they
+depend on become one input. The query loads the model under a fresh name in
+the same context, so each call adds a registry entry.
+
+```{testcode}
+from flatppl import flatppl
+
+model = flatppl("""
+    mu = elementof(reals)
+    sigma = elementof(posreals)
+    upper = mu + 2.0 * sigma
+""")
+query = model.query("upper")
+print(query.source)
+print(float(query.compile()({"mu": 1.0, "sigma": 0.5})))
+```
+
+```{testoutput}
+point = elementof(cartprod(mu = reals, sigma = posreals))
+_model = load_module("flatppl-query/model-0.flatppl", mu = point.mu, sigma = point.sigma)
+upper = _model.upper
+inputs = point
+outputs = upper
+
+2.0
+```
+
+`layout="flat"` passes the parameters as one real vector `theta`, and
+`gradient=True` returns the Jacobian of the outputs with their values. A draw
+cannot be an output, because a loaded module hides stochastic bindings. The
+[query example](examples/query.rst) shows both options.
 
 ## Load files
 

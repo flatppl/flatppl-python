@@ -109,7 +109,8 @@ keyed by StableHLO text, batch axes, `autodiff` and `optimize_forward`. A second
 `compile()` of the same query, even from a new module, reuses the compiled XLA
 program. The cache holds up to 256 programs, one per unbatched query and one per
 batch shape, and drops the least recently used first. A cached program keeps
-the module that built it alive.
+the module that built it alive. Queries that `Module.query` builds again over
+the same model produce the same text and share one program.
 
 JAX's persistent compilation cache also works for these programs. Set it up
 before the first compilation:

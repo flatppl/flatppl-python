@@ -120,6 +120,37 @@ def test_packed_constants_bind_arrays_and_infinite_reals() -> None:
     assert bound.constant("top") == math.inf
 
 
+def test_fixed_vector_equalities_use_source_precision_without_projection() -> None:
+    module = flatppl("""
+        z = external(zerosum(3))
+        p = external(stdsimplex(3))
+        cuts = external(ordered(3))
+    """)
+    z = np.array([0.1, 0.2, -0.3], dtype=np.float32)
+    p = np.array([0.1, 0.2, 0.7], dtype=np.float32)
+    cuts = np.array([-1.0, 0.0, 1.0], dtype=np.float32)
+    bound = module.set(z=z, p=p, cuts=cuts)
+    np.testing.assert_array_equal(bound.constant("z"), z.astype(np.float64))
+    np.testing.assert_array_equal(bound.constant("p"), p.astype(np.float64))
+    np.testing.assert_array_equal(bound.constant("cuts"), cuts.astype(np.float64))
+    # Widening the same values must not select the source-f32 bound.
+    with pytest.raises(CompilationError):
+        module.set(z=z.astype(np.float64))
+    with pytest.raises(CompilationError):
+        module.set(p=p.astype(np.float64))
+    with pytest.raises(CompilationError):
+        module.set(z=np.array([0.1, 0.2, -0.3001], dtype=np.float32))
+    with pytest.raises(CompilationError):
+        module.set(p=np.array([0.1, 0.2, 0.7001], dtype=np.float32))
+    # Linear equalities admit roundoff; signs and strict ordering stay exact.
+    with pytest.raises(CompilationError):
+        module.set(p=np.array([-np.finfo(np.float32).eps, 0.5, 0.5], dtype=np.float32))
+    with pytest.raises(CompilationError):
+        module.set(cuts=np.array([-1.0, 0.0, 0.0], dtype=np.float32))
+    z64 = np.array([0.1, 0.2, -0.3])
+    np.testing.assert_array_equal(module.set(z=z64).constant("z"), z64)
+
+
 RESERVED = [
     "bindings",
     "compile",

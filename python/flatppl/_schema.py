@@ -96,7 +96,7 @@ class ArrayData(TypedDict):
     """Array elements of one scalar kind as one flat list in C order."""
 
     shape: list[int]
-    dtype: Literal["bool", "integer", "real"]
+    dtype: Literal["bool", "integer", "real", "real32"]
     data: list[bool] | list[int] | list[Real]
 
 
@@ -107,6 +107,7 @@ class Constant(TypedDict):
         "bool",
         "integer",
         "real",
+        "real32",
         "string",
         "array",
         "record",

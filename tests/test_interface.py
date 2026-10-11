@@ -44,13 +44,15 @@ def test_forward_optimization_preserves_values_and_shared_derivatives():
     module = flatppl("x = elementof(reals)\ninputs = x\noutputs = exp(x*x)")
     function = module.compile(optimize_forward=True)
     x = jnp.float32(0.25)
-    expected = math.exp(float(x)**2)
+    expected = math.exp(float(x) ** 2)
     np.testing.assert_allclose(jax.jit(function)(x), expected, rtol=2e-6)
     np.testing.assert_allclose(function(x), module.compile()(x), rtol=2e-6)
     value, tangent = jax.jit(lambda x: jax.jvp(function, (x,), (jnp.float32(1),)))(x)
-    np.testing.assert_allclose([value, tangent], [expected, 2*x*expected], rtol=2e-6)
+    np.testing.assert_allclose(
+        [value, tangent], [expected, 2 * x * expected], rtol=2e-6
+    )
     joint = jax.jit(jax.value_and_grad(function)).lower(x).compile()
-    np.testing.assert_allclose(joint(x), [expected, 2*x*expected], rtol=2e-6)
+    np.testing.assert_allclose(joint(x), [expected, 2 * x * expected], rtol=2e-6)
     assert len(re.findall(r"\bexponential\(", joint.as_text())) == 1
 
 
@@ -126,43 +128,59 @@ def test_numpy_vectors_and_pandas_tables_use_query_precision():
 
 def test_bound_sizes_arrays_and_registered_models_keep_their_snapshots():
     context = Context()
-    source = flatppl(r"""
+    source = flatppl(
+        r"""
         n = external(posintegers)
         weights = external(cartpow(reals, [2, n]))
         data = external(cartpow(reals, n))
         inputs = data
         outputs = sum(weights * data) / lengthof(data)
-    """, context=context)
-    weights = np.array([[1., 2., 3.], [4., 5., 6.]])
+    """,
+        context=context,
+    )
+    weights = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     bound = source.set(n=3, weights=weights)
     weights[:] = 99
     context.register("weighted.flatppl", bound)
-    imported = flatppl(r"""
+    imported = flatppl(
+        r"""
         data = external(cartpow(reals, 3))
         m = load_module("weighted.flatppl", data = data)
         inputs = data
         outputs = m.outputs
-    """, context=context).compile()
+    """,
+        context=context,
+    ).compile()
     direct = bound.compile()
-    other = source.set(**{"n": 2, "weights": [[2., 3.], [4., 5.]]}).compile()
-    np.testing.assert_allclose(direct([1., 2., 3.]), 46 / 3)
-    np.testing.assert_allclose(imported([1., 2., 3.]), 46 / 3)
-    np.testing.assert_allclose(other([2., 4.]), 22)
-    np.testing.assert_allclose(jax.grad(direct)(jnp.ones(3)), [5/3, 7/3, 3])
-    np.testing.assert_allclose(direct([3., 2., 1.]), 38 / 3)
+    other = source.set(**{"n": 2, "weights": [[2.0, 3.0], [4.0, 5.0]]}).compile()
+    np.testing.assert_allclose(direct([1.0, 2.0, 3.0]), 46 / 3)
+    np.testing.assert_allclose(imported([1.0, 2.0, 3.0]), 46 / 3)
+    np.testing.assert_allclose(other([2.0, 4.0]), 22)
+    np.testing.assert_allclose(jax.grad(direct)(jnp.ones(3)), [5 / 3, 7 / 3, 3])
+    np.testing.assert_allclose(direct([3.0, 2.0, 1.0]), 38 / 3)
 
 
 def test_imported_values_inside_expressions_preserve_parameters():
     context = Context()
-    context.register("values.flatppl", flatppl("offset = 3.0\nx = elementof(reals)\nvalue = x + offset", context=context))
-    function = flatppl(r"""
+    context.register(
+        "values.flatppl",
+        flatppl(
+            "offset = 3.0\nx = elementof(reals)\nvalue = x + offset", context=context
+        ),
+    )
+    function = flatppl(
+        r"""
         p = elementof(cartprod(z = reals, a = cartpow(reals, 2)))
         left = load_module("values.flatppl", x = p.z)
         right = load_module("values.flatppl", x = sum(p.a))
         inputs = p
         outputs = left.value + 2.0 * right.value + left.offset
-    """, context=context).compile()
-    value, gradient = jax.jit(jax.value_and_grad(function))({"z": 1., "a": jnp.array([2., 4.])})
+    """,
+        context=context,
+    ).compile()
+    value, gradient = jax.jit(jax.value_and_grad(function))(
+        {"z": 1.0, "a": jnp.array([2.0, 4.0])}
+    )
     np.testing.assert_allclose(value, 25)
     np.testing.assert_allclose(gradient["z"], 1)
     np.testing.assert_allclose(gradient["a"], [2, 2])

@@ -22,9 +22,9 @@ def test_scalar_indices_keep_both_bases_and_selected_gradients():
     for i, j in ((1, 3), (3, 2)):
         value, gradient = actual(values, i, j)
         expected = np.zeros(4)
-        expected[i-1] += 1
+        expected[i - 1] += 1
         expected[j] += 1
-        np.testing.assert_allclose(value, values[i-1] + values[j])
+        np.testing.assert_allclose(value, values[i - 1] + values[j])
         np.testing.assert_array_equal(gradient, expected)
 
 
@@ -89,11 +89,15 @@ def test_categorical_table_observations_change_without_recompilation():
     for observed in ([3, 2, 3, 3], [2, 2, 3, 2]):
         counts = np.bincount(observed, minlength=4)[1:]
         table = pd.DataFrame({"y": observed})
-        value, gradient = jax.jit(jax.value_and_grad(
-            lambda p: function(p, table)
-        ))(probabilities)
-        np.testing.assert_allclose(value, counts[1:] @ np.log(probabilities[1:]), atol=1e-6)
-        np.testing.assert_allclose(gradient, [0, counts[1]/0.25, counts[2]/0.75], atol=1e-6)
+        value, gradient = jax.jit(jax.value_and_grad(lambda p: function(p, table)))(
+            probabilities
+        )
+        np.testing.assert_allclose(
+            value, counts[1:] @ np.log(probabilities[1:]), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            gradient, [0, counts[1] / 0.25, counts[2] / 0.75], atol=1e-6
+        )
 
 
 def test_host_integer_conversion_preserves_values_and_rejects_overflow():
@@ -102,9 +106,13 @@ def test_host_integer_conversion_preserves_values_and_rejects_overflow():
         inputs = values
         outputs = values
     """).compile(autodiff=False)
-    endpoints = np.array([-2**31, 2**31-1], dtype=np.int64)
+    endpoints = np.array([-(2**31), 2**31 - 1], dtype=np.int64)
     np.testing.assert_array_equal(function(endpoints), endpoints)
-    for values in ([0, 2**31], [-2**31-1, 0], np.array([0, 2**64-1], dtype=np.uint64)):
+    for values in (
+        [0, 2**31],
+        [-(2**31) - 1, 0],
+        np.array([0, 2**64 - 1], dtype=np.uint64),
+    ):
         with pytest.raises(ValueError):
             function(values)
     with jax.enable_x64():
@@ -122,9 +130,11 @@ def test_categorical_broadcast_keeps_each_probability_row():
         outputs = sum(score.(p, y))
     """).compile()
     probabilities = jnp.array([[0.0, 0.25, 0.75], [0.5, 0.5, 0.0]])
-    value, gradient = jax.jit(jax.value_and_grad(function))(probabilities, jnp.array([3, 1]))
+    value, gradient = jax.jit(jax.value_and_grad(function))(
+        probabilities, jnp.array([3, 1])
+    )
     np.testing.assert_allclose(value, np.log(0.75) + np.log(0.5), atol=1e-7)
-    np.testing.assert_allclose(gradient, [[0, 0, 1/0.75], [2, 0, 0]], atol=1e-6)
+    np.testing.assert_allclose(gradient, [[0, 0, 1 / 0.75], [2, 0, 0]], atol=1e-6)
 
 
 def test_batched_iid_categories_keep_each_row_and_observation_axis():
@@ -138,7 +148,9 @@ def test_batched_iid_categories_keep_each_row_and_observation_axis():
     probabilities = jnp.array([[0.0, 0.25, 0.75], [0.5, 0.5, 0.0]])
     y = jnp.array([[2, 3, 3, 3], [1, 1, 1, 2]])
     value, gradient = jax.jit(jax.value_and_grad(function))(probabilities, y)
-    np.testing.assert_allclose(value, np.log(0.25) + 3*np.log(0.75) + 4*np.log(0.5), atol=1e-6)
+    np.testing.assert_allclose(
+        value, np.log(0.25) + 3 * np.log(0.75) + 4 * np.log(0.5), atol=1e-6
+    )
     np.testing.assert_allclose(gradient, [[0, 4, 4], [6, 2, 0]], atol=1e-6)
 
 
@@ -151,7 +163,9 @@ def test_vector_indices_keep_each_callable_batch():
         outputs = sum(lookup.(rows, indices))
     """).compile()
     rows = jnp.array([[1.0, 2.0, 4.0], [8.0, 16.0, 32.0]])
-    value, gradient = jax.jit(jax.value_and_grad(function))(rows, jnp.array([[3, 1], [2, 2]]))
+    value, gradient = jax.jit(jax.value_and_grad(function))(
+        rows, jnp.array([[3, 1], [2, 2]])
+    )
     np.testing.assert_allclose(value, 37)
     np.testing.assert_array_equal(gradient, [[1, 0, 1], [0, 2, 0]])
 
@@ -166,7 +180,7 @@ def test_static_array_helpers_use_bound_sizes_and_outer_shapes():
     """)
     for n in (3, 4):
         function = query.set(n=n).compile()
-        data = np.arange(2*n, dtype=float).reshape(2, n)
+        data = np.arange(2 * n, dtype=float).reshape(2, n)
         sizes, zeros, ones, product, outer_size, inner_sizes = function(data)
         np.testing.assert_array_equal(sizes, [2, n])
         np.testing.assert_array_equal(zeros, np.zeros((2, n)))

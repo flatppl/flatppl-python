@@ -23,7 +23,9 @@ def test_public_example_samples_the_known_posterior():
 
 
 def test_matrix_data_and_vector_posterior_match_gaussian_regression():
-    example = runpy.run_path(str(Path(__file__).parents[1] / "examples" / "regression.py"))
+    example = runpy.run_path(
+        str(Path(__file__).parents[1] / "examples" / "regression.py")
+    )
     x = np.linspace(-1, 1, 48)
     X = np.column_stack((np.ones_like(x), x, np.sin(3 * x)))
     y = X @ np.array([0.4, -0.6, 1.2]) + 0.3 * np.cos(1.3 * x)
@@ -37,12 +39,14 @@ def test_matrix_data_and_vector_posterior_match_gaussian_regression():
         residual = observations - X @ np.asarray(beta)
         expected = (
             -X.shape[1] * math.log(2 * math.sqrt(2 * math.pi))
-            -np.sum(np.asarray(beta) ** 2) / 8
-            -len(y) * math.log(0.5 * math.sqrt(2 * math.pi))
-            -np.sum(residual**2) / 0.5
+            - np.sum(np.asarray(beta) ** 2) / 8
+            - len(y) * math.log(0.5 * math.sqrt(2 * math.pi))
+            - np.sum(residual**2) / 0.5
         )
         np.testing.assert_allclose(value, expected, rtol=2e-6)
-        np.testing.assert_allclose(gradient, -np.asarray(beta) / 4 + X.T @ residual / 0.25, rtol=2e-6)
+        np.testing.assert_allclose(
+            gradient, -np.asarray(beta) / 4 + X.T @ residual / 0.25, rtol=2e-6
+        )
 
     draws, divergent = example["run"](X, y)
     precision = np.eye(X.shape[1]) / 4 + X.T @ X / 0.25

@@ -91,8 +91,9 @@ def test_scalar_and_iid_queries_share_the_same_normalizer():
     combined = flatppl(MODEL + "outputs = " + " + ".join(expressions))
     combined = combined.compile(integration=Integration())
     derivative = jax.grad(
-        lambda a: iid_oracle(a, -0.5, 1.0, points[:1])
-        + iid_oracle(a, -0.5, 1.0, points)
+        lambda a: (
+            iid_oracle(a, -0.5, 1.0, points[:1]) + iid_oracle(a, -0.5, 1.0, points)
+        )
     )(2.0)
     np.testing.assert_allclose(
         jax.grad(combined)(2.0, -0.5, 1.0, points), derivative, rtol=3e-4, atol=3e-5

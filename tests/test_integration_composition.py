@@ -35,10 +35,13 @@ def joint_oracle(lo, hi, point):
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_shared_record_values_and_gradients(dtype):
     with jax.enable_x64(dtype == "float64"):
-        function = flatppl(MODEL + """
+        function = flatppl(
+            MODEL
+            + """
             inputs = (lo, hi, point)
             outputs = logdensityof(lawof(record(x=x, y=y)), point)
-        """).compile(dtype=dtype, integration=Integration())
+        """
+        ).compile(dtype=dtype, integration=Integration())
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))
         oracle = jax.value_and_grad(joint_oracle, argnums=(0, 1, 2))
         for lo, hi, x, y in [(0.0, 1.0, 0.2, 1.1), (-1.0, 0.5, 1.2, -0.5)]:
@@ -54,13 +57,16 @@ def test_shared_record_values_and_gradients(dtype):
 
 
 def test_reordered_record_and_multiple_query_points():
-    function = flatppl(MODEL + """
+    function = flatppl(
+        MODEL
+        + """
         other = record(x=point.x+0.7, y=point.y-0.2)
         inputs = point
         outputs = (
             logdensityof(lawof(record(y=y, x=x)), point),
             logdensityof(lawof(record(x=x, y=y)), other))
-    """).compile(integration=Integration())
+    """
+    ).compile(integration=Integration())
     for point in ({"x": 0.2, "y": 1.1}, {"x": -0.3, "y": 0.7}):
         other = {"x": point["x"] + 0.7, "y": point["y"] - 0.2}
         expected = [joint_oracle(0.0, 1.0, p) for p in (point, other)]
@@ -68,14 +74,17 @@ def test_reordered_record_and_multiple_query_points():
 
 
 def test_explicit_kchain_uses_the_same_joint_integral():
-    query = flatppl(MODEL + """
+    query = flatppl(
+        MODEL
+        + """
         k = kernelof(record(x=x, y=y), a=a)
         constructor(t) = joint(x=Normal(t, 1.0), y=Normal(t, 1.0))
         inputs = point
         outputs = (
             logdensityof(kchain(Uniform(interval(lo, hi)), k), point),
             logdensityof(kchain(Uniform(interval(lo, hi)), constructor), point))
-    """).compile(integration=Integration())
+    """
+    ).compile(integration=Integration())
     point = {"x": 0.2, "y": 1.1}
     expected = joint_oracle(0.0, 1.0, point)
     np.testing.assert_allclose(query(point), [expected, expected], rtol=3e-5, atol=3e-6)
@@ -151,12 +160,15 @@ def test_function_kernel_keeps_its_captured_draw():
 
 
 def test_partly_shared_record_keeps_independent_field():
-    function = flatppl(MODEL + """
+    function = flatppl(
+        MODEL
+        + """
         z ~ Normal(0.0, 2.0)
         inputs = point
         outputs = logdensityof(lawof(record(z=z, y=y, x=x)),
             record(x=point.x, y=point.y, z=0.3))
-    """).compile(integration=Integration())
+    """
+    ).compile(integration=Integration())
     point = {"x": 0.2, "y": 1.1}
     expected = (
         joint_oracle(0.0, 1.0, point)

@@ -24,7 +24,9 @@ def from_pyhf(
     Registration and query inputs/outputs remain explicit.
     """
     source_path = None
-    if isinstance(source, str) and source.lstrip("\ufeff \t\r\n").startswith(("{", "[")):
+    if isinstance(source, str) and source.lstrip("\ufeff \t\r\n").startswith(
+        ("{", "[")
+    ):
         text = source
     elif isinstance(source, (str, os.PathLike)):
         source_path = os.fspath(source)

@@ -18,12 +18,16 @@ def test_inverse_values_and_asymmetric_cotangents():
     for n in (1, 2, 5):
         inverse = query.set(n=n).compile()
         matrix = np.roll(np.diag(np.arange(n) + 1.5) + 0.1, 1, axis=0)
-        weights = np.arange(n*n).reshape(n, n) / 3 + 0.5
-        value, gradient = jax.jit(jax.value_and_grad(lambda a: (inverse(a)*weights).sum()))(matrix)
+        weights = np.arange(n * n).reshape(n, n) / 3 + 0.5
+        value, gradient = jax.jit(
+            jax.value_and_grad(lambda a: (inverse(a) * weights).sum())
+        )(matrix)
         expected = np.linalg.inv(matrix)
         np.testing.assert_allclose(inverse(matrix), expected, rtol=4e-6, atol=1e-7)
-        np.testing.assert_allclose(value, (expected*weights).sum(), rtol=4e-6)
-        np.testing.assert_allclose(gradient, -expected.T @ weights @ expected.T, rtol=4e-6, atol=1e-7)
+        np.testing.assert_allclose(value, (expected * weights).sum(), rtol=4e-6)
+        np.testing.assert_allclose(
+            gradient, -expected.T @ weights @ expected.T, rtol=4e-6, atol=1e-7
+        )
 
 
 def test_inverse_native_batches_keep_pivot_permutations_per_cell():
@@ -37,16 +41,23 @@ def test_inverse_native_batches_keep_pivot_permutations_per_cell():
     np.testing.assert_allclose(inverse(matrices), expected, rtol=3e-6)
     gradient = jax.jit(jax.grad(lambda a: inverse(a).sum()))(matrices)
     transpose = expected.swapaxes(-1, -2)
-    np.testing.assert_allclose(gradient, -transpose @ np.ones_like(matrices) @ transpose, rtol=3e-6, atol=1e-7)
+    np.testing.assert_allclose(
+        gradient, -transpose @ np.ones_like(matrices) @ transpose, rtol=3e-6, atol=1e-7
+    )
 
 
 def cofactor_oracle(matrix):
     n = len(matrix)
-    return np.array([
-        [(-1)**(i+j) * np.linalg.det(np.delete(np.delete(matrix, i, axis=0), j, axis=1))
-         for j in range(n)]
-        for i in range(n)
-    ])
+    return np.array(
+        [
+            [
+                (-1) ** (i + j)
+                * np.linalg.det(np.delete(np.delete(matrix, i, axis=0), j, axis=1))
+                for j in range(n)
+            ]
+            for i in range(n)
+        ]
+    )
 
 
 def test_determinant_pivoting_and_cofactor_gradients():
@@ -86,7 +97,11 @@ def test_determinant_native_batches(operation):
         outputs = {operation}.(A)
     """).compile()
     matrices = np.array([[[0.0, 2.0], [1.0, 3.0]], [[4.0, 1.0], [2.0, -1.0]]])
-    expected = np.linalg.det(matrices) if operation == "det" else np.linalg.slogdet(matrices)[1]
+    expected = (
+        np.linalg.det(matrices)
+        if operation == "det"
+        else np.linalg.slogdet(matrices)[1]
+    )
     np.testing.assert_allclose(function(matrices), expected, rtol=3e-6)
     gradient = jax.jit(jax.grad(lambda a: function(a).sum()))(matrices)
     derivatives = np.linalg.inv(matrices).swapaxes(-1, -2)
@@ -101,12 +116,18 @@ def test_determinant_native_batch_mixes_matrix_ranks():
         inputs = A
     """
     determinant = flatppl(source + "outputs = det.(A)").compile()
-    matrices = np.array([[[0.0, 2.0], [1.0, 3.0]], [[0.0, 1.0], [0.0, 0.0]], np.zeros((2, 2))])
+    matrices = np.array(
+        [[[0.0, 2.0], [1.0, 3.0]], [[0.0, 1.0], [0.0, 0.0]], np.zeros((2, 2))]
+    )
     np.testing.assert_allclose(determinant(matrices), [-2.0, 0.0, 0.0], rtol=3e-6)
     gradient = jax.jit(jax.grad(lambda a: determinant(a).sum()))(matrices)
-    np.testing.assert_allclose(gradient, [cofactor_oracle(a) for a in matrices], rtol=3e-6, atol=1e-6)
+    np.testing.assert_allclose(
+        gradient, [cofactor_oracle(a) for a in matrices], rtol=3e-6, atol=1e-6
+    )
     logarithm = flatppl(source + "outputs = logabsdet.(A)").compile()
-    np.testing.assert_allclose(logarithm(matrices), [np.log(2.0), -np.inf, -np.inf], rtol=3e-6)
+    np.testing.assert_allclose(
+        logarithm(matrices), [np.log(2.0), -np.inf, -np.inf], rtol=3e-6
+    )
 
 
 def normal_oracle(mean, covariance, point):
@@ -133,13 +154,13 @@ def test_cholesky_factor_and_symmetric_derivative():
         lower = np.linalg.cholesky(matrix)
         np.testing.assert_allclose(factor(matrix), lower, rtol=3e-6)
         a, b, c = matrix[0, 0], matrix[0, 1], matrix[1, 1]
-        s, t = np.sqrt(a), np.sqrt(c - b*b/a)
-        da = 1/(2*s) - b/(2*a*s) + b*b/(2*a*a*t)
-        db = 1/s - b/(a*t)
-        dc = 1/(2*t)
+        s, t = np.sqrt(a), np.sqrt(c - b * b / a)
+        da = 1 / (2 * s) - b / (2 * a * s) + b * b / (2 * a * a * t)
+        db = 1 / s - b / (a * t)
+        dc = 1 / (2 * t)
         value, gradient = actual(matrix)
         np.testing.assert_allclose(value, lower.sum(), rtol=3e-6)
-        np.testing.assert_allclose(gradient, [[da, db/2], [db/2, dc]], rtol=5e-6)
+        np.testing.assert_allclose(gradient, [[da, db / 2], [db / 2, dc]], rtol=5e-6)
 
 
 def test_mvnormal_covariance_mean_and_point_gradients():
@@ -155,7 +176,7 @@ def test_mvnormal_covariance_mean_and_point_gradients():
         function = query.set(n=n).compile()
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))
         mean = np.arange(n) / 3
-        a = np.arange(n*n).reshape(n, n) / (n*n)
+        a = np.arange(n * n).reshape(n, n) / (n * n)
         covariance = a @ a.T + np.eye(n)
         for point in (mean + 0.5, mean - np.arange(n) / 7):
             value, gradients = actual(mean, covariance, point)
@@ -174,13 +195,19 @@ def test_mvnormal_fixed_covariance_keeps_point_and_mean_gradients():
         outputs = logdensityof(MvNormal(mu, cov), x)
     """).compile()
     mean, point = np.array([0.0, 0.2]), np.array([0.5, -0.3])
-    value, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(mean, point)
-    expected, (dmu, _, dx) = normal_oracle(mean, np.array([[2.0, 0.5], [0.5, 1.0]]), point)
+    value, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(
+        mean, point
+    )
+    expected, (dmu, _, dx) = normal_oracle(
+        mean, np.array([[2.0, 0.5], [0.5, 1.0]]), point
+    )
     np.testing.assert_allclose(value, expected, rtol=2e-6)
     np.testing.assert_allclose(gradients, (dmu, dx), rtol=2e-6)
 
 
-@pytest.mark.parametrize("expression", ["sum(score.(mu, cov, x))", "logdensityof(MvNormal.(mu, cov), x)"])
+@pytest.mark.parametrize(
+    "expression", ["sum(score.(mu, cov, x))", "logdensityof(MvNormal.(mu, cov), x)"]
+)
 def test_mvnormal_native_batches_keep_each_matrix_and_point(expression):
     function = flatppl(f"""
         mu = external(cartpow(cartpow(reals, 2), 2))
@@ -193,11 +220,17 @@ def test_mvnormal_native_batches_keep_each_matrix_and_point(expression):
     mean = np.array([[0.0, 0.2], [-1.0, 0.5]])
     covariance = np.array([[[2.0, 0.5], [0.5, 1.0]], [[1.0, -0.3], [-0.3, 3.0]]])
     point = np.array([[0.5, -0.3], [0.0, 1.0]])
-    value, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))(mean, covariance, point)
-    expected = [normal_oracle(m, c, x) for m, c, x in zip(mean, covariance, point, strict=True)]
+    value, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))(
+        mean, covariance, point
+    )
+    expected = [
+        normal_oracle(m, c, x) for m, c, x in zip(mean, covariance, point, strict=True)
+    ]
     np.testing.assert_allclose(value, sum(v for v, _ in expected), rtol=3e-6)
     for i, gradient in enumerate(gradients):
-        np.testing.assert_allclose(gradient, np.array([d[i] for _, d in expected]), rtol=1e-5, atol=1e-6)
+        np.testing.assert_allclose(
+            gradient, np.array([d[i] for _, d in expected]), rtol=1e-5, atol=1e-6
+        )
 
 
 def test_broadcast_cholesky_preserves_matrix_cells():
@@ -230,7 +263,9 @@ def test_native_batch_reuses_the_same_mean_and_point():
     points = np.array([[0.5, -0.3], [0.0, 1.0]])
     covariance = np.array([[[2.0, 0.5], [0.5, 1.0]], [[1.0, -0.3], [-0.3, 3.0]]])
     value, gradient = jax.jit(jax.value_and_grad(function))(points, covariance)
-    expected = sum(normal_oracle(x, c, x)[0] for x, c in zip(points, covariance, strict=True))
+    expected = sum(
+        normal_oracle(x, c, x)[0] for x, c in zip(points, covariance, strict=True)
+    )
     np.testing.assert_allclose(value, expected + points.sum(), rtol=3e-6)
     np.testing.assert_allclose(gradient, np.ones_like(points), rtol=3e-6)
 
@@ -244,9 +279,11 @@ def test_lkj_correlation_coordinate_gradient():
     """).compile()
     rho = 0.4
     value, gradient = jax.jit(jax.value_and_grad(function))(rho)
-    expected = lgamma(3.0) - lgamma(2.5) - 0.5*np.log(np.pi) + 1.5*np.log1p(-rho*rho)
+    expected = (
+        lgamma(3.0) - lgamma(2.5) - 0.5 * np.log(np.pi) + 1.5 * np.log1p(-rho * rho)
+    )
     np.testing.assert_allclose(value, expected, rtol=3e-6)
-    np.testing.assert_allclose(gradient, -3*rho/(1-rho*rho), rtol=3e-6)
+    np.testing.assert_allclose(gradient, -3 * rho / (1 - rho * rho), rtol=3e-6)
 
 
 def test_iid_mvnormal_shares_covariance_across_observations():
@@ -260,12 +297,18 @@ def test_iid_mvnormal_shares_covariance_across_observations():
     mean = np.array([0.0, 0.2])
     covariance = np.array([[2.0, 0.5], [0.5, 1.0]])
     points = np.array([[0.5, -0.3], [1.0, 1.0], [-2.0, 0.0]])
-    value, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))(mean, covariance, points)
+    value, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))(
+        mean, covariance, points
+    )
     expected = [normal_oracle(mean, covariance, x) for x in points]
     np.testing.assert_allclose(value, sum(v for v, _ in expected), rtol=3e-6)
     for i in (0, 1):
-        np.testing.assert_allclose(gradients[i], sum(d[i] for _, d in expected), rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(gradients[2], [d[2] for _, d in expected], rtol=1e-5, atol=1e-6)
+        np.testing.assert_allclose(
+            gradients[i], sum(d[i] for _, d in expected), rtol=1e-5, atol=1e-6
+        )
+    np.testing.assert_allclose(
+        gradients[2], [d[2] for _, d in expected], rtol=1e-5, atol=1e-6
+    )
 
 
 def test_matrix_rhs_densities_have_independent_gradients():
@@ -273,12 +316,20 @@ def test_matrix_rhs_densities_have_independent_gradients():
     point = np.array([[4.0, 2.0], [2.0, 3.0]])
     inverse = np.linalg.inv(point)
     logdet = np.log(8.0)
-    log_normalizer = 5*np.log(2.0) + 0.5*np.log(np.pi) + lgamma(2.5) + lgamma(2.0)
+    log_normalizer = 5 * np.log(2.0) + 0.5 * np.log(np.pi) + lgamma(2.5) + lgamma(2.0)
     cases = [
-        ("Wishart", logdet - 3.5 - log_normalizer,
-         0.5*(point - 5*scale), inverse - 0.5*scale),
-        ("InverseWishart", -4*logdet - 0.5*np.trace(inverse) - log_normalizer,
-         2.5*scale - 0.5*inverse, -4*inverse + 0.5*inverse@inverse),
+        (
+            "Wishart",
+            logdet - 3.5 - log_normalizer,
+            0.5 * (point - 5 * scale),
+            inverse - 0.5 * scale,
+        ),
+        (
+            "InverseWishart",
+            -4 * logdet - 0.5 * np.trace(inverse) - log_normalizer,
+            2.5 * scale - 0.5 * inverse,
+            -4 * inverse + 0.5 * inverse @ inverse,
+        ),
     ]
     for constructor, value, dscale, dx in cases:
         function = flatppl(f"""
@@ -287,6 +338,8 @@ def test_matrix_rhs_densities_have_independent_gradients():
             inputs = (scale, x)
             outputs = logdensityof({constructor}(nu=5.0, scale=scale), x)
         """).compile()
-        actual, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(scale, point)
+        actual, gradients = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(
+            scale, point
+        )
         np.testing.assert_allclose(actual, value, rtol=3e-6)
         np.testing.assert_allclose(gradients, (dscale, dx), rtol=3e-6, atol=1e-6)

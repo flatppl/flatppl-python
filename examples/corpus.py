@@ -122,7 +122,9 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
             context=context,
         )
         result["stage"] = "compile"
-        density = query.compile(integration=Integration() if name == "minimal" else None)
+        density = query.compile(
+            integration=Integration() if name == "minimal" else None
+        )
         initial = (
             {k: jnp.asarray(v, dtype=jnp.float32) for k, v in initial.items()}
             if isinstance(initial, dict)

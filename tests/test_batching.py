@@ -81,7 +81,9 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes)
     """).compile()
     x = jnp.arange(20, dtype=jnp.float32).reshape(4, 5) / 7
     indices = jnp.array([[1, 3, 3], [5, 2, 4], [2, 2, 2], [4, 1, 5]])
-    arguments = tuple(v[0] if axis is None else v for v, axis in zip((x, indices), axes))
+    arguments = tuple(
+        v[0] if axis is None else v for v, axis in zip((x, indices), axes)
+    )
 
     def oracle(x, indices):
         selected = jnp.array([1, 3, 3]) if selection.startswith("[") else indices
@@ -95,10 +97,14 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes)
     np.testing.assert_allclose(compiled(*arguments), reference(*arguments))
     assert not re.search(r"\bwhile\(", compiled.as_text())
     for actual, expected in (
-        (jax.vmap(jax.value_and_grad(function), in_axes=axes),
-         jax.vmap(jax.value_and_grad(oracle), in_axes=axes)),
-        (jax.grad(lambda x, i: jnp.sum(mapped(x, i))),
-         jax.grad(lambda x, i: jnp.sum(reference(x, i)))),
+        (
+            jax.vmap(jax.value_and_grad(function), in_axes=axes),
+            jax.vmap(jax.value_and_grad(oracle), in_axes=axes),
+        ),
+        (
+            jax.grad(lambda x, i: jnp.sum(mapped(x, i))),
+            jax.grad(lambda x, i: jnp.sum(reference(x, i))),
+        ),
     ):
         found = jax.jit(actual)(*arguments)
         wanted = expected(*arguments)
@@ -132,13 +138,15 @@ def test_composed_primitives_keep_host_axes_separate_from_callable_axes():
 
     def oracle(rows):
         total = jnp.sum(rows)
-        return jnp.arctan(total) + jax.scipy.special.gammaln(1 + total*total)
+        return jnp.arctan(total) + jax.scipy.special.gammaln(1 + total * total)
 
     def mapped(f):
         return jax.vmap(jax.vmap(f, in_axes=1))
 
     compiled = jax.jit(mapped(function)).lower(rows).compile()
-    np.testing.assert_allclose(compiled(rows), mapped(oracle)(rows), rtol=2e-5, atol=2e-6)
+    np.testing.assert_allclose(
+        compiled(rows), mapped(oracle)(rows), rtol=2e-5, atol=2e-6
+    )
     assert not re.search(r"\bwhile\(", compiled.as_text())
     found = jax.jit(mapped(jax.value_and_grad(function)))(rows)
     wanted = mapped(jax.value_and_grad(oracle))(rows)
@@ -220,7 +228,8 @@ def test_scan_map_matches_independent_recurrences():
 @pytest.mark.parametrize("length", [1, 7])
 @pytest.mark.parametrize("batches", [0, 2])
 def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches):
-    function = flatppl("""
+    function = (
+        flatppl("""
         alpha = 0.5
         n = external(integers)
         xs = external(cartpow(reals, n))
@@ -228,7 +237,10 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches)
         states = scan(step, record(total=0.0, square=0.0), xs)
         inputs = (alpha, xs)
         outputs = sum(states.total) + sum(states.square)
-    """).set(n=length).compile()
+    """)
+        .set(n=length)
+        .compile()
+    )
 
     def oracle(alpha, xs):
         def step(state, x):

@@ -35,7 +35,9 @@ def test_record_scan_values_and_gradient_match_jax():
     """).compile()
 
     def oracle(alpha, xs):
-        return jax.lax.scan(lambda acc, x: (alpha*acc+x, alpha*acc+x), 0.0, xs)[1]
+        return jax.lax.scan(lambda acc, x: (alpha * acc + x, alpha * acc + x), 0.0, xs)[
+            1
+        ]
 
     xs = jnp.array([1.0, -2.0, 3.0])
     for alpha in (0.2, 0.7):
@@ -101,8 +103,8 @@ def test_scan_extent_keeps_one_step_body():
         # Use float64 sums to avoid comparing two different float32 AD roundoffs.
         alpha = np.float64(np.float32(0.7))
         n = size - np.arange(size)
-        weights = (1-alpha**n)/(1-alpha)
-        derivatives = (1-n*alpha**(n-1)+(n-1)*alpha**n)/(1-alpha)**2
+        weights = (1 - alpha**n) / (1 - alpha)
+        derivatives = (1 - n * alpha ** (n - 1) + (n - 1) * alpha**n) / (1 - alpha) ** 2
         values = np.asarray(xs, dtype=np.float64)
         expected = (values @ weights, values @ derivatives)
         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
@@ -121,7 +123,7 @@ def test_indefinite_diagonal_metric_contractions_and_output_raising():
         inputs = v
         outputs = (norm, composed, interaction)
     """).compile()
-    inverse = jnp.diag(jnp.array([0.5, -1/3]))
+    inverse = jnp.diag(jnp.array([0.5, -1 / 3]))
     matrix = jnp.array([[1.0, 2.0], [3.0, 4.0]])
     point = jnp.array([0.75, -1.5])
     norm, composed, interaction = function(point)
@@ -153,7 +155,7 @@ def test_complex_interference_values_and_gradient():
         amplitude = (x + 2.0*im) * cis(0.7) + 0.3
         outputs = abs2(amplitude)
     """).compile()
-    oracle = lambda x: jnp.abs((x+2j)*jnp.exp(0.7j)+0.3)**2
+    oracle = lambda x: jnp.abs((x + 2j) * jnp.exp(0.7j) + 0.3) ** 2
     for x in (-2.0, 0.5, 3.0):
         actual = jax.jit(jax.value_and_grad(function))(x)
         expected = jax.value_and_grad(oracle)(x)

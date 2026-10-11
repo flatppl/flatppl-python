@@ -15,13 +15,29 @@ def from_pyhf(
     context: Context | None = None,
     name: str | None = None,
 ) -> Module:
-    """Import pyhf JSON text, a path, or a readable file into a FlatPPL module.
+    """Convert a pyhf model or workspace into a FlatPPL module.
 
-    Strings beginning with ``{`` or ``[`` after whitespace are JSON text.
-    Other strings are paths. Use ``Path`` for an ambiguous filename.
-    Files use UTF-8. Streams are read from their current position and remain open.
-    The result's ``source`` contains the generated FlatPPL, not the JSON input.
-    Registration and query inputs/outputs remain explicit.
+    The bundled Rust converter does the conversion, so the ``pyhf`` package is
+    not needed. The result's :attr:`Module.source` holds the generated FlatPPL.
+    Register it and write a query to compile it. See :doc:`/pyhf`.
+
+    Args:
+        source: JSON text, a path, or a readable text or binary stream. A
+            string that starts with ``{`` or ``[`` after whitespace is JSON
+            text, and any other string is a path. Use :class:`pathlib.Path`
+            for an ambiguous filename. Files and byte streams are UTF-8, with
+            an optional byte-order mark. A stream is read from its current
+            position and stays open.
+        context: The owning context. The default creates a new one.
+        name: The registry path that relative registry imports start from.
+
+    Returns:
+        The converted module.
+
+    Raises:
+        CompilationError: The conversion fails, with stage ``"pyhf"``.
+        OSError: The file cannot be read.
+        UnicodeDecodeError: The bytes are not UTF-8.
     """
     source_path: str | None = None
     if isinstance(source, str) and source.lstrip("\ufeff \t\r\n").startswith(

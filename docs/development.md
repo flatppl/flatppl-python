@@ -40,16 +40,18 @@ untyped imports as `Any`.
 
 ## Build the documentation
 
-From the repository root, use a Python 3.14 environment and run:
+The API reference comes from the installed package's docstrings. Install the
+wheel first, as in [build from source](installation.md#build-from-source). Then
+run:
 
 ```sh
 python -m pip install -r docs/requirements.txt
 sphinx-build -b html -W --keep-going docs docs/_build/html
 ```
 
-Open `docs/_build/html/index.html` in a browser.
-The HTML build needs only the documentation dependencies. It does not import
-the native compiler, JAX, or Enzyme.
+Open `docs/_build/html/index.html` in a browser. Write public docstrings in
+Google style. A test fails when a public name lacks a docstring or an entry in
+`docs/api.md`.
 
 The site uses [Sphinx](https://www.sphinx-doc.org/),
 [MyST Markdown](https://myst-parser.readthedocs.io/), and the
@@ -65,12 +67,14 @@ sphinx-build -b doctest -W --keep-going docs docs/_build/doctest
 ```
 
 The `testcode` blocks run in page-local namespaces. Their `testoutput` blocks
-check the displayed results. The BlackJAX guide includes `examples/nuts.py`
-directly, and the existing package test executes that file.
+check the displayed results. The doctest builder also runs the examples in the
+API docstrings. The BlackJAX guide includes `examples/nuts.py` directly, and
+the package tests execute that file too.
 
-CI builds the HTML separately and executes documentation examples against the
-Linux x86-64 wheels. The package's full runtime tests run on Python 3.12–3.14
-for both wheel targets.
+CI builds the HTML from the Linux x86-64 Python 3.14 wheel that the same run
+built. It executes the documentation examples against
+the Linux x86-64 wheels for Python 3.12–3.14. The package's full runtime tests
+run on Python 3.12–3.14 for both wheel targets.
 After all checks pass on `main`, CI publishes the rendered site to
 [GitHub Pages](https://flatppl.org/flatppl-python/).
 Pull requests build the site and upload a preview artifact without deploying.

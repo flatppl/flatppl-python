@@ -50,6 +50,7 @@ corpus
 
 api
 development
+changelog
 ```
 
 ## Related projects

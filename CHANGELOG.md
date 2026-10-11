@@ -13,6 +13,8 @@ tagged release.
 - Ruff formatting and lint checks in CI.
 - `flatppl.CompiledFunction`, the type that `Module.compile` returns, is
   exported. Importing `flatppl` still does not import JAX.
+- An API reference generated from Google-style docstrings, whose examples run
+  as doctests.
 
 ### Known limitations
 

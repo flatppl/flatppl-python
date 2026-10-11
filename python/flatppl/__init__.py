@@ -14,6 +14,7 @@ from ._api import (
     Module,
     flatppl,
 )
+from ._constants import Fixed, Reference
 from ._imports import from_pyhf
 
 if TYPE_CHECKING:
@@ -24,8 +25,10 @@ __all__ = [
     "CompilationError",
     "CompiledFunction",
     "Context",
+    "Fixed",
     "Integration",
     "Module",
+    "Reference",
     "flatppl",
     "from_pyhf",
 ]

@@ -217,6 +217,38 @@ class Module:
         """All public bindings by name, including names that Python attributes hide."""
         return self._bindings
 
+    def constant(self, name: str) -> object:
+        """Read a binding's right-hand side back as a Python value.
+
+        The read is structural and evaluates nothing. Numbers, booleans and
+        strings read back as Python scalars, ``inf`` and ``pi`` as floats,
+        arrays as NumPy arrays, records and tables as dicts, and tuples as
+        tuples. ``fixed(x)`` reads back as :class:`Fixed` and a reference to
+        another binding as :class:`Reference`.
+
+        Args:
+            name: A public binding whose right-hand side is a literal.
+
+        Returns:
+            The value.
+
+        Raises:
+            CompilationError: No public binding has that name, or its
+                right-hand side is not a literal, with stage ``"constant"``.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> module = flatppl('''
+            ... mu = elementof(reals)
+            ... point = record(mu = 0.5, sigma = fixed(1.0), poi = mu)
+            ... ''')
+            >>> module.constant("point")
+            {'mu': 0.5, 'sigma': Fixed(value=1.0), 'poi': Reference(name='mu')}
+        """
+        from ._constants import value
+
+        return value(json.loads(native_call(self._native.constant, name)))
+
     def __getattr__(self, name: str) -> Binding:
         try:
             return self._bindings[name]

@@ -17,6 +17,8 @@ tagged release.
   as doctests.
 - An example gallery that runs `nuts.py`, `regression.py` and `corpus.py` in
   the documentation build, each within a stated runtime budget.
+- `Module.constant` reads a literal binding back, with `flatppl.Fixed` and
+  `flatppl.Reference` for markers and references.
 
 ### Changed
 

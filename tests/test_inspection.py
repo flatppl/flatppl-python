@@ -7,10 +7,67 @@ import pytest
 
 from flatppl import (
     CompilationError,
+    Context,
     Fixed,
+    Location,
+    Parameter,
     Reference,
     flatppl,
 )
+
+MODEL = """# ünïcode comment
+mu = elementof(interval(0.0, inf))
+n = external(posintegers)
+theta ~ Normal(mu = mu, sigma = 1.0)
+v = elementof(cartpow(reals, [2, 3]))
+p = elementof(cartprod(a = reals, b = stdsimplex(3)))
+z = elementof(cartpow(reals, n))
+_scaled = 2.0 * mu
+y = _scaled + 1.0
+inputs = (mu, v)
+outputs = y + sum(v)
+"""
+
+
+def test_bindings_report_kind_domain_shape_size_source_and_edges() -> None:
+    module = flatppl(MODEL)
+    mu, v, z, y = (module.bindings[name] for name in ("mu", "v", "z", "y"))
+    assert (mu.kind, dict(mu.domain or {}), mu.shape, mu.size) == (
+        "parameter",
+        {"set": "interval", "lo": 0.0, "hi": "inf"},
+        (),
+        1,
+    )
+    assert mu.source == "elementof(interval(0.0, inf))"
+    assert mu.location == Location(module.source_name, 2, 6)
+    assert module.n.kind == "observation"
+    assert module.theta.kind == "draw"
+    assert v.shape == (2, 3)
+    assert v.size == 6
+    assert v.domain is not None
+    assert v.domain["shape"] == (2, 3)
+    # A size bound by `set` is not known before it.
+    assert (z.shape, z.size) == ((None,), None)
+    bound = module.set(n=4)
+    assert (bound.z.shape, bound.z.size) == ((4,), 4)
+    assert (bound.n.kind, bound.n.source, bound.n.location) == ("derived", None, None)
+    # Edges pass through the private `_scaled` to the public `mu`.
+    assert (y.kind, y.dependencies) == ("derived", ("mu",))
+    assert module.outputs.dependencies == ("v", "y")
+    assert "_scaled" not in module.bindings
+
+
+def test_parameters_are_the_elementof_bindings_in_source_order() -> None:
+    parameters = flatppl(MODEL).parameters
+    assert list(parameters) == ["mu", "v", "p", "z"]
+    assert parameters["p"] == Parameter(
+        "p", parameters["p"].binding.domain, None, 4, parameters["p"].binding
+    )
+    assert repr(parameters["v"]) == "<Parameter v in cartpow(reals, [2, 3])>"
+    assert repr(parameters["p"]) == (
+        "<Parameter p in cartprod(a = reals, b = stdsimplex(3))>"
+    )
+    assert repr(parameters) == "<Parameters mu, v, p, z>"
 
 
 def test_constants_read_back_literals_markers_and_references() -> None:
@@ -59,3 +116,39 @@ def test_packed_constants_bind_arrays_and_infinite_reals() -> None:
     np.testing.assert_array_equal(bound.constant("k"), [1, 2, 3])
     np.testing.assert_array_equal(bound.constant("b"), [True, False])
     assert bound.constant("top") == math.inf
+
+
+RESERVED = [
+    "bindings",
+    "compile",
+    "constant",
+    "context",
+    "parameters",
+    "set",
+    "source",
+    "source_name",
+]
+
+
+def test_reserved_names_stay_reachable_through_bindings() -> None:
+    module = flatppl("\n".join(f"{name} = 1.0" for name in RESERVED) + "\nkept = 2.0")
+    for name in RESERVED:
+        assert module.bindings[name].name == name
+        assert not isinstance(getattr(module, name), type(module.bindings[name]))
+    names = dir(module)
+    assert names.count("set") == 1
+    assert "kept" in names
+    assert module.kept.name == "kept"
+
+
+def test_module_and_binding_reprs_name_their_contents() -> None:
+    module = flatppl(MODEL)
+    assert repr(module).startswith(f"<Module {module.source_name}: 9 bindings: mu,")
+    assert repr(module.mu) == (
+        "<Binding mu: real parameter, line 2: elementof(interval(0.0, inf))>"
+    )
+
+
+def test_locations_name_the_module_source_label() -> None:
+    module = flatppl("x = elementof(reals)", context=Context(), name="m.flatppl")
+    assert module.x.location == Location("m.flatppl", 1, 5)

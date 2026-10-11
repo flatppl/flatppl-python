@@ -13,6 +13,8 @@ from ._api import (
     Integration,
     Location,
     Module,
+    Parameter,
+    Parameters,
     flatppl,
 )
 from ._constants import Fixed, Reference
@@ -30,6 +32,8 @@ __all__ = [
     "Integration",
     "Location",
     "Module",
+    "Parameter",
+    "Parameters",
     "Reference",
     "flatppl",
     "from_pyhf",

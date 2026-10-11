@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache, partial
-from types import MappingProxyType
 from typing import Any, Literal, cast
 
 import jax
@@ -17,6 +16,7 @@ from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
 from jax.typing import DTypeLike
 
+from ._frozen import freeze
 from ._schema import Export, Schema, TensorSchema
 from ._tables import columns as table_columns
 
@@ -46,16 +46,6 @@ def lowering_target(target: str | None = None) -> Literal["cpu", "gpu"]:
     if target not in ("cpu", "gpu"):
         raise ValueError('target must be "cpu", "gpu" or None')
     return target
-
-
-def _freeze(value: Any) -> Any:
-    if isinstance(value, dict):
-        fields = cast(dict[str, Any], value)
-        return MappingProxyType({key: _freeze(item) for key, item in fields.items()})
-    if isinstance(value, list):
-        items = cast(list[Any], value)
-        return tuple(_freeze(item) for item in items)
-    return value
 
 
 def _leaves(schema: Schema) -> Iterator[TensorSchema]:
@@ -249,7 +239,7 @@ class CompiledFunction:
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
-        schema = _freeze(
+        schema = freeze(
             {key: value for key, value in exported.items() if key != "stablehlo"}
         )
         inputs = [

@@ -54,7 +54,37 @@ It is not a Python value or an expression builder. Evaluate a binding by naming
 it in a query's `outputs`, then compile the query.
 
 Use `module.bindings["compile"]` when a FlatPPL name collides with a Python
-method. The mapping contains every public binding exposed by the compiler.
+attribute. The mapping contains every public binding exposed by the compiler.
+These names are Python attributes of a module, so attribute access never
+returns a binding with one of them: `bindings`, `compile`, `constant`,
+`context`, `parameters`, `set`, `source` and `source_name`. Later releases add
+names to this list, so prefer `module.bindings[name]` in library code.
+`dir(module)` lists the bindings that attribute access reaches.
+
+A binding reports what inference knows about it: its `kind`, `domain`, `shape`,
+`size`, its `source` text and `location`, and the public bindings it depends
+on. `module.parameters` collects the bindings written as `elementof(set)`, and
+`module.constant(name)` reads a literal binding back as a Python value.
+
+```{testcode}
+from flatppl import flatppl
+
+module = flatppl("""
+    mu = elementof(reals)
+    sigma = elementof(posreals)
+    y ~ Normal(mu = mu, sigma = sigma)
+    prior_scale = [1.0, 2.0]
+""")
+print(module.y.kind, module.y.dependencies)
+print(list(module.parameters))
+print(module.constant("prior_scale"))
+```
+
+```{testoutput}
+draw ('mu', 'sigma')
+['mu', 'sigma']
+[1. 2.]
+```
 
 ## Load files
 

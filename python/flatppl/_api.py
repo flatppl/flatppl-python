@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 # The native module ships compiled in the wheel, with a stub in the source tree.
 from . import _native  # pyright: ignore[reportMissingModuleSource]
+from ._frozen import freeze
 
 if TYPE_CHECKING:
     from jax.typing import DTypeLike
@@ -92,7 +93,7 @@ def native_call[**P, T](
 type _ExportKey = tuple[str, bool, tuple[float, float, int] | None, str, Batch | None]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Binding:
     """A public binding of a module and its inferred metadata.
 
@@ -103,29 +104,139 @@ class Binding:
     Attributes:
         module: The module that owns the binding.
         name: The FlatPPL binding name.
+        kind: ``"parameter"`` for ``elementof``, ``"observation"`` for
+            ``external`` or ``load_data``, ``"draw"`` for ``x ~ measure``,
+            and ``"derived"`` for everything else, including values bound by
+            :meth:`Module.set`.
         value_type: The inferred type as text, such as ``"real[3]"``, or ``None``.
         phase: The inferred phase as text, such as ``"fixed"`` or
             ``"parameterized"``, or ``None``.
+        domain: The inferred value set as a read-only tree, or ``None``. Each
+            node has a ``"set"`` key: a named set such as ``"reals"`` or
+            ``"posintegers"``, ``"interval"`` with ``"lo"`` and ``"hi"``
+            (numbers, or ``"-inf"`` and ``"inf"``), ``"stdsimplex"`` with
+            ``"n"``, ``"cartpow"`` with ``"of"`` and ``"shape"``,
+            ``"cartprod"`` with a tuple ``"of"``, ``"record"`` with
+            ``"fields"`` of ``"name"`` and ``"set"``, or ``"unknown"``. An
+            extent that :meth:`Module.set` binds later is ``None``.
+        shape: The array extents, ``()`` for a scalar, ``None`` for an extent
+            not known yet, and ``None`` overall for records, tuples, tables
+            and non-values.
+        size: The number of scalar elements, or ``None`` when an extent is
+            not known yet or the binding is not a value.
         span: Byte offsets ``(start, end)`` of the right-hand side in
             :attr:`Module.source`, or ``None``.
+        source: The right-hand side as written, or ``None`` for a value bound
+            by :meth:`Module.set`. A draw shows its whole statement.
+        location: Where the right-hand side starts, or ``None``.
+        dependencies: The public bindings that this one references directly,
+            in source order. References through private bindings count.
 
     Example:
         >>> from flatppl import flatppl
         >>> module = flatppl('''
-        ... x = elementof(reals)
+        ... x = elementof(interval(0.0, inf))
         ... y = 2.0 * x
         ... ''')
-        >>> module.y.value_type, module.y.phase
-        ('real', 'parameterized')
-        >>> module.source[slice(*module.y.span)]
-        '2.0 * x'
+        >>> module.x.kind, dict(module.x.domain)
+        ('parameter', {'set': 'interval', 'lo': 0.0, 'hi': 'inf'})
+        >>> module.y.source, module.y.location.line, module.y.dependencies
+        ('2.0 * x', 3, ('x',))
     """
 
-    module: Module = field(repr=False)
+    module: Module
     name: str
+    kind: Literal["parameter", "observation", "draw", "derived"]
     value_type: str | None
     phase: str | None
+    domain: Mapping[str, Any] | None
+    shape: tuple[int | None, ...] | None
+    size: int | None
     span: tuple[int, int] | None
+    source: str | None
+    location: Location | None
+    dependencies: tuple[str, ...]
+
+    def __repr__(self) -> str:
+        where = f", line {self.location.line}" if self.location else ""
+        what = self.source if self.source is not None else "bound value"
+        return f"<Binding {self.name}: {self.value_type} {self.kind}{where}: {what}>"
+
+
+@dataclass(frozen=True)
+class Parameter:
+    """A free parameter of a module: a binding written as ``elementof(set)``.
+
+    Attributes:
+        name: The binding name.
+        domain: The inferred value set, as in :attr:`Binding.domain`.
+        shape: The array extents, as in :attr:`Binding.shape`.
+        size: The number of scalar elements, as in :attr:`Binding.size`.
+        binding: The binding itself.
+    """
+
+    name: str
+    domain: Mapping[str, Any] | None
+    shape: tuple[int | None, ...] | None
+    size: int | None
+    binding: Binding = field(repr=False, compare=False)
+
+    def __repr__(self) -> str:
+        domain = "unknown" if self.domain is None else _domain_text(self.domain)
+        return f"<Parameter {self.name} in {domain}>"
+
+
+def _domain_text(domain: Mapping[str, Any]) -> str:
+    """Write a domain tree in FlatPPL set syntax."""
+    kind = domain["set"]
+    if kind == "interval":
+        return f"interval({domain['lo']}, {domain['hi']})"
+    if kind == "stdsimplex":
+        return f"stdsimplex({'?' if domain['n'] is None else domain['n']})"
+    if kind == "cartpow":
+        shape = ["?" if n is None else str(n) for n in domain["shape"]]
+        extent = shape[0] if len(shape) == 1 else "[" + ", ".join(shape) + "]"
+        return f"cartpow({_domain_text(domain['of'])}, {extent})"
+    if kind == "cartprod":
+        return "cartprod(" + ", ".join(_domain_text(d) for d in domain["of"]) + ")"
+    if kind == "record":
+        fields = (f"{f['name']} = {_domain_text(f['set'])}" for f in domain["fields"])
+        return "cartprod(" + ", ".join(fields) + ")"
+    return str(kind)
+
+
+class Parameters(Mapping[str, Parameter]):
+    """The free parameters of a module by name, in source order.
+
+    Get it from :attr:`Module.parameters`. It reads the module's inferred
+    domains only. Converter records add initial values and bounds in a later
+    release.
+
+    Example:
+        >>> from flatppl import flatppl
+        >>> module = flatppl('''
+        ... mu = elementof(reals)
+        ... sigma = elementof(posreals)
+        ... n = external(posintegers)
+        ... ''')
+        >>> list(module.parameters), module.parameters["sigma"].domain["set"]
+        (['mu', 'sigma'], 'posreals')
+    """
+
+    def __init__(self, parameters: Mapping[str, Parameter]) -> None:
+        self._parameters = dict(parameters)
+
+    def __getitem__(self, name: str) -> Parameter:
+        return self._parameters[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._parameters)
+
+    def __len__(self) -> int:
+        return len(self._parameters)
+
+    def __repr__(self) -> str:
+        return f"<Parameters {', '.join(self._parameters) or '(none)'}>"
 
 
 @dataclass(frozen=True)
@@ -214,14 +325,26 @@ class Module:
         self._context = context
         self._exports: dict[_ExportKey, Export] = {}
         items: list[BindingInfo] = json.loads(native.bindings())
+        label = native.source_name
         self._bindings = MappingProxyType(
             {
                 item["name"]: Binding(
-                    self,
-                    item["name"],
-                    item["value_type"],
-                    item["phase"],
-                    _span(item["span"]),
+                    module=self,
+                    name=item["name"],
+                    kind=item["kind"],
+                    value_type=item["value_type"],
+                    phase=item["phase"],
+                    domain=freeze(item["domain"]),
+                    shape=None if item["shape"] is None else tuple(item["shape"]),
+                    size=item["size"],
+                    span=_span(item["span"]),
+                    source=item["source"],
+                    location=(
+                        None
+                        if item["line"] is None or item["column"] is None
+                        else Location(label, item["line"], item["column"])
+                    ),
+                    dependencies=tuple(item["dependencies"]),
                 )
                 for item in items
             }
@@ -246,6 +369,17 @@ class Module:
     def bindings(self) -> Mapping[str, Binding]:
         """All public bindings by name, including names that Python attributes hide."""
         return self._bindings
+
+    @property
+    def parameters(self) -> Parameters:
+        """The free parameters, the bindings written as ``elementof(set)``."""
+        return Parameters(
+            {
+                name: Parameter(name, b.domain, b.shape, b.size, b)
+                for name, b in self._bindings.items()
+                if b.kind == "parameter"
+            }
+        )
 
     def constant(self, name: str) -> object:
         """Read a binding's right-hand side back as a Python value.
@@ -284,6 +418,16 @@ class Module:
             return self._bindings[name]
         except KeyError:
             raise AttributeError(name) from None
+
+    def __dir__(self) -> list[str]:
+        hidden = set(dir(type(self)))
+        names = (n for n in self._bindings if n.isidentifier() and n not in hidden)
+        return sorted({*super().__dir__(), *names})
+
+    def __repr__(self) -> str:
+        names = list(self._bindings)
+        shown = ", ".join(names[:8]) + (", ..." if len(names) > 8 else "")
+        return f"<Module {self.source_name}: {len(names)} bindings: {shown}>"
 
     def set(self, **constants: object) -> Module:
         """Return a new module with declared externals bound to fixed values.

@@ -38,6 +38,15 @@ whose names start with an underscore, is private.
    :no-members:
 ```
 
+## Parameters
+
+```{eval-rst}
+.. autoclass:: flatppl.Parameters
+   :no-members:
+
+.. autoclass:: flatppl.Parameter
+```
+
 ## Values read back
 
 ```{eval-rst}

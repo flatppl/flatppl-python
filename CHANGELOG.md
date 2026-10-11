@@ -17,8 +17,13 @@ tagged release.
   as doctests.
 - An example gallery that runs `nuts.py`, `regression.py` and `corpus.py` in
   the documentation build, each within a stated runtime budget.
+- `Binding.kind`, `domain`, `shape`, `size`, `source`, `location` and
+  `dependencies`, read from the compiler's inferred metadata.
+- `Module.parameters` with `flatppl.Parameters` and `flatppl.Parameter`.
 - `Module.constant` reads a literal binding back, with `flatppl.Fixed` and
   `flatppl.Reference` for markers and references.
+- Readable reprs for modules, bindings and parameters, and `dir(module)`
+  lists the bindings attribute access reaches.
 - `CompilationError.location` and `excerpt`, with `flatppl.Location`.
   `str(error)` shows the line and column and the source line with a caret.
 

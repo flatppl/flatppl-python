@@ -1,10 +1,13 @@
 """Public attributes and documented argument errors that other tests do not reach."""
 
+import subprocess
+import sys
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from flatppl import CompilationError, Context, flatppl
+from flatppl import CompilationError, CompiledFunction, Context, flatppl
 
 SOURCE = """x = elementof(reals)
 n = external(posintegers)
@@ -103,3 +106,14 @@ def test_call_arguments_bind_by_position_or_name() -> None:
     ]:
         with pytest.raises(error):
             function(*args, **kwargs)
+
+
+def test_compiled_function_is_exported_without_importing_jax() -> None:
+    assert isinstance(flatppl(SOURCE).compile(), CompiledFunction)
+    imported = subprocess.run(
+        [sys.executable, "-c", "import flatppl, sys; print('jax' in sys.modules)"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert imported.stdout.strip() == "False"

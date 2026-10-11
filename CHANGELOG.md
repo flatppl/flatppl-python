@@ -11,6 +11,8 @@ tagged release.
   `py.typed` now covers the compiled `_native` module through a stub that a
   test holds to the extension's signatures.
 - Ruff formatting and lint checks in CI.
+- `flatppl.CompiledFunction`, the type that `Module.compile` returns, is
+  exported. Importing `flatppl` still does not import JAX.
 
 ### Known limitations
 

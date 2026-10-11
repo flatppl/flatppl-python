@@ -16,8 +16,9 @@ from ._frozen import freeze
 if TYPE_CHECKING:
     from jax.typing import DTypeLike
 
+    from ._graph import Graph
     from ._jax import Batch, CompiledFunction
-    from ._schema import BindingInfo, Export
+    from ._schema import BindingInfo, Export, MathRow
 
 
 def _span(span: Sequence[int] | None) -> tuple[int, int] | None:
@@ -162,6 +163,26 @@ class Binding:
         what = self.source if self.source is not None else "bound value"
         return f"<Binding {self.name}: {self.value_type} {self.kind}{where}: {what}>"
 
+    def math(self, format: Literal["tex", "mathml", "typst"] = "tex") -> str:
+        r"""Render this binding as mathematics.
+
+        Args:
+            format: ``"tex"``, ``"mathml"`` or ``"typst"``.
+
+        Returns:
+            The binding's statement in that notation.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> module = flatppl("theta ~ Normal(mu = 0.0, sigma = 1.0)")
+            >>> module.theta.math()
+            'θ \\sim \\mathcal{N}\\left(0, 1\\right)'
+        """
+        return self.module.math(format)[self.name]
+
+    def _repr_latex_(self) -> str:
+        return f"$\\displaystyle {self.math()}$"
+
 
 @dataclass(frozen=True)
 class Parameter:
@@ -272,6 +293,14 @@ class Context:
 
     def __init__(self) -> None:
         self._native = _native.Context()
+        self._queries = 0
+
+    def _register_query_model(self, module: Module) -> str:
+        # The registry is append-only, so each query takes a fresh name.
+        name = f"flatppl-query/model-{self._queries}.flatppl"
+        self._queries += 1
+        self.register(name, module)
+        return name
 
     def load(self, path: str | os.PathLike[str]) -> Module:
         """Load a module from a file, a directory bundle or a cached HTTP source.
@@ -320,9 +349,13 @@ class Module:
     unless a Python attribute has that name. Use :attr:`bindings` for those.
     """
 
-    def __init__(self, native: _native.Module, context: Context) -> None:
+    def __init__(
+        self, native: _native.Module, context: Context, *, gradient: bool = False
+    ) -> None:
         self._native = native
         self._context = context
+        # A gradient query keeps the flag through `set` and `slice`.
+        self._gradient = gradient
         self._exports: dict[_ExportKey, Export] = {}
         items: list[BindingInfo] = json.loads(native.bindings())
         label = native.source_name
@@ -429,6 +462,166 @@ class Module:
         shown = ", ".join(names[:8]) + (", ..." if len(names) > 8 else "")
         return f"<Module {self.source_name}: {len(names)} bindings: {shown}>"
 
+    def _repr_html_(self) -> str:
+        from html import escape
+
+        def cell(value: object) -> str:
+            return f"<td>{escape('' if value is None else str(value))}</td>"
+
+        rows = "".join(
+            "<tr>"
+            + cell(b.name)
+            + cell(b.kind)
+            + cell(b.value_type)
+            + cell(None if b.shape is None else list(b.shape))
+            + cell(None if b.domain is None else _domain_text(b.domain))
+            + cell(b.source)
+            + "</tr>"
+            for b in self._bindings.values()
+        )
+        head = "".join(
+            f"<th>{h}</th>"
+            for h in ("name", "kind", "type", "shape", "domain", "source")
+        )
+        return (
+            f"<p>{escape(self.source_name)}</p><table><thead><tr>{head}</tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
+    def query(
+        self,
+        outputs: str | Sequence[str] | Mapping[str, str],
+        *,
+        inputs: Literal["parameters"] | Sequence[str] = "parameters",
+        layout: Literal["record", "flat"] = "record",
+        gradient: bool = False,
+    ) -> Module:
+        """Build a query over this module's bindings.
+
+        The query is ordinary FlatPPL, visible through :attr:`source`. It
+        loads this module under a fresh name in the same context, so each call
+        adds one registry entry. Compile the result with :meth:`compile`.
+
+        Args:
+            outputs: A binding name, a sequence of names, or a mapping from
+                result name to a FlatPPL expression over this module's public
+                bindings. A draw, or anything that depends on one, cannot be
+                an output, because a loaded module hides stochastic bindings.
+            inputs: ``"parameters"`` for every free parameter the outputs
+                depend on, or the names of parameters and externals.
+            layout: ``"record"`` passes the parameters as one record
+                ``point``. ``"flat"`` passes them as one real vector
+                ``theta`` in declaration order, which suits samplers. It holds
+                scalar and vector parameters with real elements, and refuses
+                matrix, record, integer and boolean parameters. A positional
+                ``cartprod`` takes all scalars or all vectors, so each scalar
+                becomes a length-one vector, such as ``cartpow(posreals, 1)``.
+                Each parameter's set is kept in the domain of ``theta`` but
+                not enforced at run time. Transforms to unconstrained
+                coordinates come in a later release.
+            gradient: Compile to a function that returns
+                ``(outputs, jacobian)``, with the Jacobian of the outputs with
+                respect to the parameter input. For a scalar output it is the
+                gradient.
+
+        Returns:
+            The query module.
+
+        Raises:
+            ValueError: An output or input is not allowed, a parameter domain
+                is unknown or has a size not bound yet, or the flat layout
+                cannot hold a parameter. The message names the binding.
+            CompilationError: The generated query does not infer.
+
+        Example:
+            >>> import jax
+            >>> from flatppl import flatppl
+            >>> model = flatppl('''
+            ... mu = elementof(reals)
+            ... sigma = elementof(posreals)
+            ... prior = lawof(record(mu = mu, sigma = sigma))
+            ... shifted = mu + 2.0 * sigma
+            ... ''')
+            >>> query = model.query("shifted", gradient=True)
+            >>> value, jacobian = query.compile()({"mu": 1.0, "sigma": 0.5})
+            >>> float(value), float(jacobian["sigma"])
+            (2.0, 2.0)
+        """
+        from ._query import build
+
+        source = build(self, outputs, inputs, layout)
+        query = flatppl(source, context=self._context)
+        query._gradient = gradient
+        return query
+
+    def graph(self) -> Graph:
+        """Return the dependency graph of the public bindings."""
+        from ._graph import graph
+
+        return graph(self._bindings)
+
+    def upstream(self, name: str) -> tuple[str, ...]:
+        """Return every public binding that ``name`` depends on, in source order.
+
+        Raises:
+            KeyError: No public binding has that name.
+        """
+        from ._graph import closure
+
+        self._bindings[name]
+        return closure(self._bindings, [name], downward=False)
+
+    def downstream(self, name: str) -> tuple[str, ...]:
+        """Return every public binding that depends on ``name``, in source order.
+
+        Raises:
+            KeyError: No public binding has that name.
+        """
+        from ._graph import closure
+
+        self._bindings[name]
+        return closure(self._bindings, [name], downward=True)
+
+    def slice(self, outputs: str | Sequence[str]) -> Module:
+        """Return a module with only the bindings that ``outputs`` reach.
+
+        The slice is printed and parsed again in the same context, so its
+        :attr:`source` and positions refer to the printed text. Imports and
+        values bound by :meth:`set` carry over.
+
+        Args:
+            outputs: The binding names to keep, with everything they reach.
+
+        Returns:
+            The sliced module.
+
+        Raises:
+            CompilationError: A name is not a public binding.
+        """
+        names = [outputs] if isinstance(outputs, str) else list(outputs)
+        native = native_call(self._context._native.slice, self._native, names)  # pyright: ignore[reportPrivateUsage]
+        return Module(native, self._context, gradient=self._gradient)
+
+    def math(
+        self, format: Literal["tex", "mathml", "typst"] = "tex"
+    ) -> Mapping[str, str]:
+        """Render every binding as mathematics.
+
+        Args:
+            format: ``"tex"``, ``"mathml"`` or ``"typst"``.
+
+        Returns:
+            Each binding's statement by name, in source order, including
+            private bindings.
+
+        Raises:
+            ValueError: The format is unknown.
+        """
+        rows: list[MathRow] = json.loads(native_call(self._native.math, format))
+        return MappingProxyType(
+            {name: row["text"] for row in rows for name in row["names"]}
+        )
+
     def set(self, **constants: object) -> Module:
         """Return a new module with declared externals bound to fixed values.
 
@@ -470,7 +663,7 @@ class Module:
             allow_nan=False,
         )
         native = native_call(self._context._native.set, self._native, values)  # pyright: ignore[reportPrivateUsage]
-        return Module(native, self._context)
+        return Module(native, self._context, gradient=self._gradient)
 
     def compile(
         self,
@@ -559,6 +752,7 @@ class Module:
             autodiff=autodiff,
             export_batch=export_batch,
             optimize_forward=optimize_forward,
+            gradient=self._gradient,
         )
 
 

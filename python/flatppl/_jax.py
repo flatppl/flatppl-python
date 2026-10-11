@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
+import re
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
+from types import MappingProxyType
 from typing import Any, Literal, cast
 
 import jax
@@ -35,6 +37,7 @@ type _Call = Callable[..., tuple[jax.Array, ...]]
 # used program goes first. A cached program keeps the module that built it
 # alive, because its batching rule exports from that module.
 PROGRAM_CACHE_SIZE = 256
+_OPERATION = re.compile(r'(?:= |^\s+)"?stablehlo\.([a-z_]+)', re.MULTILINE)
 _programs: OrderedDict[tuple[str, Axes, bool, bool], _Call] = OrderedDict()
 
 
@@ -246,6 +249,7 @@ class CompiledFunction:
     _call: _Call = field(repr=False)
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
+    _gradient: bool = field(repr=False)
 
     def __init__(
         self,
@@ -254,6 +258,7 @@ class CompiledFunction:
         autodiff: bool,
         export_batch: ExportBatch,
         optimize_forward: bool = False,
+        gradient: bool = False,
     ) -> None:
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
@@ -281,6 +286,7 @@ class CompiledFunction:
         object.__setattr__(self, "_call", call)
         object.__setattr__(self, "_input_count", len(inputs))
         object.__setattr__(self, "_requires_x64", requires_x64)
+        object.__setattr__(self, "_gradient", gradient)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Evaluate the query.
@@ -290,7 +296,10 @@ class CompiledFunction:
             **kwargs: Inputs by name, after the positional ones.
 
         Returns:
-            An array, or a dict or tuple of arrays, as the query's outputs declare.
+            An array, or a dict or tuple of arrays, as the query's outputs
+            declare. A query built with ``gradient=True`` returns
+            ``(outputs, jacobian)`` instead, with the Jacobian of the outputs
+            with respect to the first input.
 
         Raises:
             TypeError: An input is missing, repeated or unknown, a record or
@@ -316,10 +325,44 @@ class CompiledFunction:
         missing = [name for name in names if name not in values]
         if missing:
             raise TypeError(f"missing inputs: {', '.join(missing)}")
+        if not self._gradient:
+            return self._evaluate(values)
+        first = names[0]
+
+        def evaluate(value: Any) -> tuple[Any, Any]:
+            outputs = self._evaluate({**values, first: value})
+            return outputs, outputs
+
+        jacobian, outputs = jax.jacrev(evaluate, has_aux=True)(values[first])  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        return outputs, jacobian
+
+    def _evaluate(self, values: Mapping[str, Any]) -> Any:
         leaves: list[jax.Array | None] = [None] * self._input_count
-        for item in fields:
+        for item in self.schema["inputs"]:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
         return _unpack(self.schema["output"], self._call(*leaves))
+
+    def stats(self) -> Mapping[str, int]:
+        """Count the operations of the unbatched StableHLO program.
+
+        Returns:
+            The number of operations of each kind, such as ``"multiply"`` or
+            ``"dot_general"``, sorted by name, and their ``"total"``.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> function = flatppl('''
+            ... x = elementof(reals)
+            ... inputs = x
+            ... outputs = 2.0 * x
+            ... ''').compile()
+            >>> function.stats()["multiply"]
+            1
+        """
+        counts = Counter(_OPERATION.findall(self.stablehlo))
+        return MappingProxyType(
+            dict(sorted(counts.items())) | {"total": counts.total()}
+        )
 
     def example_input(self, fill: float = 0.0) -> dict[str, Any]:
         """Build inputs of the right structure, shapes and dtypes.
@@ -355,7 +398,10 @@ class CompiledFunction:
             f"{item['name']}: {_describe(item['value'])}"
             for item in self.schema["inputs"]
         )
-        return f"<CompiledFunction ({inputs}) -> {_describe(self.schema['output'])}>"
+        outputs = _describe(self.schema["output"])
+        if self._gradient:
+            outputs = f"({outputs}, jacobian)"
+        return f"<CompiledFunction ({inputs}) -> {outputs}>"
 
 
 def _filled(schema: Any, fill: float) -> Any:

@@ -55,7 +55,7 @@ examples_dir = os.environ.get("FLATPPL_EXAMPLES_DIR")
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["examples"],
-    "filename_pattern": r"\.py$" if examples_dir else r"(nuts|regression)\.py$",
+    "filename_pattern": r"\.py$" if examples_dir else r"/(?!corpus)[^/]+\.py$",
     "reset_argv": "_gallery.reset_argv",
     "reset_modules": ("_gallery.enforce_budget",),
     "reset_modules_order": "both",

@@ -33,7 +33,7 @@ Documentation = "https://flatppl.org/flatppl-python/"
 Repository = "https://github.com/flatppl/flatppl-python"
 
 [project.optional-dependencies]
-test = ["pytest>=8", "blackjax==1.7.1", "pandas==3.0.6", "polars>=2", "pyhf==0.7.6"]
+test = ["pytest>=8", "blackjax==1.7.1", "pandas==3.0.6", "polars>=2", "pyhf==0.7.6", "networkx>=3"]
 
 [dependency-groups]
 lint = ["ruff>=0.16", "pyright>=1.1.414", "pandas-stubs>=3"]
@@ -50,7 +50,7 @@ testpaths = ["tests"]
 [tool.pyright]
 include = ["python", "tests", "examples"]
 extraPaths = ["python"]
-# Stubs declare the untyped imports as Any: enzyme_ad, blackjax, pyhf, pyarrow.
+# Stubs declare the untyped imports as Any: enzyme_ad, blackjax, pyhf, pyarrow, networkx.
 stubPath = "typings"
 typeCheckingMode = "strict"
 pythonVersion = "3.12"

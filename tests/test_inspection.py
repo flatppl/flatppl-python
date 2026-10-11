@@ -125,10 +125,16 @@ RESERVED = [
     "compile",
     "constant",
     "context",
+    "downstream",
+    "graph",
+    "math",
     "parameters",
+    "query",
     "set",
+    "slice",
     "source",
     "source_name",
+    "upstream",
 ]
 
 
@@ -202,3 +208,74 @@ def test_compiling_again_reuses_the_compiled_program() -> None:
 def test_locations_name_the_module_source_label() -> None:
     module = flatppl("x = elementof(reals)", context=Context(), name="m.flatppl")
     assert module.x.location == Location("m.flatppl", 1, 5)
+
+
+GRAPH_MODEL = """
+mu = elementof(reals)
+sigma = elementof(posreals)
+_scaled = 2.0 * mu
+y = _scaled + sigma
+z = exp(y)
+other = elementof(reals)
+"""
+
+
+def test_graph_closures_follow_dependencies() -> None:
+    module = flatppl(GRAPH_MODEL)
+    graph = module.graph()
+    assert graph.nodes == ("mu", "sigma", "y", "z", "other")
+    assert graph.edges == (("mu", "y"), ("sigma", "y"), ("y", "z"))
+    assert module.upstream("z") == ("mu", "sigma", "y")
+    assert module.downstream("mu") == ("y", "z")
+    assert module.downstream("other") == ()
+    assert '"mu" -> "y";' in graph.to_dot()
+    with pytest.raises(KeyError):
+        module.upstream("absent")
+    networkx = pytest.importorskip("networkx")
+    digraph = graph.to_networkx()
+    assert networkx.ancestors(digraph, "z") == {"mu", "sigma", "y"}
+    assert digraph.nodes["mu"]["kind"] == "parameter"
+
+
+def test_slices_keep_what_the_outputs_reach() -> None:
+    module = flatppl(GRAPH_MODEL + "inputs = (mu, sigma)\noutputs = z\n")
+    sliced = module.slice(["inputs", "outputs"])
+    assert list(sliced.bindings) == ["mu", "sigma", "y", "z", "inputs", "outputs"]
+    assert sliced.y.location is not None
+    point = {"mu": 0.5, "sigma": 0.25}
+    assert float(sliced.compile()(**point)) == float(module.compile()(**point))
+    with pytest.raises(CompilationError):
+        module.slice("absent")
+    gradient = flatppl("mu = elementof(reals)\ny = 2.0 * mu").query("y", gradient=True)
+    _, jacobian = gradient.slice(["inputs", "outputs"]).compile()({"mu": 1.0})
+    assert float(jacobian["mu"]) == 2.0
+
+
+def test_math_renders_every_binding_and_one_binding() -> None:
+    module = flatppl("theta ~ Normal(mu = 0.0, sigma = 1.0)\n_h = 2.0 * theta\ny = _h")
+    tex = module.math()
+    assert list(tex) == ["theta", "_h", "y"]
+    assert module.theta.math() == tex["theta"]
+    assert r"\sim \mathcal{N}" in tex["theta"]
+    assert module.theta.math("mathml").startswith("<math")
+    # Typst writes the distribution symbol as U+223C TILDE OPERATOR.
+    assert "\u223c cal(N)" in module.theta.math("typst")
+    assert module.theta._repr_latex_() == f"$\\displaystyle {tex['theta']}$"  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(ValueError):
+        module.math("rtf")  # pyright: ignore[reportArgumentType]
+
+
+def test_notebook_table_lists_bindings_with_escaped_text() -> None:
+    html = flatppl('mu = elementof(interval(0.0, inf))\nlabel = "<b>"')._repr_html_()  # pyright: ignore[reportPrivateUsage]
+    assert "<td>mu</td><td>parameter</td><td>real</td><td>[]</td>" in html
+    assert "<td>interval(0.0, inf)</td>" in html
+    assert "&lt;b&gt;" in html
+
+
+def test_stats_count_the_program_operations() -> None:
+    function = flatppl(
+        "x = elementof(cartpow(reals, 3))\ninputs = x\noutputs = sum(2.0 * x)"
+    ).compile()
+    stats = function.stats()
+    assert stats["multiply"] >= 1
+    assert stats["total"] == sum(v for k, v in stats.items() if k != "total")

@@ -48,6 +48,9 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: densities for dotted scalar affine vector
+  pushforwards and scalar-only `locscale` broadcasts, with live parameter
+  derivatives.
 - Bundled Rust compiler update: closed-form exponential tilts for eleven
   distribution families, with live parameters, gradients and batched evaluation.
 - Bundled Rust compiler update: Poisson sampling uses small- and large-rate

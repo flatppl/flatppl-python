@@ -2,6 +2,8 @@
 
 import math
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -147,6 +149,54 @@ def test_module_and_binding_reprs_name_their_contents() -> None:
     assert repr(module.mu) == (
         "<Binding mu: real parameter, line 2: elementof(interval(0.0, inf))>"
     )
+
+
+def test_compiled_function_repr_names_inputs_and_outputs() -> None:
+    function = flatppl("""
+        p = elementof(cartprod(mu = reals, x = cartpow(reals, 3)))
+        k = external(integers)
+        inputs = (p, k)
+        outputs = record(total = p.mu + sum(p.x), count = k)
+    """).compile()
+    assert repr(function) == (
+        "<CompiledFunction (p: {mu: float32[], x: float32[3]}, k: int32[]) "
+        "-> {total: float32[], count: int32[]}>"
+    )
+
+
+def test_example_inputs_have_the_schema_structure_shapes_and_dtypes() -> None:
+    function = flatppl("""
+        p = elementof(cartprod(mu = reals, x = cartpow(reals, 3)))
+        k = external(integers)
+        inputs = (p, k)
+        outputs = p.mu + sum(p.x) + real(k)
+    """).compile()
+    example = function.example_input(2.0)
+    assert example["k"].dtype == jnp.int32
+    assert example["p"]["x"].shape == (3,)
+    assert float(function(**example)) == 2.0 + 6.0 + 2.0
+
+
+def test_compiling_again_reuses_the_compiled_program() -> None:
+    module = flatppl("x = elementof(reals)\ninputs = x\noutputs = exp(x) * 3.0")
+    compiles: list[str] = []
+
+    def count(event: str, duration_secs: float, **kwargs: str | int) -> None:
+        if event == "/jax/core/compile/backend_compile_duration":
+            compiles.append(event)
+
+    jax.monitoring.register_event_duration_secs_listener(count)
+    try:
+        first = module.compile()
+        first(1.0).block_until_ready()
+        before = len(compiles)
+        second = flatppl(module.source).compile()
+        second(1.0).block_until_ready()
+    finally:
+        jax.monitoring.unregister_event_duration_listener(count)
+    assert before >= 1
+    assert len(compiles) == before
+    assert float(second(0.0)) == 3.0
 
 
 def test_locations_name_the_module_source_label() -> None:

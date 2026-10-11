@@ -430,7 +430,8 @@ def test_precision_and_repeated_device_calls() -> None:
         np.testing.assert_array_equal([first, second], [0, 0])
         assert first.devices() == point.devices()
         assert not jax.config.x64_enabled
-        with pytest.raises(ValueError):
+        # The message names the switch a user has to flip.
+        with pytest.raises(ValueError, match="jax_enable_x64"):
             module.compile(dtype="float64")
         np.testing.assert_array_equal(single(point), 0)
     with jax.enable_x64():

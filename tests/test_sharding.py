@@ -2,9 +2,10 @@
 
 import jax
 import jax.numpy as jnp
-from jax.sharding import AxisType, Mesh, NamedSharding, PartitionSpec as P
 import numpy as np
 import pytest
+from jax.sharding import AxisType, Mesh, NamedSharding
+from jax.sharding import PartitionSpec as P
 
 from flatppl import flatppl
 

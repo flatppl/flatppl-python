@@ -1,5 +1,7 @@
 """Mixed scalar latent measures checked against analytic Gaussian mixtures."""
 
+from collections.abc import Mapping
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,8 +9,10 @@ import pytest
 
 from flatppl import Integration, flatppl
 
+Scalar = float | jax.Array
 
-def normal_logpdf(point, mean, variance=1.0):
+
+def normal_logpdf(point: Scalar, mean: Scalar, variance: Scalar = 1.0) -> jax.Array:
     return -0.5 * (jnp.log(2 * jnp.pi * variance) + (point - mean) ** 2 / variance)
 
 
@@ -26,7 +30,7 @@ MODEL = """
 """
 
 
-def oracle(p, atom, scale, point):
+def oracle(p: Scalar, atom: Scalar, scale: Scalar, point: Scalar) -> jax.Array:
     return jnp.logaddexp(
         jnp.log(p) + normal_logpdf(point, atom),
         jnp.log1p(-p) + normal_logpdf(point, 0.0, 1 + scale**2),
@@ -34,7 +38,7 @@ def oracle(p, atom, scale, point):
 
 
 @pytest.mark.parametrize("measure", ["lawof(y)", "kchain(prior, k)"])
-def test_mixed_latent_matches_its_continuous_marginal(measure):
+def test_mixed_latent_matches_its_continuous_marginal(measure: str) -> None:
     function = flatppl(MODEL + f"outputs = logdensityof({measure}, point)").compile(
         integration=Integration()
     )
@@ -49,7 +53,7 @@ def test_mixed_latent_matches_its_continuous_marginal(measure):
             np.testing.assert_allclose(found, wanted, rtol=1e-4, atol=1e-5)
 
 
-def test_shared_mixed_latent_preserves_the_joint_record_density():
+def test_shared_mixed_latent_preserves_the_joint_record_density() -> None:
     source = """
         p = 0.25
         point = record(x=0.3, y=1.2)
@@ -61,7 +65,7 @@ def test_shared_mixed_latent_preserves_the_joint_record_density():
         inputs = (p, point)
     """
 
-    def joint(p, point):
+    def joint(p: Scalar, point: Mapping[str, Scalar]) -> jax.Array:
         x, y = point["x"], point["y"]
         atomic = normal_logpdf(x, 0) + normal_logpdf(y, 0)
         gaussian = -jnp.log(2 * jnp.pi) - 0.5 * jnp.log(6.0)
@@ -84,7 +88,7 @@ def test_shared_mixed_latent_preserves_the_joint_record_density():
 @pytest.mark.parametrize(
     "weight", ["weighted(z -> 1+tilt*z", "logweighted(z -> tilt*z"]
 )
-def test_finite_reweighting_normalizes_without_quadrature(weight):
+def test_finite_reweighting_normalizes_without_quadrature(weight: str) -> None:
     function = flatppl(f"""
         p = 0.25
         tilt = 1.3
@@ -96,7 +100,7 @@ def test_finite_reweighting_normalizes_without_quadrature(weight):
         outputs = logdensityof(lawof(y), point)
     """).compile()
 
-    def expected(p, tilt, point):
+    def expected(p: Scalar, tilt: Scalar, point: Scalar) -> jax.Array:
         factor = 1 + tilt if weight.startswith("weighted") else jnp.exp(tilt)
         q = p * factor / (1 - p + p * factor)
         return jnp.logaddexp(
@@ -112,7 +116,7 @@ def test_finite_reweighting_normalizes_without_quadrature(weight):
         np.testing.assert_allclose(found, value, rtol=3e-5, atol=3e-6)
 
 
-def test_common_log_weight_cancels_without_overflow():
+def test_common_log_weight_cancels_without_overflow() -> None:
     function = flatppl("""
         p = 0.25
         offset = 0.0
@@ -137,14 +141,14 @@ def test_common_log_weight_cancels_without_overflow():
         np.testing.assert_allclose(go, 0.0, atol=2e-6)
 
 
-def test_mixed_latent_propagates_quadrature_failure():
+def test_mixed_latent_propagates_quadrature_failure() -> None:
     function = flatppl(MODEL + "outputs=logdensityof(lawof(y), point)").compile(
         integration=Integration(max_intervals=2)
     )
     assert np.isnan(function(0.25, 0.4, 1.2, 0.5))
 
 
-def test_nested_positive_weights_cancel_before_multiplication():
+def test_nested_positive_weights_cancel_before_multiplication() -> None:
     function = flatppl("""
         a = 1.0
         b = 1.0

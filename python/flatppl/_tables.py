@@ -1,7 +1,11 @@
 """Read host table columns through dataframe interchange protocols."""
 
+from typing import Any
 
-def columns(value):
+import numpy as np
+
+
+def columns(value: object) -> dict[str, np.ndarray[Any, Any]] | None:
     arrow = callable(getattr(value, "__arrow_c_stream__", None)) or callable(
         getattr(value, "__arrow_c_array__", None)
     )
@@ -23,12 +27,12 @@ def columns(value):
     if len(set(table.column_names)) != len(table.column_names):
         raise ValueError("table column names must be unique")
     # Arrow can store a dataframe's row index as extra physical columns.
-    metadata = table.schema.pandas_metadata or {}
+    metadata: dict[str, Any] = table.schema.pandas_metadata or {}
     indices = {
         name for name in metadata.get("index_columns", ()) if isinstance(name, str)
     }
     names = [name for name in table.column_names if name not in indices]
-    result = {}
+    result: dict[str, np.ndarray[Any, Any]] = {}
     for name in names:
         column = table[name]
         if column.null_count:

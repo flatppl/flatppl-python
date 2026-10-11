@@ -1,5 +1,8 @@
 """Shared-latent integration against a closed-form correlated joint."""
 
+from collections.abc import Mapping
+from typing import Literal
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -18,7 +21,9 @@ MODEL = """
 """
 
 
-def joint_oracle(lo, hi, point):
+def joint_oracle(
+    lo: float | jax.Array, hi: float | jax.Array, point: Mapping[str, float | jax.Array]
+) -> jax.Array:
     midpoint = (point["x"] + point["y"]) / 2
     difference = point["x"] - point["y"]
     mass = jax.scipy.special.ndtr(
@@ -33,12 +38,17 @@ def joint_oracle(lo, hi, point):
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
-def test_shared_record_values_and_gradients(dtype):
+def test_shared_record_values_and_gradients(
+    dtype: Literal["float32", "float64"],
+) -> None:
     with jax.enable_x64(dtype == "float64"):
-        function = flatppl(MODEL + """
+        function = flatppl(
+            MODEL
+            + """
             inputs = (lo, hi, point)
             outputs = logdensityof(lawof(record(x=x, y=y)), point)
-        """).compile(dtype=dtype, integration=Integration())
+        """
+        ).compile(dtype=dtype, integration=Integration())
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))
         oracle = jax.value_and_grad(joint_oracle, argnums=(0, 1, 2))
         for lo, hi, x, y in [(0.0, 1.0, 0.2, 1.1), (-1.0, 0.5, 1.2, -0.5)]:
@@ -53,35 +63,41 @@ def test_shared_record_values_and_gradients(dtype):
                 np.testing.assert_allclose(found, expected, rtol=3e-5, atol=3e-6)
 
 
-def test_reordered_record_and_multiple_query_points():
-    function = flatppl(MODEL + """
+def test_reordered_record_and_multiple_query_points() -> None:
+    function = flatppl(
+        MODEL
+        + """
         other = record(x=point.x+0.7, y=point.y-0.2)
         inputs = point
         outputs = (
             logdensityof(lawof(record(y=y, x=x)), point),
             logdensityof(lawof(record(x=x, y=y)), other))
-    """).compile(integration=Integration())
+    """
+    ).compile(integration=Integration())
     for point in ({"x": 0.2, "y": 1.1}, {"x": -0.3, "y": 0.7}):
         other = {"x": point["x"] + 0.7, "y": point["y"] - 0.2}
         expected = [joint_oracle(0.0, 1.0, p) for p in (point, other)]
         np.testing.assert_allclose(function(point), expected, rtol=3e-5, atol=3e-6)
 
 
-def test_explicit_kchain_uses_the_same_joint_integral():
-    query = flatppl(MODEL + """
+def test_explicit_kchain_uses_the_same_joint_integral() -> None:
+    query = flatppl(
+        MODEL
+        + """
         k = kernelof(record(x=x, y=y), a=a)
         constructor(t) = joint(x=Normal(t, 1.0), y=Normal(t, 1.0))
         inputs = point
         outputs = (
             logdensityof(kchain(Uniform(interval(lo, hi)), k), point),
             logdensityof(kchain(Uniform(interval(lo, hi)), constructor), point))
-    """).compile(integration=Integration())
+    """
+    ).compile(integration=Integration())
     point = {"x": 0.2, "y": 1.1}
     expected = joint_oracle(0.0, 1.0, point)
     np.testing.assert_allclose(query(point), [expected, expected], rtol=3e-5, atol=3e-6)
 
 
-def test_mixed_queries_preserve_marginals_under_output_permutation():
+def test_mixed_queries_preserve_marginals_under_output_permutation() -> None:
     queries = [
         "logdensityof(lawof(record(x=x, y=y)), point)",
         "logdensityof(kchain(Uniform(interval(lo, hi)), k), point)",
@@ -95,11 +111,11 @@ def test_mixed_queries_preserve_marginals_under_output_permutation():
         source += "outputs = (" + ",".join(queries[i] for i in order) + ")"
         query = flatppl(source).compile(integration=Integration())
         np.testing.assert_allclose(
-            query(point), [expected[i] for i in order], rtol=3e-5, atol=3e-6
+            query(point), np.asarray([expected[i] for i in order]), rtol=3e-5, atol=3e-6
         )
 
 
-def test_derived_sibling_observations_stay_local_to_each_query():
+def test_derived_sibling_observations_stay_local_to_each_query() -> None:
     query = flatppl("""
         a ~ Uniform(interval(0.0, 1.0))
         x ~ Normal(a, 1.0)
@@ -116,7 +132,7 @@ def test_derived_sibling_observations_stay_local_to_each_query():
     np.testing.assert_allclose(query(), expected, rtol=3e-5, atol=3e-6)
 
 
-def test_scored_derived_latent_keeps_its_declared_law():
+def test_scored_derived_latent_keeps_its_declared_law() -> None:
     model = MODEL.replace("mean = a + 0.0", "mean = 2.0*a + 0.1")
     queries = [
         "logdensityof(lawof(mean), 0.4)",
@@ -137,7 +153,7 @@ def test_scored_derived_latent_keeps_its_declared_law():
         )
 
 
-def test_function_kernel_keeps_its_captured_draw():
+def test_function_kernel_keeps_its_captured_draw() -> None:
     query = flatppl("""
         a = elementof(reals)
         b ~ Uniform(interval(0.0, 1.0))
@@ -147,16 +163,21 @@ def test_function_kernel_keeps_its_captured_draw():
             logdensityof(lawof(b), 0.4))
     """).compile(integration=Integration())
     expected = jnp.log(jax.scipy.special.ndtr(-0.2) - jax.scipy.special.ndtr(-1.2))
-    np.testing.assert_allclose(query(), [expected, 0.0], rtol=3e-5, atol=3e-6)
+    np.testing.assert_allclose(
+        query(), np.asarray([expected, 0.0]), rtol=3e-5, atol=3e-6
+    )
 
 
-def test_partly_shared_record_keeps_independent_field():
-    function = flatppl(MODEL + """
+def test_partly_shared_record_keeps_independent_field() -> None:
+    function = flatppl(
+        MODEL
+        + """
         z ~ Normal(0.0, 2.0)
         inputs = point
         outputs = logdensityof(lawof(record(z=z, y=y, x=x)),
             record(x=point.x, y=point.y, z=0.3))
-    """).compile(integration=Integration())
+    """
+    ).compile(integration=Integration())
     point = {"x": 0.2, "y": 1.1}
     expected = (
         joint_oracle(0.0, 1.0, point)
@@ -166,7 +187,7 @@ def test_partly_shared_record_keeps_independent_field():
     np.testing.assert_allclose(function(point), expected, rtol=3e-5, atol=3e-6)
 
 
-def test_captured_draw_prior_does_not_follow_kernel_argument():
+def test_captured_draw_prior_does_not_follow_kernel_argument() -> None:
     model = """
         a = elementof(reals)
         b ~ Normal(a, 1.0)
@@ -189,7 +210,7 @@ def test_captured_draw_prior_does_not_follow_kernel_argument():
         )
 
 
-def test_uniform_live_bounds_preserve_density_and_support_gradients():
+def test_uniform_live_bounds_preserve_density_and_support_gradients() -> None:
     function = flatppl("""
         lo = -1.0
         hi = 2.0
@@ -207,7 +228,7 @@ def test_uniform_live_bounds_preserve_density_and_support_gradients():
     np.testing.assert_array_equal(gradient, (0, 0, 0))
 
 
-def test_shared_gamma_intensity_scores_joint_poisson_mass():
+def test_shared_gamma_intensity_scores_joint_poisson_mass() -> None:
     function = flatppl("""
         shape = 2.3
         rate = 1.4
@@ -218,7 +239,7 @@ def test_shared_gamma_intensity_scores_joint_poisson_mass():
         outputs = logdensityof(lawof(record(x=x, y=y)), record(x=3, y=5))
     """).compile(integration=Integration())
 
-    def oracle(shape, rate):
+    def oracle(shape: float | jax.Array, rate: float | jax.Array) -> jax.Array:
         lgamma = jax.scipy.special.gammaln
         return (
             shape * jnp.log(rate)
@@ -237,7 +258,7 @@ def test_shared_gamma_intensity_scores_joint_poisson_mass():
         np.testing.assert_allclose(found, wanted, rtol=3e-5, atol=3e-6)
 
 
-def test_discrete_kchain_uses_scoped_mass_weighted_conditionals():
+def test_discrete_kchain_uses_scoped_mass_weighted_conditionals() -> None:
     function = flatppl("""
         probability = 0.3
         a = elementof(reals)
@@ -251,7 +272,9 @@ def test_discrete_kchain_uses_scoped_mass_weighted_conditionals():
         outputs = first+second
     """).compile()
 
-    def oracle(probability, _ambient):
+    def oracle(
+        probability: float | jax.Array, _ambient: float | jax.Array
+    ) -> jax.Array:
         n0 = jnp.exp(-0.5 * (0.2 - 0.1) ** 2) / jnp.sqrt(2 * jnp.pi)
         n1 = jnp.exp(-0.5 * (0.2 - 2.1) ** 2) / jnp.sqrt(2 * jnp.pi)
         return 2 * jnp.log((1 - probability) * n0 + probability * n1)
@@ -267,7 +290,7 @@ def test_discrete_kchain_uses_scoped_mass_weighted_conditionals():
             np.testing.assert_allclose(found, wanted, rtol=3e-5, atol=3e-6)
 
 
-def test_transformed_shared_field_keeps_joint_jacobian():
+def test_transformed_shared_field_keeps_joint_jacobian() -> None:
     function = flatppl("""
         a ~ Normal(0.0, 1.0)
         x ~ Normal(a, 1.0)
@@ -279,7 +302,7 @@ def test_transformed_shared_field_keeps_joint_jacobian():
         outputs = logdensityof(lawof(record(x=x, y=y, w=w)), point)
     """).compile(integration=Integration())
 
-    def oracle(point):
+    def oracle(point: Mapping[str, float | jax.Array]) -> jax.Array:
         values = jnp.array([point["x"], point["y"], jnp.log(point["w"])])
         quadratic = jnp.sum(values**2) - jnp.sum(values) ** 2 / 4
         return -0.5 * (3 * jnp.log(2 * jnp.pi) + jnp.log(4.0) + quadratic) - jnp.log(

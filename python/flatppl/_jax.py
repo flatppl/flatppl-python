@@ -1,22 +1,36 @@
 """Schema packing around Enzyme-JAX's imported StableHLO primitive."""
 
-from collections.abc import Callable, Mapping
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache, partial
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from enzyme_ad.jax import hlo_call, optimization_passes
+from jax.core import Tracer
 from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
+from jax.typing import DTypeLike
 
+from ._schema import Export, Schema, TensorSchema
 from ._tables import columns as table_columns
 
+type Axes = tuple[tuple[int | None, ...], ...]
+type Batch = tuple[tuple[int, ...], Axes]
+type ExportBatch = Callable[[tuple[int, ...], Axes], Export]
+type _Call = Callable[..., tuple[jax.Array, ...]]
 
-def float_dtype(dtype) -> str:
+# JAX 0.11.2 types its transforms with a bare Callable, and jaxlib 0.11.2 ships
+# no stub for Device, so pyright sees Unknown at the JAX calls marked in this
+# module. Retry without the ignores after each JAX bump.
+
+
+def float_dtype(dtype: DTypeLike) -> str:
     dtype = jnp.dtype(dtype)
     if dtype not in (jnp.dtype("float32"), jnp.dtype("float64")):
         raise ValueError("dtype must be float32 or float64")
@@ -25,7 +39,7 @@ def float_dtype(dtype) -> str:
     return dtype.name
 
 
-def lowering_target(target=None) -> str:
+def lowering_target(target: str | None = None) -> Literal["cpu", "gpu"]:
     """Resolve the lowering profile, following the JAX backend by default."""
     if target is None:
         return "cpu" if jax.default_backend() == "cpu" else "gpu"
@@ -34,15 +48,17 @@ def lowering_target(target=None) -> str:
     return target
 
 
-def _freeze(value):
+def _freeze(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+        fields = cast(dict[str, Any], value)
+        return MappingProxyType({key: _freeze(item) for key, item in fields.items()})
     if isinstance(value, list):
-        return tuple(_freeze(item) for item in value)
+        items = cast(list[Any], value)
+        return tuple(_freeze(item) for item in items)
     return value
 
 
-def _leaves(schema):
+def _leaves(schema: Schema) -> Iterator[TensorSchema]:
     if schema["kind"] == "tensor":
         yield schema
     elif schema["kind"] == "tuple":
@@ -53,13 +69,13 @@ def _leaves(schema):
             yield from _leaves(item["value"])
 
 
-def _pack(schema, value, leaves, path):
-    kind = schema["kind"]
-    if kind == "tensor":
+def _pack(
+    schema: Schema, value: Any, leaves: list[jax.Array | None], path: str
+) -> None:
+    if schema["kind"] == "tensor":
         dtype = jnp.dtype(schema["dtype"])
         if dtype.kind in "iu" and not any(
-            isinstance(leaf, (jax.Array, jax.core.Tracer))
-            for leaf in jax.tree.leaves(value)
+            isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
         ):
             host = np.asarray(value)
             if host.dtype.kind not in "iu":
@@ -80,7 +96,7 @@ def _pack(schema, value, leaves, path):
             jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(value)
         ):
             raise TypeError(f"{path} requires real values")
-        array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)
+        array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)  # pyright: ignore[reportUnknownMemberType]
         if dtype.kind in "biu" and array.dtype != dtype:
             raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
         if array.shape != tuple(schema["shape"]):
@@ -88,10 +104,15 @@ def _pack(schema, value, leaves, path):
                 f"{path} requires shape {tuple(schema['shape'])}, got {array.shape}"
             )
         leaves[schema["index"]] = array.astype(dtype)
-    elif kind == "tuple":
-        if not isinstance(value, (tuple, list)) or len(value) != len(schema["items"]):
+    elif schema["kind"] == "tuple":
+        components = (
+            cast(Sequence[Any], value) if isinstance(value, (tuple, list)) else None
+        )
+        if components is None or len(components) != len(schema["items"]):
             raise TypeError(f"{path} requires {len(schema['items'])} tuple components")
-        for index, (child, item) in enumerate(zip(schema["items"], value)):
+        for index, (child, item) in enumerate(
+            zip(schema["items"], components, strict=True)
+        ):
             _pack(child, item, leaves, f"{path}[{index}]")
     else:
         if not isinstance(value, Mapping):
@@ -99,7 +120,10 @@ def _pack(schema, value, leaves, path):
             if columns is not None:
                 value = columns
         names = {item["name"] for item in schema["fields"]}
-        fields = value if isinstance(value, Mapping) else getattr(value, "columns", ())
+        fields = cast(
+            Iterable[Any],
+            value if isinstance(value, Mapping) else getattr(value, "columns", ()),
+        )
         if set(fields) != names:
             raise TypeError(f"{path} requires fields {sorted(names)}")
         for item in schema["fields"]:
@@ -107,7 +131,7 @@ def _pack(schema, value, leaves, path):
             _pack(item["value"], value[name], leaves, f"{path}.{name}")
 
 
-def _unpack(schema, leaves):
+def _unpack(schema: Schema, leaves: tuple[jax.Array, ...]) -> Any:
     if schema["kind"] == "tensor":
         return leaves[schema["index"]]
     if schema["kind"] == "tuple":
@@ -115,15 +139,20 @@ def _unpack(schema, leaves):
     return {item["name"]: _unpack(item["value"], leaves) for item in schema["fields"]}
 
 
-def _compiled_call(exported, export_batch, autodiff, optimize_forward):
+def _compiled_call(
+    exported: Export,
+    export_batch: ExportBatch,
+    autodiff: bool,
+    optimize_forward: bool,
+) -> _Call:
     @lru_cache(maxsize=32)
-    def specialize(shape, input_axes):
+    def specialize(shape: tuple[int, ...], input_axes: Axes) -> _Call:
         source = (exported if not shape else export_batch(shape, input_axes))[
             "stablehlo"
         ]
 
-        @jax.jit
-        def raw(*args):
+        @jax.jit  # pyright: ignore[reportUnknownMemberType]
+        def raw(*args: jax.Array) -> tuple[jax.Array, ...]:
             return tuple(hlo_call(*args, source=source))
 
         forward = raw
@@ -131,26 +160,32 @@ def _compiled_call(exported, export_batch, autodiff, optimize_forward):
         if optimize_forward and "stablehlo.while" not in source:
             passes = optimization_passes(enable_loop_raising_passes=False)
 
-            @jax.jit
-            def forward(*args):
+            @jax.jit  # pyright: ignore[reportUnknownMemberType]
+            def forward(*args: jax.Array) -> tuple[jax.Array, ...]:
                 return tuple(hlo_call(*args, source=source, passes=passes))
 
         mapped = custom_vmap(forward)
 
         @mapped.def_vmap
-        def batch(size, in_batched, *args):
+        def batch(
+            size: int, in_batched: tuple[bool, ...], *args: jax.Array
+        ) -> tuple[tuple[jax.Array, ...], tuple[bool, ...]]:
             axes = tuple(
-                (0 if mapped else None,)
-                + tuple(None if axis is None else axis + int(mapped) for axis in old)
-                for mapped, old in zip(in_batched, input_axes)
+                (
+                    0 if mapped else None,
+                    *(None if axis is None else axis + int(mapped) for axis in old),
+                )
+                for mapped, old in zip(in_batched, input_axes, strict=True)
             )
             result = specialize((size, *shape), axes)(*args)
             return result, tuple(True for _ in result)
 
-        call = jax.custom_jvp(mapped)
+        call = jax.custom_jvp(mapped)  # pyright: ignore[reportUnknownVariableType]
 
-        @partial(call.defjvp, symbolic_zeros=True)
-        def derivative(primals, tangents):
+        @partial(call.defjvp, symbolic_zeros=True)  # pyright: ignore[reportUnknownMemberType]
+        def derivative(
+            primals: tuple[jax.Array, ...], tangents: tuple[Any, ...]
+        ) -> tuple[tuple[jax.Array, ...], tuple[jax.Array, ...]]:
             if not autodiff:
                 raise TypeError("query was compiled with autodiff=False")
             active = tuple(
@@ -159,19 +194,19 @@ def _compiled_call(exported, export_batch, autodiff, optimize_forward):
                 if not isinstance(tangent, SymbolicZero)
             )
 
-            def differentiate(*values):
+            def differentiate(*values: jax.Array) -> tuple[jax.Array, ...]:
                 args = list(primals)
-                for i, value in zip(active, values):
+                for i, value in zip(active, values, strict=True):
                     args[i] = value
-                return raw(*args)
+                return raw(*args)  # pyright: ignore[reportUnknownVariableType]
 
-            return jax.jvp(
+            return jax.jvp(  # pyright: ignore[reportUnknownMemberType]
                 differentiate,
                 tuple(primals[i] for i in active),
                 tuple(tangents[i] for i in active),
             )
 
-        return jax.jit(call)
+        return jax.jit(call)  # pyright: ignore[reportUnknownMemberType]
 
     count = sum(1 for item in exported["inputs"] for _ in _leaves(item["value"]))
     return specialize((), ((),) * count)
@@ -183,19 +218,28 @@ class CompiledFunction:
 
     stablehlo: str
     schema: Mapping[str, Any]
-    _call: Callable = field(repr=False)
+    _call: _Call = field(repr=False)
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
 
-    def __init__(self, exported, *, autodiff, export_batch, optimize_forward=False):
+    def __init__(
+        self,
+        exported: Export,
+        *,
+        autodiff: bool,
+        export_batch: ExportBatch,
+        optimize_forward: bool = False,
+    ) -> None:
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
         schema = _freeze(
             {key: value for key, value in exported.items() if key != "stablehlo"}
         )
-        inputs = [leaf for item in schema["inputs"] for leaf in _leaves(item["value"])]
-        outputs = tuple(_leaves(schema["output"]))
+        inputs = [
+            leaf for item in exported["inputs"] for leaf in _leaves(item["value"])
+        ]
+        outputs = tuple(_leaves(exported["output"]))
         requires_x64 = any(
             leaf["dtype"] in ("float64", "int64", "uint64")
             for leaf in (*inputs, *outputs)
@@ -213,7 +257,7 @@ class CompiledFunction:
         object.__setattr__(self, "_input_count", len(inputs))
         object.__setattr__(self, "_requires_x64", requires_x64)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         if self._requires_x64 and not jax.config.x64_enabled:
             raise ValueError("this compiled query requires JAX x64")
         fields = self.schema["inputs"]
@@ -222,7 +266,7 @@ class CompiledFunction:
                 f"expected {len(fields)} inputs, got {len(args)} positional arguments"
             )
         names = [item["name"] for item in fields]
-        values = dict(zip(names, args))
+        values = dict(zip(names, args, strict=False))
         for name, value in kwargs.items():
             if name not in names:
                 raise TypeError(f"unknown input {name!r}")
@@ -232,7 +276,7 @@ class CompiledFunction:
         missing = [name for name in names if name not in values]
         if missing:
             raise TypeError(f"missing inputs: {', '.join(missing)}")
-        leaves = [None] * self._input_count
+        leaves: list[jax.Array | None] = [None] * self._input_count
         for item in fields:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
         return _unpack(self.schema["output"], self._call(*leaves))

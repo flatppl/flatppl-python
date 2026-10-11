@@ -3,10 +3,11 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+
 from flatppl import flatppl
 
 
-def test_reified_functions_follow_derived_bindings_and_preserve_scope():
+def test_reified_functions_follow_derived_bindings_and_preserve_scope() -> None:
     function = flatppl("""
         z = elementof(reals)
         w = elementof(reals)
@@ -22,7 +23,7 @@ def test_reified_functions_follow_derived_bindings_and_preserve_scope():
     np.testing.assert_allclose(values, [60.0, 78.0, 6.0])
 
 
-def test_record_scan_values_and_gradient_match_jax():
+def test_record_scan_values_and_gradient_match_jax() -> None:
     function = flatppl("""
         alpha = 0.5
         xs = external(cartpow(reals, 3))
@@ -34,8 +35,10 @@ def test_record_scan_values_and_gradient_match_jax():
         outputs = total.(states)
     """).compile()
 
-    def oracle(alpha, xs):
-        return jax.lax.scan(lambda acc, x: (alpha*acc+x, alpha*acc+x), 0.0, xs)[1]
+    def oracle(alpha: float | jax.Array, xs: jax.Array) -> jax.Array:
+        return jax.lax.scan(lambda acc, x: (alpha * acc + x, alpha * acc + x), 0.0, xs)[
+            1
+        ]
 
     xs = jnp.array([1.0, -2.0, 3.0])
     for alpha in (0.2, 0.7):
@@ -45,7 +48,7 @@ def test_record_scan_values_and_gradient_match_jax():
         np.testing.assert_allclose(actual, expected, atol=1e-6)
 
 
-def test_scan_array_state_uses_specialized_callback_types():
+def test_scan_array_state_uses_specialized_callback_types() -> None:
     matrix = flatppl("""
         A = rowstack([[1.0, 2.0], [3.0, 4.0]])
         f = (a, x) -> (A*a) .+ x
@@ -60,7 +63,7 @@ def test_scan_array_state_uses_specialized_callback_types():
     np.testing.assert_array_equal(integer(), [[1, -1], [3, -3]])
 
 
-def test_scan_table_input_and_explicit_boundary():
+def test_scan_table_input_and_explicit_boundary() -> None:
     function = flatppl("""
         data = external(cartpow(cartprod(x=reals, y=reals), 3))
         update = (state, row) -> state + row.x*row.y
@@ -84,7 +87,7 @@ def test_scan_table_input_and_explicit_boundary():
     np.testing.assert_array_equal(explicit(), [[4, 4], [9, 9]])
 
 
-def test_scan_extent_keeps_one_step_body():
+def test_scan_extent_keeps_one_step_body() -> None:
     operation_counts = []
     for size in (2, 257):
         function = flatppl(f"""
@@ -101,8 +104,8 @@ def test_scan_extent_keeps_one_step_body():
         # Use float64 sums to avoid comparing two different float32 AD roundoffs.
         alpha = np.float64(np.float32(0.7))
         n = size - np.arange(size)
-        weights = (1-alpha**n)/(1-alpha)
-        derivatives = (1-n*alpha**(n-1)+(n-1)*alpha**n)/(1-alpha)**2
+        weights = (1 - alpha**n) / (1 - alpha)
+        derivatives = (1 - n * alpha ** (n - 1) + (n - 1) * alpha**n) / (1 - alpha) ** 2
         values = np.asarray(xs, dtype=np.float64)
         expected = (values @ weights, values @ derivatives)
         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
@@ -110,7 +113,7 @@ def test_scan_extent_keeps_one_step_body():
     assert operation_counts[0] == operation_counts[1]
 
 
-def test_indefinite_diagonal_metric_contractions_and_output_raising():
+def test_indefinite_diagonal_metric_contractions_and_output_raising() -> None:
     function = flatppl("""
         g = rowstack([[2.0, 0.0], [0.0, -3.0]])
         v = elementof(cartpow(reals, 2))
@@ -121,13 +124,16 @@ def test_indefinite_diagonal_metric_contractions_and_output_raising():
         inputs = v
         outputs = (norm, composed, interaction)
     """).compile()
-    inverse = jnp.diag(jnp.array([0.5, -1/3]))
+    inverse = jnp.diag(jnp.array([0.5, -1 / 3]))
     matrix = jnp.array([[1.0, 2.0], [3.0, 4.0]])
     point = jnp.array([0.75, -1.5])
     norm, composed, interaction = function(point)
     np.testing.assert_allclose(norm, point @ inverse @ point, atol=1e-6)
     np.testing.assert_allclose(composed, matrix @ inverse @ matrix, atol=1e-6)
-    oracle = lambda v: v @ inverse @ matrix @ inverse @ v
+
+    def oracle(v: jax.Array) -> jax.Array:
+        return v @ inverse @ matrix @ inverse @ v
+
     np.testing.assert_allclose(interaction, oracle(point), atol=1e-6)
     tangent = jnp.array([0.25, -0.75])
     actual = jax.jvp(function, (point,), (tangent,))[1][2]
@@ -135,7 +141,7 @@ def test_indefinite_diagonal_metric_contractions_and_output_raising():
     np.testing.assert_allclose(actual, expected, atol=1e-6)
 
 
-def test_cartesian_membership_checks_each_closed_interval():
+def test_cartesian_membership_checks_each_closed_interval() -> None:
     function = flatppl("""
         p = elementof(cartpow(reals, 2))
         inputs = p
@@ -146,14 +152,17 @@ def test_cartesian_membership_checks_each_closed_interval():
         assert bool(function(point)) == expected
 
 
-def test_complex_interference_values_and_gradient():
+def test_complex_interference_values_and_gradient() -> None:
     function = flatppl("""
         x = elementof(reals)
         inputs = x
         amplitude = (x + 2.0*im) * cis(0.7) + 0.3
         outputs = abs2(amplitude)
     """).compile()
-    oracle = lambda x: jnp.abs((x+2j)*jnp.exp(0.7j)+0.3)**2
+
+    def oracle(x: float) -> jax.Array:
+        return jnp.abs((x + 2j) * jnp.exp(0.7j) + 0.3) ** 2
+
     for x in (-2.0, 0.5, 3.0):
         actual = jax.jit(jax.value_and_grad(function))(x)
         expected = jax.value_and_grad(oracle)(x)

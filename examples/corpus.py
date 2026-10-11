@@ -8,10 +8,12 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
+from typing import Any
 
-CASES = {
+# Each target maps to (initial point, bounds) in its own nested layout.
+CASES: dict[str, tuple[Any, Any]] = {
     "ar1-noise-estimation": ({"sigma_step": 0.83}, {"sigma_step": [0, None]}),
     **{
         f"bayesian_inference_{i}": (
@@ -84,16 +86,28 @@ TARGETS = {
 }
 
 
-def run(name, directory, warmup=0, samples=1024, device="cpu"):
+def run(
+    name: str,
+    directory: Path,
+    warmup: int = 0,
+    samples: int = 1024,
+    device: str = "cpu",
+) -> dict[str, Any]:
+    """Check one target's density and gradient, optionally sample it, and report."""
     os.environ["JAX_PLATFORMS"] = device
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     import jax
     import jax.numpy as jnp
     import numpy as np
     from jax.flatten_util import ravel_pytree
+
     from flatppl import Context, Integration, flatppl
 
-    result = {"model": name, "stage": "load", "device": str(jax.devices()[0])}
+    result: dict[str, Any] = {
+        "model": name,
+        "stage": "load",
+        "device": str(jax.devices()[0]),
+    }
     start = time.monotonic()
     try:
         path = directory / f"{name}.flatppl"
@@ -103,7 +117,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
         model = context.load(path)
         context.register("model.flatppl", model)
 
-        def domain(value):
+        def domain(value: Any) -> str:
             if isinstance(value, dict):
                 return (
                     "cartprod("
@@ -122,7 +136,9 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
             context=context,
         )
         result["stage"] = "compile"
-        density = query.compile(integration=Integration() if name == "minimal" else None)
+        density = query.compile(
+            integration=Integration() if name == "minimal" else None
+        )
         initial = (
             {k: jnp.asarray(v, dtype=jnp.float32) for k, v in initial.items()}
             if isinstance(initial, dict)
@@ -165,7 +181,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
             bounded = jnp.full(flat.shape, bounds[1] is not None)
         width = upper - lower
 
-        def constrain(z):
+        def constrain(z: jax.Array) -> jax.Array:
             positive_value = lower + jnp.exp(jnp.where(positive, z, 0))
             return jnp.where(
                 bounded,
@@ -173,7 +189,7 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
                 jnp.where(positive, positive_value, z),
             )
 
-        def logdensity(z):
+        def logdensity(z: jax.Array) -> jax.Array:
             log_jac = jnp.where(
                 bounded,
                 jnp.log(width) + jax.nn.log_sigmoid(z) + jax.nn.log_sigmoid(-z),
@@ -223,8 +239,8 @@ def run(name, directory, warmup=0, samples=1024, device="cpu"):
                 kernel = blackjax.nuts(logdensity, **parameters)
 
                 @jax.jit
-                def sample(key, state):
-                    def step(state, key):
+                def sample(key: jax.Array, state: Any) -> tuple[Any, Any]:
+                    def step(state: Any, key: jax.Array) -> tuple[Any, Any]:
                         state, info = kernel.step(key, state)
                         return state, (constrain(state.position), info.is_divergent)
 

@@ -20,6 +20,24 @@ python -m pytest tests -q
 The tests cover values and first derivatives, input/output structure, context
 lifecycle, module imports, random-state chaining, device transfers, and BlackJAX sampling.
 
+## Check style and types
+
+Ruff formats and lints the package, tests and examples. Pyright checks types in
+strict mode. Install both from the `lint` dependency group into the environment
+that holds the installed wheel and its test dependencies:
+
+```sh
+python -m pip install --group lint
+ruff format --check .
+ruff check .
+pyright
+```
+
+`python/flatppl/_native.pyi` describes the compiled module. A test compares it
+with the parameter names and defaults of the installed extension, so update the
+stub with every change to the Rust bindings. Stubs in `typings/` declare the
+untyped imports as `Any`.
+
 ## Build the documentation
 
 From the repository root, use a Python 3.14 environment and run:

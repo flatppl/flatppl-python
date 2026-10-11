@@ -2,6 +2,7 @@
 
 import json
 import warnings
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -13,29 +14,33 @@ from flatppl import flatppl
 
 
 class ArrowStream:
-    def __init__(self, value):
+    def __init__(self, value: Any) -> None:
         self.value = value
 
-    def __arrow_c_stream__(self, requested_schema=None):
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         return self.value.__arrow_c_stream__(requested_schema)
 
-    def __dataframe__(self, *args, **kwargs):
+    def __dataframe__(self, *args: object, **kwargs: object) -> object:
         raise AssertionError("Arrow must take precedence over the legacy protocol")
 
 
 class ArrowArray:
-    def __init__(self, value):
+    def __init__(self, value: Any) -> None:
         self.value = value
 
-    def __arrow_c_array__(self, requested_schema=None):
+    def __arrow_c_array__(self, requested_schema: object | None = None) -> object:
         return self.value.__arrow_c_array__(requested_schema)
 
 
 @pytest.mark.parametrize(
     "producer", ["pandas", "polars", "arrow", "record_batch", "stream", "array"]
 )
-def test_interchange_preserves_columns_and_fixed_snapshots(producer):
-    columns = {"flag": [True, False, True], "i": [1, -2, 3], "x": [0.5, -2.0, 4.0]}
+def test_interchange_preserves_columns_and_fixed_snapshots(producer: str) -> None:
+    columns: dict[str, list[bool | int | float]] = {
+        "flag": [True, False, True],
+        "i": [1, -2, 3],
+        "x": [0.5, -2.0, 4.0],
+    }
     if producer == "pandas":
         table = pd.DataFrame(
             {
@@ -67,11 +72,12 @@ def test_interchange_preserves_columns_and_fixed_snapshots(producer):
         np.testing.assert_array_equal(actual[name], expected)
         np.testing.assert_array_equal(fixed()[name], expected)
     if producer == "pandas":
+        assert isinstance(table, pd.DataFrame)
         table.loc[:, "x"] = 99.0
         np.testing.assert_array_equal(fixed()["x"], columns["x"])
 
 
-def test_sliced_chunked_columns_keep_row_offsets():
+def test_sliced_chunked_columns_keep_row_offsets() -> None:
     table = pa.table(
         {
             "flag": pa.chunked_array([[False, True], [False, True, False]]),
@@ -90,7 +96,7 @@ def test_sliced_chunked_columns_keep_row_offsets():
     np.testing.assert_array_equal(actual["flag"], [True, False, True])
 
 
-def test_null_masks_and_duplicate_fields_cannot_silently_change_data():
+def test_null_masks_and_duplicate_fields_cannot_silently_change_data() -> None:
     query = flatppl("""
         data = external(cartpow(cartprod(x=reals), 3))
         inputs = data
@@ -117,12 +123,15 @@ def test_null_masks_and_duplicate_fields_cannot_silently_change_data():
         total(ambiguous)
 
 
-def test_legacy_interchange_producer_needs_no_dataframe_indexing():
+def test_legacy_interchange_producer_needs_no_dataframe_indexing() -> None:
     class LegacyTable:
-        def __dataframe__(self, nan_as_null=False, allow_copy=True):
+        def __dataframe__(
+            self, nan_as_null: bool = False, allow_copy: bool = True
+        ) -> object:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", pd.errors.Pandas4Warning)
-                return pd.DataFrame({"x": [2.0, 3.0]}).__dataframe__(
+                # pandas-stubs types the dunder as a column lookup, not the protocol method.
+                return pd.DataFrame({"x": [2.0, 3.0]}).__dataframe__(  # pyright: ignore[reportCallIssue]
                     allow_copy=allow_copy
                 )
 

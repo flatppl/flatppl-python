@@ -1,5 +1,7 @@
 """Module-scoped normalizers checked against analytic product densities."""
 
+from typing import Literal
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -18,14 +20,21 @@ MODEL = """
 """
 
 
-def iid_oracle(a, lo, hi, points):
+def iid_oracle(
+    a: float | jax.Array,
+    lo: float | jax.Array,
+    hi: float | jax.Array,
+    points: jax.Array,
+) -> jax.Array:
     return a * jnp.sum(points - lo) - points.size * jnp.log(
         jnp.expm1(a * (hi - lo)) / a
     )
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
-def test_iid_normalizer_preserves_live_bounds_and_gradients(dtype):
+def test_iid_normalizer_preserves_live_bounds_and_gradients(
+    dtype: Literal["float32", "float64"],
+) -> None:
     with jax.enable_x64(dtype == "float64"):
         function = flatppl(MODEL + "outputs = logdensityof(iid(measure, 3), points)")
         function = function.compile(
@@ -36,7 +45,7 @@ def test_iid_normalizer_preserves_live_bounds_and_gradients(dtype):
         expected = jax.value_and_grad(iid_oracle, argnums=(0, 1, 2, 3))
         for a, lo, hi in [(2.0, -0.5, 1.0), (-1.3, -1.0, 2.0)]:
             points = jnp.asarray([0.1, 0.2, 0.4], dtype=dtype)
-            args = tuple(jnp.asarray(x, dtype=dtype) for x in (a, lo, hi)) + (points,)
+            args = (*(jnp.asarray(x, dtype=dtype) for x in (a, lo, hi)), points)
             for found, wanted in zip(
                 jax.tree.leaves(actual(*args)),
                 jax.tree.leaves(expected(*args)),
@@ -45,7 +54,7 @@ def test_iid_normalizer_preserves_live_bounds_and_gradients(dtype):
                 np.testing.assert_allclose(found, wanted, rtol=3e-4, atol=3e-5)
 
 
-def test_independent_nested_normalizer_preserves_its_parameter_gradient():
+def test_independent_nested_normalizer_preserves_its_parameter_gradient() -> None:
     function = flatppl("""
         a = 2.0
         point = 0.25
@@ -56,7 +65,7 @@ def test_independent_nested_normalizer_preserves_its_parameter_gradient():
         outputs = logdensityof(outer, point)
     """).compile(integration=Integration())
 
-    def oracle(a, point):
+    def oracle(a: float | jax.Array, point: float | jax.Array) -> jax.Array:
         return jnp.log1p(jnp.exp(a * point) / (jnp.expm1(a) / a)) - jnp.log(2.0)
 
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
@@ -70,7 +79,7 @@ def test_independent_nested_normalizer_preserves_its_parameter_gradient():
             np.testing.assert_allclose(found, wanted, rtol=3e-4, atol=3e-5)
 
 
-def test_scalar_and_iid_queries_share_the_same_normalizer():
+def test_scalar_and_iid_queries_share_the_same_normalizer() -> None:
     expressions = [
         "logdensityof(measure, points[1])",
         "logdensityof(iid(measure, 3), points)",
@@ -91,15 +100,16 @@ def test_scalar_and_iid_queries_share_the_same_normalizer():
     combined = flatppl(MODEL + "outputs = " + " + ".join(expressions))
     combined = combined.compile(integration=Integration())
     derivative = jax.grad(
-        lambda a: iid_oracle(a, -0.5, 1.0, points[:1])
-        + iid_oracle(a, -0.5, 1.0, points)
+        lambda a: (
+            iid_oracle(a, -0.5, 1.0, points[:1]) + iid_oracle(a, -0.5, 1.0, points)
+        )
     )(2.0)
     np.testing.assert_allclose(
         jax.grad(combined)(2.0, -0.5, 1.0, points), derivative, rtol=3e-4, atol=3e-5
     )
 
 
-def test_failed_hoisted_normalizer_preserves_convergence_signal():
+def test_failed_hoisted_normalizer_preserves_convergence_signal() -> None:
     function = flatppl("""
         a = 2.0
         points = [0.1, 0.2, 0.4]
@@ -110,7 +120,7 @@ def test_failed_hoisted_normalizer_preserves_convergence_signal():
     assert np.isnan(function(2.0))
 
 
-def test_reified_score_lifts_only_observation_independent_normalizers():
+def test_reified_score_lifts_only_observation_independent_normalizers() -> None:
     function = flatppl("""
         a = 2.0
         points = [0.1, 0.2, 0.4]

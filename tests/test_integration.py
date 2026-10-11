@@ -7,11 +7,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from flatppl import CompilationError, Integration, flatppl
+from flatppl import CompilationError, Integration, Module, flatppl
+
+Scalar = float | jax.Array
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
-def test_shared_scale_marginal_matches_radial_density(dtype):
+def test_shared_scale_marginal_matches_radial_density(dtype: str) -> None:
     with jax.enable_x64(dtype == "float64"):
         query = flatppl("""
             mu = 1.5
@@ -27,24 +29,28 @@ def test_shared_scale_marginal_matches_radial_density(dtype):
         if dtype == "float32":
             with pytest.raises(CompilationError):
                 query.compile()
-        function = query.compile(dtype=dtype, integration=Integration(
-            rtol=1e-5 if dtype == "float32" else 1e-9
-        ))
+        function = query.compile(
+            dtype=dtype,
+            integration=Integration(rtol=1e-5 if dtype == "float32" else 1e-9),
+        )
 
-        def oracle(mu, point):
+        def oracle(mu: Scalar, point: jax.Array) -> jax.Array:
             radius = jnp.linalg.norm(point - mu)
-            return -jnp.sqrt(2.0)*radius - jnp.log(2*jnp.pi*radius)
+            return -jnp.sqrt(2.0) * radius - jnp.log(2 * jnp.pi * radius)
 
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
         expected = jax.value_and_grad(oracle, argnums=(0, 1))
         for offset in ([0.1, 0.0, -0.1], [0.5, -1.0, 2.0], [5.0, 3.0, -2.0]):
             point = jnp.asarray(offset, dtype=dtype) + 1.5
-            for found, wanted in zip(jax.tree.leaves(actual(1.5, point)),
-                                     jax.tree.leaves(expected(1.5, point)), strict=True):
+            for found, wanted in zip(
+                jax.tree.leaves(actual(1.5, point)),
+                jax.tree.leaves(expected(1.5, point)),
+                strict=True,
+            ):
                 np.testing.assert_allclose(found, wanted, rtol=2e-4, atol=2e-5)
 
 
-def test_normalizer_preserves_moving_bounds_and_log_scale():
+def test_normalizer_preserves_moving_bounds_and_log_scale() -> None:
     function = flatppl("""
         a = 2.0
         lo = -0.5
@@ -57,25 +63,33 @@ def test_normalizer_preserves_moving_bounds_and_log_scale():
         outputs = logdensityof(measure, point)
     """).compile(integration=Integration())
 
-    def oracle(a, lo, hi, shift, point):
+    def oracle(
+        a: Scalar, lo: Scalar, hi: Scalar, shift: Scalar, point: Scalar
+    ) -> jax.Array:
         del shift
-        return a*(point-lo) - jnp.log(jnp.expm1(a*(hi-lo))/a)
+        return a * (point - lo) - jnp.log(jnp.expm1(a * (hi - lo)) / a)
 
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2, 3, 4)))
     expected = jax.value_and_grad(oracle, argnums=(0, 1, 2, 3, 4))
     for shift in (0.0, 1000.0, -1000.0):
         args = (2.0, -0.5, 1.0, shift, 0.25)
-        for found, wanted in zip(jax.tree.leaves(actual(*args)),
-                                 jax.tree.leaves(expected(*args)), strict=True):
+        for found, wanted in zip(
+            jax.tree.leaves(actual(*args)),
+            jax.tree.leaves(expected(*args)),
+            strict=True,
+        ):
             np.testing.assert_allclose(found, wanted, rtol=3e-4, atol=2e-4)
 
 
-@pytest.mark.parametrize("support,weight,point", [
-    ("reals", "-a*x^2", 0.25),
-    ("interval(0.0, inf)", "-a*x", 0.5),
-    ("interval(-inf, 0.0)", "a*x", -0.5),
-])
-def test_infinite_interval_maps(support, weight, point):
+@pytest.mark.parametrize(
+    "support,weight,point",
+    [
+        ("reals", "-a*x^2", 0.25),
+        ("interval(0.0, inf)", "-a*x", 0.5),
+        ("interval(-inf, 0.0)", "a*x", -0.5),
+    ],
+)
+def test_infinite_interval_maps(support: str, weight: str, point: float) -> None:
     function = flatppl(f"""
         a = 2.0
         point = {point}
@@ -85,14 +99,15 @@ def test_infinite_interval_maps(support, weight, point):
         outputs = logdensityof(measure, point)
     """).compile(integration=Integration())
     if support == "reals":
-        expected = (-2*point**2 + 0.5*np.log(2/np.pi), -point**2 + 0.25)
+        expected = (-2 * point**2 + 0.5 * np.log(2 / np.pi), -(point**2) + 0.25)
     else:
-        expected = (-2*abs(point) + np.log(2), -abs(point) + 0.5)
-    np.testing.assert_allclose(jax.jit(jax.value_and_grad(function))(2.0), expected,
-                               rtol=3e-5, atol=3e-6)
+        expected = (-2 * abs(point) + np.log(2), -abs(point) + 0.5)
+    np.testing.assert_allclose(
+        jax.jit(jax.value_and_grad(function))(2.0), expected, rtol=3e-5, atol=3e-6
+    )
 
 
-def test_failed_quadrature_does_not_return_a_normalized_density():
+def test_failed_quadrature_does_not_return_a_normalized_density() -> None:
     query = flatppl("""
         a = 2.0
         weight(x) = -a*x^2
@@ -104,7 +119,7 @@ def test_failed_quadrature_does_not_return_a_normalized_density():
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
-def test_internal_breakpoints_preserve_mass_and_boundary_gradients(dtype):
+def test_internal_breakpoints_preserve_mass_and_boundary_gradients(dtype: str) -> None:
     with jax.enable_x64(dtype == "float64"):
         query = flatppl("""
             a = 0.3
@@ -118,22 +133,27 @@ def test_internal_breakpoints_preserve_mass_and_boundary_gradients(dtype):
         function = query.compile(dtype=dtype, integration=Integration())
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
 
-        def oracle(a, b):
+        def oracle(a: Scalar, b: Scalar) -> jax.Array:
             weight = 1 + jnp.where(0.8 < a, 1.0, 0.0) + jnp.where(0.8 < b, 2.0, 0.0)
-            return jnp.log(weight) - jnp.log(1 + jnp.clip(a, 0, 1) + 2*jnp.clip(b, 0, 1))
+            return jnp.log(weight) - jnp.log(
+                1 + jnp.clip(a, 0, 1) + 2 * jnp.clip(b, 0, 1)
+            )
 
         expected = jax.value_and_grad(oracle, argnums=(0, 1))
         for cuts in ((0.3, 0.6), (0.6, 0.3), (-0.1, 0.3), (0.3, 1.1)):
             args = tuple(jnp.asarray(x, dtype=dtype) for x in cuts)
-            for found, wanted in zip(jax.tree.leaves(actual(*args)),
-                                     jax.tree.leaves(expected(*args)), strict=True):
+            for found, wanted in zip(
+                jax.tree.leaves(actual(*args)),
+                jax.tree.leaves(expected(*args)),
+                strict=True,
+            ):
                 np.testing.assert_allclose(found, wanted, rtol=3e-5, atol=3e-6)
         # The value remains defined at a tie. Individual cut gradients need a
         # locally strict ordering, even if the mathematical integral is smooth.
         np.testing.assert_allclose(function(0.3, 0.3), -np.log(1.9), atol=2e-6)
 
 
-def test_narrow_interval_with_background_is_not_missed():
+def test_narrow_interval_with_background_is_not_missed() -> None:
     function = flatppl("""
         lo = 0.26
         hi = 0.27
@@ -146,13 +166,13 @@ def test_narrow_interval_with_background_is_not_missed():
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
     for lo, hi in ((0.26, 0.27), (0.5, 0.5001)):
         lo, hi = np.float32(lo), np.float32(hi)
-        mass = 1 + 100*float(hi-lo)
+        mass = 1 + 100 * float(hi - lo)
         value, gradients = actual(lo, hi)
         np.testing.assert_allclose(value, -np.log(mass), rtol=3e-5, atol=2e-6)
-        np.testing.assert_allclose(gradients, (100/mass, -100/mass), rtol=3e-5)
+        np.testing.assert_allclose(gradients, (100 / mass, -100 / mass), rtol=3e-5)
 
 
-def test_physical_cut_rounding_requires_more_precision():
+def test_physical_cut_rounding_requires_more_precision() -> None:
     query = flatppl("""
         cut = 1.000000238418579
         weight(x) = ifelse(x < cut, 1.0, 2.0)
@@ -161,13 +181,15 @@ def test_physical_cut_rounding_requires_more_precision():
             Lebesgue(interval(1.0, 1.0000004768371582)))), 1.0000001192092896)
     """)
     single = query.compile(integration=Integration())
-    assert np.isnan(single(1 + 2*2**-23))
+    assert np.isnan(single(1 + 2 * 2**-23))
     with jax.enable_x64():
         double = query.compile(dtype="float64", integration=Integration(rtol=1e-9))
-        np.testing.assert_allclose(double(1 + 2*2**-23), -np.log(6*2**-23), atol=1e-9)
+        np.testing.assert_allclose(
+            double(1 + 2 * 2**-23), -np.log(6 * 2**-23), atol=1e-9
+        )
 
 
-def test_clipped_breakpoints_preserve_log_scale_and_outer_bounds():
+def test_clipped_breakpoints_preserve_log_scale_and_outer_bounds() -> None:
     function = flatppl("""
         shift = 1000.0
         cut = -0.2
@@ -185,7 +207,7 @@ def test_clipped_breakpoints_preserve_log_scale_and_outer_bounds():
         np.testing.assert_allclose(gradient, (0.0, 0.0, 1.0, -1.0), atol=2e-5)
 
 
-def test_breakpoint_with_a_live_infinite_tail():
+def test_breakpoint_with_a_live_infinite_tail() -> None:
     function = flatppl("""
         cut = 0.3
         weight(x) = ifelse(x < cut, 0.0, log(2.0)) - x
@@ -194,12 +216,12 @@ def test_breakpoint_with_a_live_infinite_tail():
     """).compile(integration=Integration())
     actual = jax.jit(jax.value_and_grad(function))
     for cut in (0.3, 0.7):
-        expected = (np.log(2)-1-np.log1p(np.exp(-cut)), 1/(1+np.exp(cut)))
+        expected = (np.log(2) - 1 - np.log1p(np.exp(-cut)), 1 / (1 + np.exp(cut)))
         np.testing.assert_allclose(actual(cut), expected, rtol=3e-5, atol=2e-6)
     np.testing.assert_allclose(function(np.inf), -1.0, atol=2e-6)
 
 
-def test_pareto_normalizer_keeps_the_live_support_scale():
+def test_pareto_normalizer_keeps_the_live_support_scale() -> None:
     function = flatppl("""
         scale = 2.0
         point = 3.0
@@ -211,13 +233,15 @@ def test_pareto_normalizer_keeps_the_live_support_scale():
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
     for scale, point, hi in ((2.0, 3.0, np.inf), (0.5, 1.0, 10.0)):
         value, gradient = actual(scale, point, hi)
-        mass = 1 - (scale/hi)**4
-        expected = np.log(4) + 4*np.log(scale) - 5*np.log(point) - np.log(mass)
+        mass = 1 - (scale / hi) ** 4
+        expected = np.log(4) + 4 * np.log(scale) - 5 * np.log(point) - np.log(mass)
         np.testing.assert_allclose(value, expected, rtol=3e-5, atol=2e-6)
-        np.testing.assert_allclose(gradient, (4/(scale*mass), -5/point), rtol=3e-5)
+        np.testing.assert_allclose(
+            gradient, (4 / (scale * mass), -5 / point), rtol=3e-5
+        )
 
 
-def test_vonmises_normalizer_uses_one_angular_period():
+def test_vonmises_normalizer_uses_one_angular_period() -> None:
     function = flatppl("""
         a = 0.5
         k = 1.0
@@ -230,17 +254,22 @@ def test_vonmises_normalizer_uses_one_angular_period():
     for a, k in ((0.5, 1.0), (1.5, 2.0)):
         concentration = a + k
         value, gradient = actual(a, k, 0.7)
-        expected = concentration*np.cos(0.7) - np.log(2*np.pi*np.i0(concentration))
+        expected = concentration * np.cos(0.7) - np.log(
+            2 * np.pi * np.i0(concentration)
+        )
         derivative = np.cos(0.7) - float(
-            jax.scipy.special.i1e(concentration)/jax.scipy.special.i0e(concentration))
+            jax.scipy.special.i1e(concentration) / jax.scipy.special.i0e(concentration)
+        )
         np.testing.assert_allclose(value, expected, rtol=3e-5, atol=2e-6)
-        np.testing.assert_allclose(gradient, (derivative, derivative), rtol=3e-5, atol=2e-6)
+        np.testing.assert_allclose(
+            gradient, (derivative, derivative), rtol=3e-5, atol=2e-6
+        )
     for point in (-4.0, 4.0):
         assert np.isneginf(function(0.5, 1.0, point))
 
 
-def test_quadrature_distinguishes_continuous_mass_from_atoms():
-    def query(reference):
+def test_quadrature_distinguishes_continuous_mass_from_atoms() -> None:
+    def query(reference: str) -> Module:
         return flatppl(f"""
             point = 0.25
             weight(x) = -x^2
@@ -251,7 +280,9 @@ def test_quadrature_distinguishes_continuous_mass_from_atoms():
         """)
 
     continuous = query("Normal(0.0, 1.0)").compile(integration=Integration())
-    expected = -1.5*0.25**2 + 0.5*np.log(3/(2*np.pi)) - np.log(math.erf(np.sqrt(1.5)))
+    expected = (
+        -1.5 * 0.25**2 + 0.5 * np.log(3 / (2 * np.pi)) - np.log(math.erf(np.sqrt(1.5)))
+    )
     np.testing.assert_allclose(continuous(0.25), expected, atol=2e-6)
     for reference in ("Dirac(0.0)", "superpose(Normal(0.0, 1.0), Dirac(0.0))"):
         measure = query(reference)

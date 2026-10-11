@@ -1,6 +1,8 @@
 """Host batch axes preserve each query's cell shapes, activity, and RNG state."""
 
 import re
+from collections.abc import Callable
+from typing import Any
 
 import blackjax
 import jax
@@ -11,7 +13,7 @@ import pytest
 from flatppl import Integration, flatppl
 
 
-def test_nested_maps_keep_cell_reductions_and_structured_outputs():
+def test_nested_maps_keep_cell_reductions_and_structured_outputs() -> None:
     function = flatppl("""
         p = elementof(cartprod(x = cartpow(reals, 3), scale = reals))
         data = external(cartpow(reals, 3))
@@ -31,7 +33,7 @@ def test_nested_maps_keep_cell_reductions_and_structured_outputs():
     np.testing.assert_array_equal(result["count"], jnp.full((2, 4), 3))
 
 
-def test_both_gradient_orders_and_directional_derivatives():
+def test_both_gradient_orders_and_directional_derivatives() -> None:
     function = flatppl("""
         x = elementof(reals)
         scale = elementof(reals)
@@ -58,7 +60,7 @@ def test_both_gradient_orders_and_directional_derivatives():
     np.testing.assert_allclose(tangent, (2 * scale * x + 3 * x * x) * dx - 3 * x * x)
 
 
-def test_empty_map_and_invariant_outputs():
+def test_empty_map_and_invariant_outputs() -> None:
     function = flatppl(
         "x = elementof(reals)\ninputs = x\noutputs = (x*x, 7.0)"
     ).compile()
@@ -71,7 +73,9 @@ def test_empty_map_and_invariant_outputs():
 
 @pytest.mark.parametrize("selection", ["[1, 3, 3]", "indices", "indices[1]"])
 @pytest.mark.parametrize("axes", [(0, None), (None, 0), (0, 0)])
-def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes):
+def test_gather_maps_keep_values_gradients_and_tensor_execution(
+    selection: str, axes: tuple[int | None, int | None]
+) -> None:
     output = f"x[{selection}]" if selection == "indices[1]" else f"sum(x[{selection}])"
     function = flatppl(f"""
         x = elementof(cartpow(reals, 5))
@@ -81,9 +85,11 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes)
     """).compile()
     x = jnp.arange(20, dtype=jnp.float32).reshape(4, 5) / 7
     indices = jnp.array([[1, 3, 3], [5, 2, 4], [2, 2, 2], [4, 1, 5]])
-    arguments = tuple(v[0] if axis is None else v for v, axis in zip((x, indices), axes))
+    arguments = tuple(
+        v[0] if axis is None else v for v, axis in zip((x, indices), axes, strict=True)
+    )
 
-    def oracle(x, indices):
+    def oracle(x: jax.Array, indices: jax.Array) -> jax.Array:
         selected = jnp.array([1, 3, 3]) if selection.startswith("[") else indices
         if selection == "indices[1]":
             selected = selected[0]
@@ -93,20 +99,28 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes)
     reference = jax.vmap(oracle, in_axes=axes)
     compiled = jax.jit(mapped).lower(*arguments).compile()
     np.testing.assert_allclose(compiled(*arguments), reference(*arguments))
-    assert not re.search(r"\bwhile\(", compiled.as_text())
+    text = compiled.as_text()
+    assert text is not None
+    assert not re.search(r"\bwhile\(", text)
     for actual, expected in (
-        (jax.vmap(jax.value_and_grad(function), in_axes=axes),
-         jax.vmap(jax.value_and_grad(oracle), in_axes=axes)),
-        (jax.grad(lambda x, i: jnp.sum(mapped(x, i))),
-         jax.grad(lambda x, i: jnp.sum(reference(x, i)))),
+        (
+            jax.vmap(jax.value_and_grad(function), in_axes=axes),
+            jax.vmap(jax.value_and_grad(oracle), in_axes=axes),
+        ),
+        (
+            jax.grad(lambda x, i: jnp.sum(mapped(x, i))),
+            jax.grad(lambda x, i: jnp.sum(reference(x, i))),
+        ),
     ):
         found = jax.jit(actual)(*arguments)
         wanted = expected(*arguments)
-        for value, target in zip(jax.tree.leaves(found), jax.tree.leaves(wanted)):
+        for value, target in zip(
+            jax.tree.leaves(found), jax.tree.leaves(wanted), strict=True
+        ):
             np.testing.assert_allclose(value, target)
 
 
-def test_empty_gather_map_keeps_empty_values_and_gradients():
+def test_empty_gather_map_keeps_empty_values_and_gradients() -> None:
     function = flatppl("""
         x = external(cartpow(reals, 3))
         i = external(integers)
@@ -121,7 +135,7 @@ def test_empty_gather_map_keeps_empty_values_and_gradients():
     np.testing.assert_array_equal(gradient, np.empty((0, 3)))
 
 
-def test_composed_primitives_keep_host_axes_separate_from_callable_axes():
+def test_composed_primitives_keep_host_axes_separate_from_callable_axes() -> None:
     function = flatppl("""
         rows = external(cartpow(cartpow(reals, 4), 3))
         score(x) = atan(x) + loggamma(1.0 + x*x)
@@ -130,23 +144,29 @@ def test_composed_primitives_keep_host_axes_separate_from_callable_axes():
     """).compile()
     rows = jnp.linspace(-0.2, 0.4, 120).reshape(2, 3, 5, 4)
 
-    def oracle(rows):
+    def oracle(rows: jax.Array) -> jax.Array:
         total = jnp.sum(rows)
-        return jnp.arctan(total) + jax.scipy.special.gammaln(1 + total*total)
+        return jnp.arctan(total) + jax.scipy.special.gammaln(1 + total * total)
 
-    def mapped(f):
+    def mapped(f: Callable[..., Any]) -> Callable[..., Any]:
         return jax.vmap(jax.vmap(f, in_axes=1))
 
     compiled = jax.jit(mapped(function)).lower(rows).compile()
-    np.testing.assert_allclose(compiled(rows), mapped(oracle)(rows), rtol=2e-5, atol=2e-6)
-    assert not re.search(r"\bwhile\(", compiled.as_text())
+    np.testing.assert_allclose(
+        compiled(rows), mapped(oracle)(rows), rtol=2e-5, atol=2e-6
+    )
+    text = compiled.as_text()
+    assert text is not None
+    assert not re.search(r"\bwhile\(", text)
     found = jax.jit(mapped(jax.value_and_grad(function)))(rows)
     wanted = mapped(jax.value_and_grad(oracle))(rows)
-    for value, target in zip(jax.tree.leaves(found), jax.tree.leaves(wanted)):
+    for value, target in zip(
+        jax.tree.leaves(found), jax.tree.leaves(wanted), strict=True
+    ):
         np.testing.assert_allclose(value, target, rtol=2e-5, atol=2e-6)
 
 
-def test_nested_gathers_keep_original_cell_axes():
+def test_nested_gathers_keep_original_cell_axes() -> None:
     function = flatppl("""
         rows = external(cartpow(cartpow(reals, 4), 3))
         indices = external(cartpow(integers, 2))
@@ -156,27 +176,32 @@ def test_nested_gathers_keep_original_cell_axes():
     rows = jnp.arange(60, dtype=jnp.float32).reshape(3, 5, 4)
     indices = jnp.array([[3, 1], [2, 2]])
 
-    def mapped(f):
+    def mapped(f: Callable[..., Any]) -> Callable[..., Any]:
         return jax.vmap(jax.vmap(f, in_axes=(1, None)), in_axes=(None, 0))
 
     actual = mapped(function)
     reference = mapped(lambda rows, indices: rows[indices - 1])
     compiled = jax.jit(actual).lower(rows, indices).compile()
     np.testing.assert_array_equal(compiled(rows, indices), reference(rows, indices))
-    assert not re.search(r"\bwhile\(", compiled.as_text())
+    text = compiled.as_text()
+    assert text is not None
+    assert not re.search(r"\bwhile\(", text)
     found = jax.jit(jax.grad(lambda rows: actual(rows, indices).sum()))(rows)
     wanted = jax.grad(lambda rows: reference(rows, indices).sum())(rows)
     np.testing.assert_array_equal(found, wanted)
 
 
-def test_inactive_singular_derivative_stays_inactive():
+def test_inactive_singular_derivative_stays_inactive() -> None:
     function = flatppl("""
         x = elementof(reals)
         y = elementof(reals)
         inputs = (x, y)
         outputs = x*x + sqrt(y)
     """).compile()
-    scalar = lambda x: function(x, jnp.float32(0))
+
+    def scalar(x: jax.Array) -> jax.Array:
+        return function(x, jnp.float32(0))
+
     np.testing.assert_allclose(
         jax.jvp(scalar, (jnp.float32(2),), (jnp.float32(1),)), (4, 4)
     )
@@ -185,7 +210,7 @@ def test_inactive_singular_derivative_stays_inactive():
     )
 
 
-def test_scan_map_matches_independent_recurrences():
+def test_scan_map_matches_independent_recurrences() -> None:
     function = flatppl("""
         alpha = 0.5
         xs = external(cartpow(reals, 3))
@@ -195,8 +220,8 @@ def test_scan_map_matches_independent_recurrences():
         outputs = sum(states)
     """).compile(optimize_forward=True)
 
-    def oracle(alpha, xs):
-        def step(state, x):
+    def oracle(alpha: jax.Array, xs: jax.Array) -> jax.Array:
+        def step(state: jax.Array, x: jax.Array) -> tuple[jax.Array, jax.Array]:
             state = jnp.tanh(alpha * state + x)
             return state, state
 
@@ -219,8 +244,11 @@ def test_scan_map_matches_independent_recurrences():
 
 @pytest.mark.parametrize("length", [1, 7])
 @pytest.mark.parametrize("batches", [0, 2])
-def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches):
-    function = flatppl("""
+def test_nested_record_scans_keep_time_separate_from_batch_axes(
+    length: int, batches: int
+) -> None:
+    function = (
+        flatppl("""
         alpha = 0.5
         n = external(integers)
         xs = external(cartpow(reals, n))
@@ -228,10 +256,15 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches)
         states = scan(step, record(total=0.0, square=0.0), xs)
         inputs = (alpha, xs)
         outputs = sum(states.total) + sum(states.square)
-    """).set(n=length).compile()
+    """)
+        .set(n=length)
+        .compile()
+    )
 
-    def oracle(alpha, xs):
-        def step(state, x):
+    def oracle(alpha: jax.Array, xs: jax.Array) -> jax.Array:
+        def step(
+            state: tuple[jax.Array, jax.Array], x: jax.Array
+        ) -> tuple[tuple[jax.Array, jax.Array], jax.Array]:
             next_state = (jnp.tanh(alpha * state[0] + x), state[1] + x * x)
             return next_state, next_state[0] + next_state[1]
 
@@ -240,7 +273,7 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches)
     alpha = jnp.array([[0.2, 0.5, 0.8], [0.1, -0.3, 0.4]])[:batches]
     xs = jnp.linspace(-0.3, 0.7, length * 3 * batches).reshape(length, 3, batches)
 
-    def mapped(f):
+    def mapped(f: Callable[..., Any]) -> Callable[..., Any]:
         return jax.vmap(jax.vmap(f, in_axes=(0, 1)), in_axes=(0, 2))
 
     compiled = jax.jit(mapped(function)).lower(alpha, xs).compile()
@@ -248,14 +281,18 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches)
         compiled(alpha, xs), mapped(oracle)(alpha, xs), rtol=3e-5, atol=3e-5
     )
     if length > 1 and batches:
-        assert len(re.findall(r"\bwhile\(", compiled.as_text())) == 1
+        text = compiled.as_text()
+        assert text is not None
+        assert len(re.findall(r"\bwhile\(", text)) == 1
     found = jax.jit(mapped(jax.value_and_grad(function, argnums=(0, 1))))(alpha, xs)
     expected = mapped(jax.value_and_grad(oracle, argnums=(0, 1)))(alpha, xs)
-    for value, reference in zip(jax.tree.leaves(found), jax.tree.leaves(expected)):
+    for value, reference in zip(
+        jax.tree.leaves(found), jax.tree.leaves(expected), strict=True
+    ):
         np.testing.assert_allclose(value, reference, rtol=3e-5, atol=3e-5)
 
 
-def test_mapped_integration_matches_exponential_normalizer():
+def test_mapped_integration_matches_exponential_normalizer() -> None:
     function = flatppl("""
         a = 2.0
         weight(x) = a*x
@@ -270,7 +307,7 @@ def test_mapped_integration_matches_exponential_normalizer():
     )
 
 
-def test_mapped_sampling_preserves_each_explicit_key():
+def test_mapped_sampling_preserves_each_explicit_key() -> None:
     with jax.enable_x64():
         function = flatppl("""
             state = rnginit(0)
@@ -291,12 +328,12 @@ def test_mapped_sampling_preserves_each_explicit_key():
             np.testing.assert_array_equal(actual[1], expected[1])
 
 
-def test_vectorized_blackjax_steps_match_native_density():
+def test_vectorized_blackjax_steps_match_native_density() -> None:
     density = flatppl("x = elementof(reals)\ninputs = x\noutputs = -0.5*x*x").compile()
     keys = jax.random.split(jax.random.key(19), 3)
     points = jnp.array([-1.0, 0.2, 2.0])
 
-    def run(logdensity):
+    def run(logdensity: Callable[[jax.Array], jax.Array]) -> tuple[Any, Any, Any]:
         sampler = blackjax.hmc(
             logdensity,
             step_size=0.1,
@@ -307,5 +344,5 @@ def test_vectorized_blackjax_steps_match_native_density():
         states, info = jax.jit(jax.vmap(sampler.step))(keys, states)
         return states.position, states.logdensity, info.acceptance_rate
 
-    for actual, expected in zip(run(density), run(lambda x: -0.5 * x * x)):
+    for actual, expected in zip(run(density), run(lambda x: -0.5 * x * x), strict=True):
         np.testing.assert_allclose(actual, expected, rtol=3e-6, atol=3e-6)

@@ -385,9 +385,9 @@ def test_directory_bundle_alias_and_containment(tmp_path: Path) -> None:
 def test_rng_pairs_chaining_and_output_order() -> None:
     source = r"""
         s = rnginit(0)
-        a = rand(s, Normal(0.0, 1.0))
-        b = rand(s, Normal(0.0, 1.0))
-        c = rand(a[2], Normal(0.0, 1.0))
+        a = rand(Normal(0.0, 1.0), s)
+        b = rand(Normal(0.0, 1.0), s)
+        c = rand(Normal(0.0, 1.0), a[2])
         score = logdensityof(Normal(0.0, 1.0), a[1])
         inputs = s
     """

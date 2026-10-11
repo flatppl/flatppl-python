@@ -313,7 +313,7 @@ def test_mapped_sampling_preserves_each_explicit_key() -> None:
             state = rnginit(0)
             shift = 0.0
             inputs = (state, shift)
-            outputs = rand(state, Normal(shift, 1.0))
+            outputs = rand(Normal(shift, 1.0), state)
         """).compile(autodiff=False, optimize_forward=True)
         keys = jnp.array([[1729, 0], [37, 5], [91, 3]], dtype=jnp.uint64)
         shifts = jnp.array([-1.0, 0.0, 2.0], dtype=jnp.float32)

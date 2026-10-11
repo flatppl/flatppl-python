@@ -299,7 +299,7 @@ with jax.enable_x64():
     draw = flatppl(r"""
         s = rnginit(0)
         inputs = s
-        outputs = rand(s, Normal(mu = 0.0, sigma = 1.0))
+        outputs = rand(Normal(mu = 0.0, sigma = 1.0), s)
     """).compile(autodiff=False)
     state = jnp.array([1729, 0], dtype=jnp.uint64)
     value, state = draw(state)

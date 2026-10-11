@@ -91,7 +91,7 @@ def _pack(schema, value, leaves, path):
     elif kind == "tuple":
         if not isinstance(value, (tuple, list)) or len(value) != len(schema["items"]):
             raise TypeError(f"{path} requires {len(schema['items'])} tuple components")
-        for index, (child, item) in enumerate(zip(schema["items"], value)):
+        for index, (child, item) in enumerate(zip(schema["items"], value, strict=True)):
             _pack(child, item, leaves, f"{path}[{index}]")
     else:
         if not isinstance(value, Mapping):
@@ -140,9 +140,11 @@ def _compiled_call(exported, export_batch, autodiff, optimize_forward):
         @mapped.def_vmap
         def batch(size, in_batched, *args):
             axes = tuple(
-                (0 if mapped else None,)
-                + tuple(None if axis is None else axis + int(mapped) for axis in old)
-                for mapped, old in zip(in_batched, input_axes)
+                (
+                    0 if mapped else None,
+                    *(None if axis is None else axis + int(mapped) for axis in old),
+                )
+                for mapped, old in zip(in_batched, input_axes, strict=True)
             )
             result = specialize((size, *shape), axes)(*args)
             return result, tuple(True for _ in result)
@@ -161,7 +163,7 @@ def _compiled_call(exported, export_batch, autodiff, optimize_forward):
 
             def differentiate(*values):
                 args = list(primals)
-                for i, value in zip(active, values):
+                for i, value in zip(active, values, strict=True):
                     args[i] = value
                 return raw(*args)
 
@@ -222,7 +224,7 @@ class CompiledFunction:
                 f"expected {len(fields)} inputs, got {len(args)} positional arguments"
             )
         names = [item["name"] for item in fields]
-        values = dict(zip(names, args))
+        values = dict(zip(names, args, strict=False))
         for name, value in kwargs.items():
             if name not in names:
                 raise TypeError(f"unknown input {name!r}")

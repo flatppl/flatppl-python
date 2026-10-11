@@ -174,7 +174,10 @@ def test_dirac_marginal_evaluates_at_its_live_atom():
         inputs = (location, point)
         outputs = logdensityof(lawof(y), point)
     """).compile()
-    oracle = lambda location, point: normal_logpdf(point, 2 * location)
+
+    def oracle(location, point):
+        return normal_logpdf(point, 2 * location)
+
     for args in [(0.25, 0.8), (-1.2, 0.3)]:
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(*args)
         expected = jax.value_and_grad(oracle, argnums=(0, 1))(*args)
@@ -218,9 +221,12 @@ def test_singleton_prior_record_uses_the_public_kernel_input(prior):
     if prior.startswith("Bernoulli"):
         oracle = bernoulli_mixture
     else:
-        oracle = lambda p, point: jnp.log(
-            (jax.scipy.special.ndtr(point) - jax.scipy.special.ndtr(point - 2)) / 2
-        )
+
+        def oracle(p, point):
+            return jnp.log(
+                (jax.scipy.special.ndtr(point) - jax.scipy.special.ndtr(point - 2)) / 2
+            )
+
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(0.25, 0.5)
     expected = jax.value_and_grad(oracle, argnums=(0, 1))(0.25, 0.5)
     for found, wanted in zip(

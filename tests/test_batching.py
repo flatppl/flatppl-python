@@ -82,7 +82,7 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes)
     x = jnp.arange(20, dtype=jnp.float32).reshape(4, 5) / 7
     indices = jnp.array([[1, 3, 3], [5, 2, 4], [2, 2, 2], [4, 1, 5]])
     arguments = tuple(
-        v[0] if axis is None else v for v, axis in zip((x, indices), axes)
+        v[0] if axis is None else v for v, axis in zip((x, indices), axes, strict=True)
     )
 
     def oracle(x, indices):
@@ -108,7 +108,9 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(selection, axes)
     ):
         found = jax.jit(actual)(*arguments)
         wanted = expected(*arguments)
-        for value, target in zip(jax.tree.leaves(found), jax.tree.leaves(wanted)):
+        for value, target in zip(
+            jax.tree.leaves(found), jax.tree.leaves(wanted), strict=True
+        ):
             np.testing.assert_allclose(value, target)
 
 
@@ -150,7 +152,9 @@ def test_composed_primitives_keep_host_axes_separate_from_callable_axes():
     assert not re.search(r"\bwhile\(", compiled.as_text())
     found = jax.jit(mapped(jax.value_and_grad(function)))(rows)
     wanted = mapped(jax.value_and_grad(oracle))(rows)
-    for value, target in zip(jax.tree.leaves(found), jax.tree.leaves(wanted)):
+    for value, target in zip(
+        jax.tree.leaves(found), jax.tree.leaves(wanted), strict=True
+    ):
         np.testing.assert_allclose(value, target, rtol=2e-5, atol=2e-6)
 
 
@@ -184,7 +188,10 @@ def test_inactive_singular_derivative_stays_inactive():
         inputs = (x, y)
         outputs = x*x + sqrt(y)
     """).compile()
-    scalar = lambda x: function(x, jnp.float32(0))
+
+    def scalar(x):
+        return function(x, jnp.float32(0))
+
     np.testing.assert_allclose(
         jax.jvp(scalar, (jnp.float32(2),), (jnp.float32(1),)), (4, 4)
     )
@@ -263,7 +270,9 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(length, batches)
         assert len(re.findall(r"\bwhile\(", compiled.as_text())) == 1
     found = jax.jit(mapped(jax.value_and_grad(function, argnums=(0, 1))))(alpha, xs)
     expected = mapped(jax.value_and_grad(oracle, argnums=(0, 1)))(alpha, xs)
-    for value, reference in zip(jax.tree.leaves(found), jax.tree.leaves(expected)):
+    for value, reference in zip(
+        jax.tree.leaves(found), jax.tree.leaves(expected), strict=True
+    ):
         np.testing.assert_allclose(value, reference, rtol=3e-5, atol=3e-5)
 
 
@@ -319,5 +328,5 @@ def test_vectorized_blackjax_steps_match_native_density():
         states, info = jax.jit(jax.vmap(sampler.step))(keys, states)
         return states.position, states.logdensity, info.acceptance_rate
 
-    for actual, expected in zip(run(density), run(lambda x: -0.5 * x * x)):
+    for actual, expected in zip(run(density), run(lambda x: -0.5 * x * x), strict=True):
         np.testing.assert_allclose(actual, expected, rtol=3e-6, atol=3e-6)

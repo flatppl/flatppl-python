@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import pytest
+
 from flatppl import CompilationError, Context, flatppl
 
 
@@ -408,7 +409,9 @@ def test_rng_pairs_chaining_and_output_order():
             score, -math.log(2 * math.pi) / 2 - float(a[0]) ** 2 / 2
         )
         for actual, expected in zip(
-            jax.tree.leaves(reverse(state)), jax.tree.leaves((score, original, c, b, a))
+            jax.tree.leaves(reverse(state)),
+            jax.tree.leaves((score, original, c, b, a)),
+            strict=True,
         ):
             np.testing.assert_array_equal(actual, expected)
 

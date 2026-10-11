@@ -3,10 +3,12 @@
 import blackjax
 import jax
 import jax.numpy as jnp
+
 from flatppl import Context, flatppl
 
 
 def make_query(n, p):
+    """Compile the posterior log density for ``n`` observations and ``p`` predictors."""
     context = Context()
     model = flatppl(
         r"""
@@ -41,6 +43,7 @@ def make_query(n, p):
 
 
 def run(X, y, *, warmup_steps=512, num_samples=2048, seed=827):
+    """Adapt NUTS on data ``X`` and ``y``, then return ``beta`` draws and divergences."""
     X, y = jnp.asarray(X, dtype=jnp.float32), jnp.asarray(y, dtype=jnp.float32)
     evaluate = make_query(*X.shape)
 

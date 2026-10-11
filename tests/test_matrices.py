@@ -1,8 +1,9 @@
 """Matrix values and first derivatives against independent linear algebra."""
 
+from math import lgamma
+
 import jax
 import numpy as np
-from math import lgamma
 import pytest
 
 from flatppl import flatppl
@@ -244,10 +245,10 @@ def test_broadcast_cholesky_preserves_matrix_cells():
     np.testing.assert_allclose(lower @ lower.swapaxes(-1, -2), matrices, rtol=3e-6)
     gradient = jax.jit(jax.grad(lambda a: factor(a).sum()))(matrices)
     expected = []
-    for l in np.linalg.cholesky(matrices):
-        phi = np.tril(l.T @ np.ones_like(l))
+    for cholesky in np.linalg.cholesky(matrices):
+        phi = np.tril(cholesky.T @ np.ones_like(cholesky))
         phi[np.diag_indices(2)] *= 0.5
-        inverse = np.linalg.inv(l)
+        inverse = np.linalg.inv(cholesky)
         g = inverse.T @ phi @ inverse
         expected.append((g + g.T) / 2)
     np.testing.assert_allclose(gradient, expected, rtol=3e-6)

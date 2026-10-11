@@ -8,8 +8,8 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 CASES = {
     "ar1-noise-estimation": ({"sigma_step": 0.83}, {"sigma_step": [0, None]}),
@@ -85,12 +85,14 @@ TARGETS = {
 
 
 def run(name, directory, warmup=0, samples=1024, device="cpu"):
+    """Check one target's density and gradient, optionally sample it, and report."""
     os.environ["JAX_PLATFORMS"] = device
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     import jax
     import jax.numpy as jnp
     import numpy as np
     from jax.flatten_util import ravel_pytree
+
     from flatppl import Context, Integration, flatppl
 
     result = {"model": name, "stage": "load", "device": str(jax.devices()[0])}

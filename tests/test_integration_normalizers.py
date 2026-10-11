@@ -36,7 +36,7 @@ def test_iid_normalizer_preserves_live_bounds_and_gradients(dtype):
         expected = jax.value_and_grad(iid_oracle, argnums=(0, 1, 2, 3))
         for a, lo, hi in [(2.0, -0.5, 1.0), (-1.3, -1.0, 2.0)]:
             points = jnp.asarray([0.1, 0.2, 0.4], dtype=dtype)
-            args = tuple(jnp.asarray(x, dtype=dtype) for x in (a, lo, hi)) + (points,)
+            args = (*(jnp.asarray(x, dtype=dtype) for x in (a, lo, hi)), points)
             for found, wanted in zip(
                 jax.tree.leaves(actual(*args)),
                 jax.tree.leaves(expected(*args)),

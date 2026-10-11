@@ -102,7 +102,7 @@ def test_pyhf_model_runtime_observations_and_workspace_match_full_logpdf():
         counts = np.array([*data, 100.0, 25.0])
         analytic = sum(
             k * math.log(rate) - rate - math.lgamma(k + 1)
-            for k, rate in zip(counts, rates)
+            for k, rate in zip(counts, rates, strict=True)
         )
         np.testing.assert_allclose(actual["logpdf"], analytic, atol=1e-4, rtol=0)
         np.testing.assert_allclose(

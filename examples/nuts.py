@@ -3,10 +3,12 @@
 import blackjax
 import jax
 import jax.numpy as jnp
+
 from flatppl import Context, flatppl
 
 
 def make_logdensity():
+    """Compile the posterior log density of ``theta`` as a JAX callable."""
     context = Context()
     model = flatppl(
         r"""
@@ -35,6 +37,7 @@ def make_logdensity():
 
 
 def run(*, warmup_steps=512, num_samples=4096, seed=827):
+    """Adapt NUTS, then return the retained ``theta`` draws and divergence flags."""
     logdensity = make_logdensity()
     warmup_key, sample_key = jax.random.split(jax.random.key(seed))
     warmup = blackjax.window_adaptation(blackjax.nuts, logdensity)

@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+
 from flatppl import flatppl
 
 
@@ -129,7 +130,10 @@ def test_indefinite_diagonal_metric_contractions_and_output_raising():
     norm, composed, interaction = function(point)
     np.testing.assert_allclose(norm, point @ inverse @ point, atol=1e-6)
     np.testing.assert_allclose(composed, matrix @ inverse @ matrix, atol=1e-6)
-    oracle = lambda v: v @ inverse @ matrix @ inverse @ v
+
+    def oracle(v):
+        return v @ inverse @ matrix @ inverse @ v
+
     np.testing.assert_allclose(interaction, oracle(point), atol=1e-6)
     tangent = jnp.array([0.25, -0.75])
     actual = jax.jvp(function, (point,), (tangent,))[1][2]
@@ -155,7 +159,10 @@ def test_complex_interference_values_and_gradient():
         amplitude = (x + 2.0*im) * cis(0.7) + 0.3
         outputs = abs2(amplitude)
     """).compile()
-    oracle = lambda x: jnp.abs((x + 2j) * jnp.exp(0.7j) + 0.3) ** 2
+
+    def oracle(x):
+        return jnp.abs((x + 2j) * jnp.exp(0.7j) + 0.3) ** 2
+
     for x in (-2.0, 0.5, 3.0):
         actual = jax.jit(jax.value_and_grad(function))(x)
         expected = jax.value_and_grad(oracle)(x)

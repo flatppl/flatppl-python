@@ -40,6 +40,13 @@ jobs:
           cargo fmt --all --check
           cargo clippy --all-targets --all-features --locked -- -D warnings
 
+      - name: Check Python formatting and lint
+        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.14'
+        run: |
+          python -m pip install --group lint
+          ruff format --check .
+          ruff check .
+
       - name: Build native macOS wheel
         if: runner.os == 'macOS'
         env:

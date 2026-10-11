@@ -149,7 +149,10 @@ def test_iid_truncated_gamma_shares_the_interval_mass():
         inputs = (rate, points)
         outputs = logdensityof(iid(measure, 3), points)
     """).compile(integration=Integration())
-    oracle = lambda rate, points: jnp.sum(gamma2_logdensity(rate, 0.2, 3.0, points))
+
+    def oracle(rate, points):
+        return jnp.sum(gamma2_logdensity(rate, 0.2, 3.0, points))
+
     args = (2.0, jnp.asarray([0.4, 0.7, 1.2]))
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))(*args)
     expected = jax.value_and_grad(oracle, argnums=(0, 1))(*args)

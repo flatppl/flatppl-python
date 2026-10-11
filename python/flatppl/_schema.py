@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 class TensorSchema(TypedDict):
@@ -63,9 +63,17 @@ class BindingInfo(TypedDict):
     """Inferred metadata for one public binding."""
 
     name: str
+    kind: Literal["parameter", "observation", "draw", "derived"]
     value_type: str | None
     phase: str | None
+    domain: dict[str, Any] | None
+    shape: list[int | None] | None
+    size: int | None
     span: list[int] | None
+    source: str | None
+    line: int | None
+    column: int | None
+    dependencies: list[str]
 
 
 class Diagnostic(TypedDict):
@@ -75,28 +83,45 @@ class Diagnostic(TypedDict):
     source: str
     message: str
     span: list[int] | None
+    line: NotRequired[int]
+    column: NotRequired[int]
+    excerpt: NotRequired[str]
     import_chain: list[str]
 
 
-class ArrayData(TypedDict):
-    """Array elements in C order."""
+type Real = float | Literal["inf", "-inf"]
 
-    shape: tuple[int, ...]
-    data: list[Constant]
+
+class ArrayData(TypedDict):
+    """Array elements of one scalar kind as one flat list in C order."""
+
+    shape: list[int]
+    dtype: Literal["bool", "integer", "real"]
+    data: list[bool] | list[int] | list[Real]
 
 
 class Constant(TypedDict):
-    """A fixed host value for ``Module.set``."""
+    """A fixed host value. ``fixed`` and ``reference`` only read back."""
 
     kind: Literal[
-        "bool", "integer", "real", "string", "array", "record", "table", "tuple"
+        "bool",
+        "integer",
+        "real",
+        "string",
+        "array",
+        "record",
+        "table",
+        "tuple",
+        "fixed",
+        "reference",
     ]
     value: (
         bool
         | int
-        | float
+        | Real
         | str
         | ArrayData
+        | Constant
         | list[Constant]
         | list[tuple[str, Constant]]
     )

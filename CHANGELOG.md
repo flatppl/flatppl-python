@@ -18,6 +18,12 @@ tagged release.
 - An example gallery that runs `nuts.py`, `regression.py` and `corpus.py` in
   the documentation build, each within a stated runtime budget.
 
+### Changed
+
+- `Module.set` sends arrays as one typed list and accepts infinite reals.
+- The compiler pin moves to flatppl-rust with binding metadata, located
+  diagnostics, literal readback, slicing and mathematics rendering.
+
 ### Known limitations
 
 - JAX 0.11.2 and jaxlib 0.11.2 leak Unknown types into pyright through bare

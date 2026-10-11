@@ -1,12 +1,19 @@
 """Convert fixed Python values to the shared host constant representation."""
 
+import math
 from collections.abc import Iterable, Mapping
 from typing import Any, Literal, cast
 
 import numpy as np
 
-from ._schema import Constant
+from ._schema import ArrayData, Constant, Real
 from ._tables import columns as table_columns
+
+
+def _real(value: float) -> Real:
+    if math.isinf(value):
+        return "inf" if value > 0 else "-inf"
+    return value
 
 
 def constant(value: Any) -> Constant:
@@ -17,7 +24,7 @@ def constant(value: Any) -> Constant:
     if isinstance(value, int):
         return {"kind": "integer", "value": value}
     if isinstance(value, float):
-        return {"kind": "real", "value": value}
+        return {"kind": "real", "value": _real(value)}
     if isinstance(value, str):
         return {"kind": "string", "value": value}
     if isinstance(value, tuple):
@@ -38,13 +45,16 @@ def constant(value: Any) -> Constant:
         raise TypeError("constant arrays require boolean, integer, or real values")
     if array.ndim == 0:
         return constant(array.item())
-    return {
-        "kind": "array",
-        "value": {
-            "shape": array.shape,
-            "data": [constant(item) for item in array.ravel().tolist()],
-        },
-    }
+    flat = array.ravel()
+    packed: ArrayData
+    if array.dtype.kind == "b":
+        packed = {"shape": list(array.shape), "dtype": "bool", "data": flat.tolist()}
+    elif array.dtype.kind in "iu":
+        packed = {"shape": list(array.shape), "dtype": "integer", "data": flat.tolist()}
+    else:
+        data: list[Real] = [_real(item) for item in flat.astype(float).tolist()]
+        packed = {"shape": list(array.shape), "dtype": "real", "data": data}
+    return {"kind": "array", "value": packed}
 
 
 def _fields(

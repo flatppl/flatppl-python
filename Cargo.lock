@@ -85,12 +85,12 @@ dependencies = [
 [[package]]
 name = "flatppl-core"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 
 [[package]]
 name = "flatppl-determinizer"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-core",
  "flatppl-infer",
@@ -99,7 +99,7 @@ dependencies = [
 [[package]]
 name = "flatppl-fileaccess"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "dirs",
  "flatppl-core",
@@ -111,13 +111,14 @@ dependencies = [
 [[package]]
 name = "flatppl-host"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-core",
  "flatppl-determinizer",
  "flatppl-fileaccess",
  "flatppl-hs3",
  "flatppl-infer",
+ "flatppl-mathdoc",
  "flatppl-stablehlo",
  "flatppl-syntax",
  "serde",
@@ -126,7 +127,7 @@ dependencies = [
 [[package]]
 name = "flatppl-hs3"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-core",
  "flatppl-syntax",
@@ -137,11 +138,22 @@ dependencies = [
 [[package]]
 name = "flatppl-infer"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-core",
  "ron",
  "serde",
+]
+
+[[package]]
+name = "flatppl-mathdoc"
+version = "0.1.0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
+dependencies = [
+ "flatppl-core",
+ "flatppl-fileaccess",
+ "flatppl-infer",
+ "flatppl-syntax",
 ]
 
 [[package]]
@@ -155,7 +167,7 @@ dependencies = [
 [[package]]
 name = "flatppl-python-api"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-host",
  "pyo3",
@@ -165,7 +177,7 @@ dependencies = [
 [[package]]
 name = "flatppl-stablehlo"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-core",
  "flatppl-determinizer",
@@ -176,7 +188,7 @@ dependencies = [
 [[package]]
 name = "flatppl-syntax"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=cc8c1705d9257d41c539e05f7d6a6b38d7ff9162#cc8c1705d9257d41c539e05f7d6a6b38d7ff9162"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=99c5960167d0f4917127da4b5bd8340a094a27f3#99c5960167d0f4917127da4b5bd8340a094a27f3"
 dependencies = [
  "flatppl-core",
 ]

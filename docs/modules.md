@@ -57,8 +57,8 @@ Use `module.bindings["compile"]` when a FlatPPL name collides with a Python
 attribute. The mapping contains every public binding exposed by the compiler.
 These names are Python attributes of a module, so attribute access never
 returns a binding with one of them: `bindings`, `compile`, `constant`,
-`context`, `downstream`, `graph`, `math`, `parameters`, `query`, `set`,
-`slice`, `source`, `source_name` and `upstream`. Later releases add
+`context`, `downstream`, `graph`, `math`, `parameters`, `pyhf`, `query`,
+`set`, `slice`, `source`, `source_name` and `upstream`. Later releases add
 names to this list, so prefer `module.bindings[name]` in library code.
 `dir(module)` lists the bindings that attribute access reaches.
 

@@ -1,0 +1,45 @@
+{
+  "channels": [
+    { "name": "b",
+      "samples": [
+        { "name": "sig", "data": [5.0, 4.0],
+          "modifiers": [
+            { "name": "mu", "type": "normfactor", "data": null },
+            { "name": "lumi", "type": "lumi", "data": null },
+            { "name": "z", "type": "histosys", "data": { "lo_data": [4.0, 3.0], "hi_data": [6.0, 5.0] } }
+          ] },
+        { "name": "bkg", "data": [10.0, 0.0],
+          "modifiers": [
+            { "name": "sh", "type": "shapesys", "data": [2.0, 0.0] },
+            { "name": "stat_b", "type": "staterror", "data": [1.0, 0.0] },
+            { "name": "k", "type": "normfactor", "data": null }
+          ] }
+      ] },
+    { "name": "a",
+      "samples": [
+        { "name": "sig", "data": [3.0],
+          "modifiers": [
+            { "name": "z", "type": "normsys", "data": { "lo": 0.9, "hi": 1.1 } },
+            { "name": "a_norm", "type": "normfactor", "data": null },
+            { "name": "sf", "type": "shapefactor", "data": null },
+            { "name": "lumi", "type": "lumi", "data": null }
+          ] },
+        { "name": "bkg", "data": [8.0],
+          "modifiers": [ { "name": "stat_a", "type": "staterror", "data": [2.0] } ] }
+      ] }
+  ],
+  "observations": [ { "name": "b", "data": [15.0, 4.0] }, { "name": "a", "data": [11.0] } ],
+  "measurements": [
+    { "name": "first", "config": { "poi": "mu", "parameters": [
+        { "name": "lumi", "auxdata": [1.0], "sigmas": [0.02], "bounds": [[0.9, 1.1]], "inits": [1.0] }
+      ] } },
+    { "name": "second set", "config": { "poi": "k", "parameters": [
+        { "name": "lumi", "auxdata": [1.0], "sigmas": [0.05], "bounds": [[0.5, 1.5]], "inits": [1.0] },
+        { "name": "mu", "inits": [2.0], "bounds": [[-1.0, 5.0]], "fixed": true },
+        { "name": "sf", "fixed": true },
+        { "name": "z", "auxdata": [0.5] },
+        { "name": "sh", "factors": [100.0, 1.0] }
+      ] } }
+  ],
+  "version": "1.0.0"
+}

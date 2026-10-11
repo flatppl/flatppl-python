@@ -12,7 +12,13 @@ class Context:
         self, source: str, name: str | None = None, source_path: str | None = None
     ) -> Module: ...
     def import_pyhf(
-        self, source: str, name: str | None = None, source_path: str | None = None
+        self,
+        source: str,
+        name: str | None = None,
+        source_path: str | None = None,
+        measurement: str | None = None,
+        observations: str = "bound",
+        auxiliary: str = "bound",
     ) -> Module: ...
     def load(self, path: str) -> Module: ...
     def register(self, name: str, module: Module) -> None: ...

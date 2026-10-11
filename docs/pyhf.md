@@ -26,63 +26,90 @@ Pass `json.dumps(pyhf_model.spec)` to import a model already held by pyhf.
 Model-only documents declare each channel's observations as an `external` input.
 Workspaces retain their observed counts. Both forms retain auxiliary constraints.
 For workspaces with several measurements, the converter uses the first
-measurement's parameter configuration.
+measurement's parameter configuration, as pyhf does. Pass `measurement="name"`
+to select another one.
 
-## Query expected counts and the likelihood
+## Read pyhf's layout
 
-The following two-bin model has a signal strength `mu` and two nuisance factors.
-Here pyhf supplies an independent reference for the converted computation.
-Install `pyhf` separately to run this comparison.
+Every converted module carries each measurement's fit settings and channel
+layout as a literal record. `model.pyhf` reads the selected one as a
+{class}`~flatppl.pyhf.PyhfView`, and `model.parameters` adds the same settings
+to each {class}`~flatppl.Parameter`. Neither needs the `pyhf` package. The view
+follows pyhf's conventions: its parameter order, flat parameter vector,
+auxiliary data and channel order are those of `pyhf.Model.config`.
 
-```{testcode} pyhf
+```{testcode} view
 import json
+import jax
 import numpy as np
 import pyhf
-from flatppl import Context, flatppl, from_pyhf
+from flatppl import from_pyhf
 
-reference = pyhf.simplemodels.uncorrelated_background(
+spec = pyhf.simplemodels.uncorrelated_background(
     signal=[5, 10], bkg=[50, 60], bkg_uncertainty=[5, 12]
+).spec
+workspace = {
+    **spec,
+    "observations": [{"name": "singlechannel", "data": [52.0, 63.0]}],
+    "measurements": [{"name": "fit", "config": {"poi": "mu", "parameters": []}}],
+    "version": "1.0.0",
+}
+model = from_pyhf(json.dumps(workspace))
+view = model.pyhf
+print(view.par_order, view.poi_index, view.suggested_bounds())
+print(model.parameters["uncorr_bkguncrt"].centre)
+
+logpdf = view.logpdf()
+expected = view.expected_data()
+pars = np.array(view.suggested_init())
+print(np.asarray(expected(pars)), round(float(jax.grad(logpdf)(pars)[0]), 4))
+```
+
+```{testoutput} view
+('mu', 'uncorr_bkguncrt') 0 [(0.0, 10.0), (1e-10, 10.0), (1e-10, 10.0)]
+[100.  25.]
+[55. 70.] -1.2727
+```
+
+`view.logpdf()` compiles the full likelihood as a function of pyhf's flat
+parameter vector, and `view.expected_data()` the expected main counts, with
+the expected auxiliary data appended under `include_auxdata=True`. Both are
+ordinary JAX functions and match pyhf's `Model.logpdf` and
+`Model.expected_data`. `view.par_map[name].type` is each parameter's pyhf
+modifier type, and each `Parameter` carries its constraint family, width and
+centre.
+
+## External observations and auxiliary data
+
+`observations="external"` leaves every channel's counts as an input, and
+`auxiliary="external"` reads every constraint's centre from one record input,
+`pyhf_auxdata`. One module then serves observed data, toys and Asimov data.
+`view.logpdf()` then takes the external values as pyhf's `data` vector: the
+main counts in channel order, then the auxiliary data in `view.auxdata_order`.
+
+```{testcode} view
+reference = pyhf.Workspace(workspace)
+data = reference.data(reference.model())
+external = from_pyhf(
+    json.dumps(workspace), observations="external", auxiliary="external"
 )
-context = Context()
-model = from_pyhf(json.dumps(reference.spec), context=context)
-context.register("model.flatppl", model)
-
-query = flatppl('''
-    p = elementof(cartprod(mu = reals, uncorr_bkguncrt = cartpow(posreals, 2)))
-    data = external(cartpow(nonnegreals, 2))
-    m = load_module("model.flatppl", singlechannel_observed = data)
-    forward = load_module("model.flatppl", mu = p.mu, uncorr_bkguncrt = p.uncorr_bkguncrt)
-    inputs = (p, data)
-    outputs = record(expected = forward.singlechannel_expected,
-                     logpdf = logdensityof(m.likelihood, p))
-''', context=context)
-evaluate = query.compile()
-
-point = {"mu": 1.0, "uncorr_bkguncrt": [1.0, 1.0]}
-result = evaluate(point, [50.0, 60.0])
-pars = [1.0, 1.0, 1.0]  # pyhf order for this particular model
-np.testing.assert_allclose(result["expected"], reference.expected_actualdata(pars))
 np.testing.assert_allclose(
-    result["logpdf"], reference.logpdf(pars, [50, 60, *reference.config.auxdata])[0],
-    rtol=0, atol=1e-4,
+    external.pyhf.logpdf()(pars, data),
+    reference.model().logpdf(pars, data)[0],
+    rtol=1e-5,
 )
-print(np.asarray(result["expected"]))
 ```
 
-```{testoutput} pyhf
-[55. 70.]
+To bind the inputs before compiling instead, call `Module.set`. The nominal
+centres are each parameter's `centre`:
+
+```{testcode} view
+centres = {
+    p.name: p.centre for p in external.parameters.values() if p.centre is not None
+}
+bound = external.set(singlechannel_observed=[52.0, 63.0], pyhf_auxdata=centres)
+np.testing.assert_allclose(bound.pyhf.logpdf()(pars), logpdf(pars), rtol=1e-5)
 ```
-
-The query selects ordinary generated bindings. It declares runtime data and
-parameters explicitly, so the same compiled function accepts new observations.
-To bind observations before compilation instead, use
-`model.set(singlechannel_observed=[50.0, 60.0])` and register that returned module.
-The compiled function supports the same [JAX transformations](jax.md) as other queries.
-
-For several channels, `m.likelihood` includes all observations and auxiliary
-constraints. A named `<channel>_likelihood` selects only that channel's observations.
-The compiler batches compatible observation terms while preserving these query
-boundaries and the original parameter order.
 
 ## Names, precision, and statistical meaning
 
@@ -92,9 +119,9 @@ outside FlatPPL's binding grammar receive unique valid names, with a
 `pyhf_parameter_names` record mapping them to their original strings. Generated
 metadata and helper names also avoid collisions.
 
-For general models, use `pyhf_model.config.par_map` to relate pyhf's flat
-parameter vector to the imported scalar and vector parameters. Do not assume
-dictionary order equals pyhf parameter order.
+`model.pyhf.par_map` relates pyhf's flat parameter vector to the imported
+scalar and vector parameters, by pyhf name. Do not assume that binding order
+equals pyhf parameter order.
 
 The imported likelihood includes observation and auxiliary constraint terms,
 including normalization constants. It matches pyhf's full `Model.logpdf`,

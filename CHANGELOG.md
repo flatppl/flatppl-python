@@ -15,6 +15,8 @@ tagged release.
   exported. Importing `flatppl` still does not import JAX.
 - An API reference generated from Google-style docstrings, whose examples run
   as doctests.
+- An example gallery that runs `nuts.py`, `regression.py` and `corpus.py` in
+  the documentation build, each within a stated runtime budget.
 
 ### Known limitations
 

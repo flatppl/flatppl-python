@@ -1,4 +1,13 @@
-"""Two inline FlatPPL modules, a JAX density, and BlackJAX NUTS samples."""
+"""Sample a posterior with BlackJAX NUTS
+=======================================
+
+Two inline FlatPPL modules give a JAX log density, and BlackJAX NUTS samples
+it. The prior is ``Normal(0, 1)`` and one observation ``y = 1`` has
+``Normal(theta, 1)`` noise, so the posterior has mean and variance 0.5. The
+printed moments approach both. See :doc:`/blackjax` for the walk-through.
+
+Runtime budget: 60 s.
+"""
 
 from typing import Any
 

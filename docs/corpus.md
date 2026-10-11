@@ -103,6 +103,7 @@ uses an allowed skip to hide a failed compiler path.
 ## Reproduce a target
 
 Download {download}`corpus.py <../examples/corpus.py>` or use the repository copy.
+Its [gallery page](examples/corpus.rst) shows a short run of `poisson-model`.
 Install BlackJAX as a consumer dependency and obtain `flatppl-examples`, then run:
 
 ```sh

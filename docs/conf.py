@@ -1,12 +1,18 @@
-"""Sphinx configuration. Autodoc imports the installed package."""
+"""Sphinx configuration. Autodoc and the example gallery import the installed package."""
 
 import importlib.metadata
+import os
+import sys
+from pathlib import Path
 
 from docutils.nodes import Element, TextElement, reference
 from sphinx.addnodes import pending_xref
 from sphinx.application import Sphinx
 from sphinx.environment import BuildEnvironment
 from sphinx.ext import intersphinx
+from sphinx.util import logging
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 project = "FlatPPL for Python"
 release = importlib.metadata.version("flatppl")
@@ -16,6 +22,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.doctest",
+    "sphinx_gallery.gen_gallery",
 ]
 exclude_patterns = ["_build"]
 nitpicky = True
@@ -41,6 +48,19 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable", None),
     "jax": ("https://docs.jax.dev/en/latest", None),
+}
+
+# The corpus example reads models from a flatppl-examples checkout.
+examples_dir = os.environ.get("FLATPPL_EXAMPLES_DIR")
+sphinx_gallery_conf = {
+    "examples_dirs": ["../examples"],
+    "gallery_dirs": ["examples"],
+    "filename_pattern": r"\.py$" if examples_dir else r"(nuts|regression)\.py$",
+    "reset_argv": "_gallery.reset_argv",
+    "reset_modules": ("_gallery.enforce_budget",),
+    "reset_modules_order": "both",
+    "image_scrapers": (),
+    "min_reported_time": 0,
 }
 
 # The package creates these objects, so their constructors stay out of the reference.
@@ -76,7 +96,16 @@ def _link_type_aliases(
     return intersphinx.missing_reference(app, env, node, contnode)
 
 
+def _require_examples(app: Sphinx) -> None:
+    executes = str(app.config.plot_gallery).lower() not in ("0", "false")
+    if executes and not examples_dir:
+        logging.getLogger(__name__).warning(
+            "FLATPPL_EXAMPLES_DIR is unset, so the corpus example does not run"
+        )
+
+
 def setup(app: Sphinx) -> None:
-    """Register the reference hooks."""
+    """Register the reference and gallery hooks."""
     app.connect("autodoc-process-signature", _hide_constructor)
+    app.connect("builder-inited", _require_examples)
     app.connect("missing-reference", _link_type_aliases)

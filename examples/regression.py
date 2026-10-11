@@ -1,4 +1,13 @@
-"""Runtime matrix data, a vector parameter, and a BlackJAX consumer."""
+"""Fit a Gaussian regression with runtime data
+==============================================
+
+The model takes the design matrix and the observations as runtime inputs and
+has a vector coefficient ``beta``. Sizes are bound before compiling, so new
+data of the same shape reuses the compiled function. BlackJAX NUTS samples the
+posterior and the printed mean approaches the exact posterior mean.
+
+Runtime budget: 60 s.
+"""
 
 from typing import Any
 

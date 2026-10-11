@@ -40,17 +40,25 @@ untyped imports as `Any`.
 
 ## Build the documentation
 
-The API reference comes from the installed package's docstrings. Install the
-wheel first, as in [build from source](installation.md#build-from-source). Then
-run:
+The API reference comes from the installed package's docstrings, and the
+example gallery runs each script in `examples/`. Install the wheel first, as in
+[build from source](installation.md#build-from-source). The corpus example
+reads models from a [flatppl-examples](https://github.com/flatppl/flatppl-examples)
+checkout. Then run:
 
 ```sh
 python -m pip install -r docs/requirements.txt
+export FLATPPL_EXAMPLES_DIR=/path/to/flatppl-examples/examples
 sphinx-build -b html -W --keep-going docs docs/_build/html
 ```
 
-Open `docs/_build/html/index.html` in a browser. Write public docstrings in
-Google style. A test fails when a public name lacks a docstring or an entry in
+Open `docs/_build/html/index.html` in a browser. Without `FLATPPL_EXAMPLES_DIR`
+the corpus page does not run and the build warns.
+
+Each example's docstring states its runtime budget, such as
+`Runtime budget: 60 s.`, for the configuration the gallery runs. The build fails
+when a page runs longer or states no budget. Write public docstrings in Google
+style. A test fails when a public name lacks a docstring or an entry in
 `docs/api.md`.
 
 The site uses [Sphinx](https://www.sphinx-doc.org/),
@@ -63,7 +71,7 @@ Navigation lives in `docs/index.md`. Theme settings live in `docs/conf.py`.
 In an environment with the installed FlatPPL wheel and documentation dependencies, run:
 
 ```sh
-sphinx-build -b doctest -W --keep-going docs docs/_build/doctest
+sphinx-build -b doctest -W --keep-going -D plot_gallery=0 docs docs/_build/doctest
 ```
 
 The `testcode` blocks run in page-local namespaces. Their `testoutput` blocks
@@ -71,8 +79,8 @@ check the displayed results. The doctest builder also runs the examples in the
 API docstrings. The BlackJAX guide includes `examples/nuts.py` directly, and
 the package tests execute that file too.
 
-CI builds the HTML from the Linux x86-64 Python 3.14 wheel that the same run
-built. It executes the documentation examples against
+CI builds the HTML with the executed gallery from the Linux x86-64 Python 3.14
+wheel that the same run built. It executes the documentation examples against
 the Linux x86-64 wheels for Python 3.12–3.14. The package's full runtime tests
 run on Python 3.12–3.14 for both wheel targets.
 After all checks pass on `main`, CI publishes the rendered site to

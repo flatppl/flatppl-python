@@ -85,7 +85,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/consumer/bin/python" -m pip install -r docs/requirements.txt
           cd "$RUNNER_TEMP/consumer"
-          bin/sphinx-build -b doctest -W --keep-going docs docs/_build/doctest
+          bin/sphinx-build -b doctest -W --keep-going -D plot_gallery=0 docs docs/_build/doctest
 
       - uses: actions/upload-artifact@v7
         with:
@@ -96,11 +96,16 @@ jobs:
 
   docs:
     name: Documentation
-    # Autodoc imports the wheel that this run built.
+    # Autodoc and the example gallery import the wheel that this run built.
     needs: wheel
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.0
+        with:
+          repository: flatppl/flatppl-examples
+          ref: b9ed33856b7fb1969d4ed92e4cd61f872ed5c1fe
+          path: flatppl-examples
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -118,8 +123,10 @@ jobs:
           mkdir "$RUNNER_TEMP/site"
           cp -R docs examples CHANGELOG.md "$RUNNER_TEMP/site/"
 
-      - name: Build the documentation
+      - name: Build the documentation and run the example gallery
         shell: bash
+        env:
+          FLATPPL_EXAMPLES_DIR: ${{ github.workspace }}/flatppl-examples/examples
         run: |
           cd "$RUNNER_TEMP/site"
           "$RUNNER_TEMP/docs/bin/sphinx-build" -b html -W --keep-going docs docs/_build/html

@@ -1,7 +1,16 @@
-"""Sample one flatppl-examples target and write density/gradient/MCMC diagnostics.
+"""Check a model from the example corpus
+=======================================
 
-Run each target in a separate process. A successful run is not a convergence proof.
-Support transforms live in this consumer example, outside the FlatPPL package.
+This command-line script loads one target from a ``flatppl-examples``
+checkout, checks its density and gradient, samples it with BlackJAX NUTS on
+two chains, and writes diagnostics as JSON. The support transforms live in
+this script, outside the FlatPPL package. A successful run is not a
+convergence proof. Run each target in a separate process. See :doc:`/corpus`.
+
+The gallery runs ``poisson-model`` with 64 warmup steps and 64 draws per
+chain. The full configuration is ``--warmup 512 --samples 2048``.
+
+Runtime budget: 120 s.
 """
 
 import argparse

@@ -1,10 +1,93 @@
 """Compiler regressions checked through executed values and independent JAX oracles."""
 
+import math
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from flatppl import flatppl
+
+
+def test_dotted_affine_eight_schools_scores_and_gradients() -> None:
+    function = flatppl("""
+        J = 8
+        mu ~ Normal(0, 5)
+        tau ~ normalize(truncate(Cauchy(0, 5), interval(0, inf)))
+        ls = x -> (x .* tau) .+ mu
+        theta ~ pushfwd(ls, iid(Normal(0, 1), J))
+        prior = lawof(record(mu=mu, tau=tau, theta=theta))
+        y ~ Normal.(theta, [15, 10, 16, 11, 9, 11, 10, 18])
+        K = kernelof(record(y=y), mu=mu, tau=tau, theta=theta)
+        L = likelihoodof(K, record(y=[28, 8, -3, 7, -1, 1, 18, 12]))
+        posterior = bayesupdate(L, prior)
+        mu_point = elementof(reals)
+        tau_point = elementof(posreals)
+        theta_point = elementof(cartpow(reals, J))
+        point = record(mu=mu_point, tau=tau_point, theta=theta_point)
+        inputs = (mu_point, tau_point, theta_point)
+        outputs = (logdensityof(prior, point), logdensityof(posterior, point))
+    """).compile()
+    evaluate = jax.jit(function)
+    differentiate = jax.jit(jax.jacrev(function, argnums=(0, 1, 2)))
+    y = np.array([28, 8, -3, 7, -1, 1, 18, 12])
+    sigma = np.array([15, 10, 16, 11, 9, 11, 10, 18])
+    theta = jnp.array([-2.0, 0.5, 1.0, 3.0, -1.0, 2.0, 0.0, 4.0])
+    for mu, tau in ((0.3, 1.7), (-1.5, 0.6)):
+        delta = np.asarray(theta, dtype=np.float64) - mu
+        log_normalizer = math.log(2 * math.pi) / 2
+        prior = (
+            -log_normalizer
+            - math.log(5)
+            - mu**2 / 50
+            + math.log(2 / (5 * math.pi))
+            - math.log1p((tau / 5) ** 2)
+            - 8 * (log_normalizer + math.log(tau))
+            - np.sum(delta**2) / (2 * tau**2)
+        )
+        residual = y - np.asarray(theta)
+        posterior = prior - np.sum(
+            log_normalizer + np.log(sigma) + residual**2 / (2 * sigma**2)
+        )
+        gradient = (
+            -mu / 25 + delta.sum() / tau**2,
+            -2 * tau / (25 + tau**2) - 8 / tau + np.sum(delta**2) / tau**3,
+            -delta / tau**2,
+        )
+        np.testing.assert_allclose(
+            evaluate(mu, tau, theta), [prior, posterior], rtol=2e-6
+        )
+        actual = differentiate(mu, tau, theta)
+        for index, expected in enumerate(gradient):
+            np.testing.assert_allclose(actual[0][index], expected, rtol=3e-6, atol=2e-6)
+            if index == 2:
+                expected = expected + residual / sigma**2
+            np.testing.assert_allclose(actual[1][index], expected, rtol=3e-6, atol=2e-6)
+
+
+def test_zero_axis_locscale_broadcast_scores_and_gradients() -> None:
+    function = flatppl("""
+        mu = elementof(reals)
+        tau = elementof(reals)
+        x = elementof(reals)
+        dotted = locscale.(Normal(0, 1), mu, tau)
+        explicit = broadcast(locscale, Normal(0, 1), mu, tau)
+        ordinary = locscale(Normal(0, 1), mu, tau)
+        inputs = (mu, tau, x)
+        outputs = (logdensityof(dotted, x), logdensityof(explicit, x),
+                   logdensityof(ordinary, x))
+    """).compile()
+    evaluate = jax.jit(function)
+    differentiate = jax.jit(jax.jacrev(function, argnums=(0, 1, 2)))
+    for mu, tau, x in ((0.3, 1.7, -0.5), (-1.5, -0.6, 2.0)):
+        delta = x - mu
+        expected = (
+            -math.log(2 * math.pi) / 2 - math.log(abs(tau)) - delta**2 / (2 * tau**2)
+        )
+        gradient = (delta / tau**2, -1 / tau + delta**2 / tau**3, -delta / tau**2)
+        np.testing.assert_allclose(evaluate(mu, tau, x), [expected] * 3, rtol=2e-6)
+        for actual in differentiate(mu, tau, x):
+            np.testing.assert_allclose(actual, gradient, rtol=3e-6, atol=2e-6)
 
 
 def test_reified_functions_follow_derived_bindings_and_preserve_scope() -> None:

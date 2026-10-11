@@ -18,6 +18,7 @@ from ._api import (
     flatppl,
 )
 from ._constants import Fixed, Reference
+from ._graph import Graph
 from ._imports import from_pyhf
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ __all__ = [
     "CompiledFunction",
     "Context",
     "Fixed",
+    "Graph",
     "Integration",
     "Location",
     "Module",

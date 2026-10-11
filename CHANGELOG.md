@@ -31,7 +31,10 @@ tagged release.
 - `Module.query` writes a query over any binding or expression, with the
   parameters the outputs reach as one record or one flat vector, and
   `gradient=True` for the Jacobian.
-- A gallery page for queries.
+- `Module.graph` with `flatppl.Graph`, `Module.upstream`, `Module.downstream`,
+  `Module.slice`, `Module.math` and `Binding.math`, a bindings table for
+  notebooks, and `CompiledFunction.stats`.
+- Gallery pages for queries and graph inspection.
 
 ### Changed
 

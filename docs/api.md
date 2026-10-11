@@ -33,9 +33,17 @@ whose names start with an underscore, is private.
 
 ```{eval-rst}
 .. autoclass:: flatppl.Binding
+   :members: math
 
 .. autoclass:: flatppl.Location
    :no-members:
+```
+
+## Graph
+
+```{eval-rst}
+.. autoclass:: flatppl.Graph
+   :members:
 ```
 
 ## Parameters

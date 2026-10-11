@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
+import re
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
+from types import MappingProxyType
 from typing import Any, Literal, cast
 
 import jax
@@ -35,6 +37,7 @@ type _Call = Callable[..., tuple[jax.Array, ...]]
 # used program goes first. A cached program keeps the module that built it
 # alive, because its batching rule exports from that module.
 PROGRAM_CACHE_SIZE = 256
+_OPERATION = re.compile(r'(?:= |^\s+)"?stablehlo\.([a-z_]+)', re.MULTILINE)
 _programs: OrderedDict[tuple[str, Axes, bool, bool], _Call] = OrderedDict()
 
 
@@ -338,6 +341,28 @@ class CompiledFunction:
         for item in self.schema["inputs"]:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
         return _unpack(self.schema["output"], self._call(*leaves))
+
+    def stats(self) -> Mapping[str, int]:
+        """Count the operations of the unbatched StableHLO program.
+
+        Returns:
+            The number of operations of each kind, such as ``"multiply"`` or
+            ``"dot_general"``, sorted by name, and their ``"total"``.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> function = flatppl('''
+            ... x = elementof(reals)
+            ... inputs = x
+            ... outputs = 2.0 * x
+            ... ''').compile()
+            >>> function.stats()["multiply"]
+            1
+        """
+        counts = Counter(_OPERATION.findall(self.stablehlo))
+        return MappingProxyType(
+            dict(sorted(counts.items())) | {"total": counts.total()}
+        )
 
     def example_input(self, fill: float = 0.0) -> dict[str, Any]:
         """Build inputs of the right structure, shapes and dtypes.

@@ -16,8 +16,9 @@ from ._frozen import freeze
 if TYPE_CHECKING:
     from jax.typing import DTypeLike
 
+    from ._graph import Graph
     from ._jax import Batch, CompiledFunction
-    from ._schema import BindingInfo, Export
+    from ._schema import BindingInfo, Export, MathRow
 
 
 def _span(span: Sequence[int] | None) -> tuple[int, int] | None:
@@ -161,6 +162,26 @@ class Binding:
         where = f", line {self.location.line}" if self.location else ""
         what = self.source if self.source is not None else "bound value"
         return f"<Binding {self.name}: {self.value_type} {self.kind}{where}: {what}>"
+
+    def math(self, format: Literal["tex", "mathml", "typst"] = "tex") -> str:
+        r"""Render this binding as mathematics.
+
+        Args:
+            format: ``"tex"``, ``"mathml"`` or ``"typst"``.
+
+        Returns:
+            The binding's statement in that notation.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> module = flatppl("theta ~ Normal(mu = 0.0, sigma = 1.0)")
+            >>> module.theta.math()
+            'θ \\sim \\mathcal{N}\\left(0, 1\\right)'
+        """
+        return self.module.math(format)[self.name]
+
+    def _repr_latex_(self) -> str:
+        return f"$\\displaystyle {self.math()}$"
 
 
 @dataclass(frozen=True)
@@ -441,6 +462,32 @@ class Module:
         shown = ", ".join(names[:8]) + (", ..." if len(names) > 8 else "")
         return f"<Module {self.source_name}: {len(names)} bindings: {shown}>"
 
+    def _repr_html_(self) -> str:
+        from html import escape
+
+        def cell(value: object) -> str:
+            return f"<td>{escape('' if value is None else str(value))}</td>"
+
+        rows = "".join(
+            "<tr>"
+            + cell(b.name)
+            + cell(b.kind)
+            + cell(b.value_type)
+            + cell(None if b.shape is None else list(b.shape))
+            + cell(None if b.domain is None else _domain_text(b.domain))
+            + cell(b.source)
+            + "</tr>"
+            for b in self._bindings.values()
+        )
+        head = "".join(
+            f"<th>{h}</th>"
+            for h in ("name", "kind", "type", "shape", "domain", "source")
+        )
+        return (
+            f"<p>{escape(self.source_name)}</p><table><thead><tr>{head}</tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
     def query(
         self,
         outputs: str | Sequence[str] | Mapping[str, str],
@@ -506,6 +553,74 @@ class Module:
         query = flatppl(source, context=self._context)
         query._gradient = gradient
         return query
+
+    def graph(self) -> Graph:
+        """Return the dependency graph of the public bindings."""
+        from ._graph import graph
+
+        return graph(self._bindings)
+
+    def upstream(self, name: str) -> tuple[str, ...]:
+        """Return every public binding that ``name`` depends on, in source order.
+
+        Raises:
+            KeyError: No public binding has that name.
+        """
+        from ._graph import closure
+
+        self._bindings[name]
+        return closure(self._bindings, [name], downward=False)
+
+    def downstream(self, name: str) -> tuple[str, ...]:
+        """Return every public binding that depends on ``name``, in source order.
+
+        Raises:
+            KeyError: No public binding has that name.
+        """
+        from ._graph import closure
+
+        self._bindings[name]
+        return closure(self._bindings, [name], downward=True)
+
+    def slice(self, outputs: str | Sequence[str]) -> Module:
+        """Return a module with only the bindings that ``outputs`` reach.
+
+        The slice is printed and parsed again in the same context, so its
+        :attr:`source` and positions refer to the printed text. Imports and
+        values bound by :meth:`set` carry over.
+
+        Args:
+            outputs: The binding names to keep, with everything they reach.
+
+        Returns:
+            The sliced module.
+
+        Raises:
+            CompilationError: A name is not a public binding.
+        """
+        names = [outputs] if isinstance(outputs, str) else list(outputs)
+        native = native_call(self._context._native.slice, self._native, names)  # pyright: ignore[reportPrivateUsage]
+        return Module(native, self._context, gradient=self._gradient)
+
+    def math(
+        self, format: Literal["tex", "mathml", "typst"] = "tex"
+    ) -> Mapping[str, str]:
+        """Render every binding as mathematics.
+
+        Args:
+            format: ``"tex"``, ``"mathml"`` or ``"typst"``.
+
+        Returns:
+            Each binding's statement by name, in source order, including
+            private bindings.
+
+        Raises:
+            ValueError: The format is unknown.
+        """
+        rows: list[MathRow] = json.loads(native_call(self._native.math, format))
+        return MappingProxyType(
+            {name: row["text"] for row in rows for name in row["names"]}
+        )
 
     def set(self, **constants: object) -> Module:
         """Return a new module with declared externals bound to fixed values.

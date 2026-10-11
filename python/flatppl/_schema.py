@@ -125,3 +125,12 @@ class Constant(TypedDict):
         | list[Constant]
         | list[tuple[str, Constant]]
     )
+
+
+class MathRow(TypedDict):
+    """One binding rendered as mathematics."""
+
+    name: str
+    names: list[str]
+    kind: str
+    text: str

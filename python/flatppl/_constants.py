@@ -47,7 +47,10 @@ def _real(value: float) -> Real:
 
 def constant(value: Any) -> Constant:
     if isinstance(value, np.generic):
-        return constant(cast("np.generic[Any]", value).item())
+        scalar = cast("np.generic[Any]", value)
+        if scalar.dtype == np.dtype("float32"):
+            return {"kind": "real32", "value": _real(float(scalar.item()))}
+        return constant(scalar.item())
     if isinstance(value, bool):
         return {"kind": "bool", "value": value}
     if isinstance(value, int):
@@ -73,7 +76,7 @@ def constant(value: Any) -> Constant:
     if array.dtype.kind not in "biuf":
         raise TypeError("constant arrays require boolean, integer, or real values")
     if array.ndim == 0:
-        return constant(array.item())
+        return constant(array[()])
     flat = array.ravel()
     packed: ArrayData
     if array.dtype.kind == "b":
@@ -82,7 +85,11 @@ def constant(value: Any) -> Constant:
         packed = {"shape": list(array.shape), "dtype": "integer", "data": flat.tolist()}
     else:
         data: list[Real] = [_real(item) for item in flat.astype(float).tolist()]
-        packed = {"shape": list(array.shape), "dtype": "real", "data": data}
+        packed = {
+            "shape": list(array.shape),
+            "dtype": "real32" if array.dtype.itemsize == 4 else "real",
+            "data": data,
+        }
     return {"kind": "array", "value": packed}
 
 
@@ -91,12 +98,19 @@ def value(constant: Constant) -> object:
     kind, value_ = constant["kind"], constant["value"]
     if kind == "real":
         return float(cast(Real, value_))
+    if kind == "real32":
+        return np.float32(float(cast(Real, value_)))
     if kind == "array":
         array = cast(ArrayData, value_)
-        dtype = {"bool": np.bool_, "integer": np.int64, "real": np.float64}
+        dtype = {
+            "bool": np.bool_,
+            "integer": np.int64,
+            "real": np.float64,
+            "real32": np.float32,
+        }
         data = (
             [float(x) for x in array["data"]]
-            if array["dtype"] == "real"
+            if array["dtype"] in ("real", "real32")
             else array["data"]
         )
         return np.asarray(data, dtype=dtype[array["dtype"]]).reshape(array["shape"])

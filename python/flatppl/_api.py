@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 # The native module ships compiled in the wheel, with a stub in the source tree.
 from . import _native  # pyright: ignore[reportMissingModuleSource]
@@ -23,17 +23,34 @@ def _span(span: Sequence[int] | None) -> tuple[int, int] | None:
     return (span[0], span[1]) if span else None
 
 
+class Location(NamedTuple):
+    """A position in FlatPPL source text.
+
+    Attributes:
+        source: The label or path of the source, as in :attr:`Module.source_name`.
+        line: The line, counting from 1.
+        column: The column in characters, counting from 1.
+    """
+
+    source: str
+    line: int
+    column: int
+
+
 class CompilationError(Exception):
     """A compiler diagnostic raised while loading, parsing, inferring or compiling.
 
-    ``str(error)`` gives the source label, the byte span when one exists, the
-    stage and the message. JAX and Enzyme raise their own errors while tracing
-    or running a compiled function.
+    ``str(error)`` starts with ``source:line:column: stage: message`` and shows
+    the source line with a caret under the column, when the position is known.
+    JAX and Enzyme raise their own errors while tracing or running a compiled
+    function.
 
     Attributes:
         stage: The compiler stage, such as ``"parse"``, ``"infer"`` or ``"pyhf"``.
         source: The label or path of the source that failed.
         span: Byte offsets ``(start, end)`` into that source, or ``None``.
+        location: Where the span starts, or ``None``.
+        excerpt: The source line the span starts on, or ``None``.
         import_chain: The labels of the importing sources, outermost first.
         message: The diagnostic text.
     """
@@ -42,12 +59,25 @@ class CompilationError(Exception):
         self.stage: str = diagnostic["stage"]
         self.source: str = diagnostic["source"]
         self.span: tuple[int, int] | None = _span(diagnostic["span"])
+        line, column = diagnostic.get("line"), diagnostic.get("column")
+        self.location: Location | None = (
+            Location(self.source, line, column)
+            if line is not None and column is not None
+            else None
+        )
+        self.excerpt: str | None = diagnostic.get("excerpt")
         self.import_chain: tuple[str, ...] = tuple(diagnostic["import_chain"])
         self.message: str = diagnostic["message"]
-        location = self.source
-        if self.span is not None:
-            location += f":{self.span[0]}..{self.span[1]}"
-        super().__init__(f"{location}: {self.stage}: {self.message}")
+        if self.location is not None:
+            text = f"{self.source}:{line}:{column}: {self.stage}: {self.message}"
+            if self.excerpt is not None:
+                caret = " " * (self.location.column - 1) + "^"
+                text += f"\n    {self.excerpt}\n    {caret}"
+        elif self.span is not None:
+            text = f"{self.source}:{self.span[0]}..{self.span[1]}: {self.stage}: {self.message}"
+        else:
+            text = f"{self.source}: {self.stage}: {self.message}"
+        super().__init__(text)
 
 
 def native_call[**P, T](

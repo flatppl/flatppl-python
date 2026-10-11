@@ -56,24 +56,34 @@ def test_modules_keep_their_source_label_and_context() -> None:
 
 
 @pytest.mark.parametrize(
-    ("source", "stage", "text"),
+    ("source", "stage", "text", "line", "column"),
     [
-        ("x = = 1", "parse", "="),
-        ("x = elementof(reals)\ny = x + missing\noutputs = y", "infer", "missing"),
+        ('x = "é" = 1', "parse", "=", 1, 9),
+        (
+            "x = elementof(reals)\ny = x + missing\noutputs = y",
+            "infer",
+            "missing",
+            2,
+            9,
+        ),
     ],
 )
-def test_compilation_errors_name_stage_message_and_span(
-    source: str, stage: str, text: str
+def test_compilation_errors_name_stage_message_and_location(
+    source: str, stage: str, text: str, line: int, column: int
 ) -> None:
     with pytest.raises(CompilationError) as caught:
         flatppl(source)
     error = caught.value
     assert error.stage == stage
     assert error.span is not None
-    assert source[slice(*error.span)] == text
+    assert source.encode()[slice(*error.span)].decode() == text
     assert error.message
+    # Columns count characters, so the two-byte `é` counts once.
+    assert error.location == (error.source, line, column)
+    assert error.excerpt == source.splitlines()[line - 1]
     assert str(error) == (
-        f"{error.source}:{error.span[0]}..{error.span[1]}: {stage}: {error.message}"
+        f"{error.source}:{line}:{column}: {stage}: {error.message}\n"
+        f"    {error.excerpt}\n    {' ' * (column - 1)}^"
     )
 
 

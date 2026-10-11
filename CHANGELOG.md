@@ -19,6 +19,8 @@ tagged release.
   the documentation build, each within a stated runtime budget.
 - `Module.constant` reads a literal binding back, with `flatppl.Fixed` and
   `flatppl.Reference` for markers and references.
+- `CompilationError.location` and `excerpt`, with `flatppl.Location`.
+  `str(error)` shows the line and column and the source line with a caret.
 
 ### Changed
 

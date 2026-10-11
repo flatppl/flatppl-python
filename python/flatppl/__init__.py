@@ -11,6 +11,7 @@ from ._api import (
     CompilationError,
     Context,
     Integration,
+    Location,
     Module,
     flatppl,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "Context",
     "Fixed",
     "Integration",
+    "Location",
     "Module",
     "Reference",
     "flatppl",

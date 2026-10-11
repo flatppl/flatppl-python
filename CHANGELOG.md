@@ -35,6 +35,16 @@ tagged release.
   `Module.slice`, `Module.math` and `Binding.math`, a bindings table for
   notebooks, and `CompiledFunction.stats`.
 - Gallery pages for queries and graph inspection.
+- `flatppl.pyhf`, with `from_pyhf` and `module.pyhf`, a `PyhfView` of a
+  converted model in pyhf's layout: `par_order`, `par_map` with each
+  parameter's slice and modifier type, `npars`, `poi` and `poi_index`, the
+  suggested inits, bounds and fixed flags, `auxdata_order` and `auxdata`, the
+  channels and their slices, and `logpdf` and `expected_data` over pyhf's
+  flat vectors, with expected auxiliary data on request.
+- `from_pyhf` takes `measurement`, `observations="external"` and
+  `auxiliary="external"`.
+- `Parameter` gains `init`, `lo`, `hi`, `fixed`, `constraint`, `width`,
+  `centre`, `original_name` and `role` from the converter's settings record.
 
 ### Changed
 
@@ -44,6 +54,10 @@ tagged release.
 - The float64 error names `jax_enable_x64`.
 - The compiler pin moves to flatppl-rust with binding metadata, located
   diagnostics, literal readback, slicing and mathematics rendering.
+- The compiler pin moves to flatppl-rust 602e00f, whose pyhf converter writes
+  each measurement's settings record, with modifier types and constraint
+  families, and takes the import options.
+- `pyhf` is a reserved module attribute, like `parameters`.
 
 ### Known limitations
 

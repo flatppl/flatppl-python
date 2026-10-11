@@ -129,6 +129,7 @@ RESERVED = [
     "graph",
     "math",
     "parameters",
+    "pyhf",
     "query",
     "set",
     "slice",
@@ -142,7 +143,8 @@ def test_reserved_names_stay_reachable_through_bindings() -> None:
     module = flatppl("\n".join(f"{name} = 1.0" for name in RESERVED) + "\nkept = 2.0")
     for name in RESERVED:
         assert module.bindings[name].name == name
-        assert not isinstance(getattr(module, name), type(module.bindings[name]))
+        # `pyhf` raises AttributeError without a pyhf settings record.
+        assert not isinstance(getattr(module, name, None), type(module.bindings[name]))
     names = dir(module)
     assert names.count("set") == 1
     assert "kept" in names

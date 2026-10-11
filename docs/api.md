@@ -63,6 +63,25 @@ whose names start with an underscore, is private.
 .. autoclass:: flatppl.Reference
 ```
 
+## pyhf
+
+```{eval-rst}
+.. automodule:: flatppl.pyhf
+   :no-members:
+
+.. autofunction:: flatppl.pyhf.from_pyhf
+
+.. autoclass:: flatppl.pyhf.PyhfView
+   :members:
+   :exclude-members: module, measurement, poi, par_order, par_map, auxdata_order, auxdata, channels
+
+.. autoclass:: flatppl.pyhf.ParameterSlice
+
+.. autoclass:: flatppl.pyhf.Channel
+```
+
+`flatppl.from_pyhf` is the same function, re-exported at the top level.
+
 ## Compiled functions
 
 ```{eval-rst}

@@ -28,6 +28,13 @@ exclude_patterns = ["_build"]
 nitpicky = True
 # Napoleon writes typing.Any and typing.Literal unqualified in attribute types.
 nitpick_ignore = [("py:class", "Any"), ("py:class", "Literal")]
+# NumPy's inventory has no entries for the array alias and scalar types that
+# resolved annotations name.
+nitpick_ignore += [
+    ("py:class", "numpy._typing._array_like.NDArray"),
+    ("py:class", "numpy.float64"),
+    ("py:class", "numpy.bool"),
+]
 myst_heading_anchors = 3
 html_theme = "furo"
 html_title = project
@@ -69,6 +76,10 @@ _NO_SIGNATURE = {
     "flatppl.CompilationError",
     "flatppl.Module",
     "flatppl.CompiledFunction",
+    "flatppl.Parameter",
+    "flatppl.pyhf.Channel",
+    "flatppl.pyhf.ParameterSlice",
+    "flatppl.pyhf.PyhfView",
 }
 
 

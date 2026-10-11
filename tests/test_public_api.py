@@ -4,6 +4,7 @@ import inspect
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -132,12 +133,14 @@ def test_compiled_function_is_exported_without_importing_jax() -> None:
     assert imported.stdout.strip() == "False"
 
 
-def test_public_symbols_have_docstrings_and_reference_entries() -> None:
+@pytest.mark.parametrize("module", [package, package.pyhf], ids=lambda m: m.__name__)
+def test_public_symbols_have_docstrings_and_reference_entries(module: Any) -> None:
     # Autodoc drops an undocumented member without a warning.
     reference = (Path(__file__).parents[1] / "docs" / "api.md").read_text()
-    for name in package.__all__:
-        assert f"flatppl.{name}" in reference, name
-    for symbol in (getattr(package, name) for name in package.__all__):
+    assert module.__doc__
+    for name in module.__all__:
+        assert f"{module.__name__}.{name}" in reference, name
+    for symbol in (getattr(module, name) for name in module.__all__):
         assert symbol.__doc__, symbol
         if not inspect.isclass(symbol):
             continue

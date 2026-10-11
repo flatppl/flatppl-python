@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
+import numpy as np
+import numpy.typing as npt
+
 # The native module ships compiled in the wheel, with a stub in the source tree.
 from . import _native  # pyright: ignore[reportMissingModuleSource]
 from ._frozen import freeze
@@ -19,6 +22,10 @@ if TYPE_CHECKING:
     from ._graph import Graph
     from ._jax import Batch, CompiledFunction
     from ._schema import BindingInfo, Export, MathRow
+    from .pyhf import PyhfView
+
+
+_NO_PYHF = "the module has no pyhf settings record; convert it with from_pyhf"
 
 
 def _span(span: Sequence[int] | None) -> tuple[int, int] | None:
@@ -188,12 +195,29 @@ class Binding:
 class Parameter:
     """A free parameter of a module: a binding written as ``elementof(set)``.
 
+    The fit settings come from the converter's settings record, and are
+    ``None`` for a module without one. A pyhf import is one source: its
+    selected measurement supplies them. A scalar parameter has scalar
+    settings. A vector parameter has one value per component.
+
     Attributes:
         name: The binding name.
         domain: The inferred value set, as in :attr:`Binding.domain`.
         shape: The array extents, as in :attr:`Binding.shape`.
         size: The number of scalar elements, as in :attr:`Binding.size`.
         binding: The binding itself.
+        init: The suggested initial value.
+        lo: The suggested lower bound. It is a fit range, not the domain.
+        hi: The suggested upper bound.
+        fixed: Whether a fit holds the value, per component.
+        constraint: The auxiliary constraint's family, ``"normal"`` or
+            ``"poisson"``, or ``None`` for an unconstrained parameter.
+        width: The auxiliary constraint's width.
+        centre: The auxiliary constraint's nominal centre, the value its
+            auxiliary measurement observes.
+        original_name: The parameter's name in the imported format, which
+            differs from :attr:`name` when it is not a FlatPPL identifier.
+        role: ``"poi"`` for the parameter of interest, otherwise ``None``.
     """
 
     name: str
@@ -201,6 +225,15 @@ class Parameter:
     shape: tuple[int | None, ...] | None
     size: int | None
     binding: Binding = field(repr=False, compare=False)
+    init: float | npt.NDArray[np.float64] | None = field(default=None, repr=False)
+    lo: float | npt.NDArray[np.float64] | None = field(default=None, repr=False)
+    hi: float | npt.NDArray[np.float64] | None = field(default=None, repr=False)
+    fixed: bool | npt.NDArray[np.bool_] | None = field(default=None, repr=False)
+    constraint: Literal["normal", "poisson"] | None = field(default=None, repr=False)
+    width: float | npt.NDArray[np.float64] | None = field(default=None, repr=False)
+    centre: float | npt.NDArray[np.float64] | None = field(default=None, repr=False)
+    original_name: str | None = field(default=None, repr=False)
+    role: Literal["poi"] | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         domain = "unknown" if self.domain is None else _domain_text(self.domain)
@@ -230,8 +263,8 @@ class Parameters(Mapping[str, Parameter]):
     """The free parameters of a module by name, in source order.
 
     Get it from :attr:`Module.parameters`. It reads the module's inferred
-    domains only. Converter records add initial values and bounds in a later
-    release.
+    domains, and the fit settings of the converter's settings record when the
+    module has one, such as a pyhf import's selected measurement.
 
     Example:
         >>> from flatppl import flatppl
@@ -405,14 +438,48 @@ class Module:
 
     @property
     def parameters(self) -> Parameters:
-        """The free parameters, the bindings written as ``elementof(set)``."""
-        return Parameters(
-            {
-                name: Parameter(name, b.domain, b.shape, b.size, b)
-                for name, b in self._bindings.items()
-                if b.kind == "parameter"
-            }
-        )
+        """The free parameters, the bindings written as ``elementof(set)``.
+
+        A module with a converter's settings record adds each parameter's fit
+        settings, such as a pyhf import's selected measurement. See
+        :class:`Parameter`.
+        """
+        from ._settings import parameter_settings
+
+        settings = parameter_settings(self)
+        parameters: dict[str, Parameter] = {}
+        for name, b in self._bindings.items():
+            if b.kind != "parameter":
+                continue
+            entry = settings.get(name, {})
+            parameters[name] = Parameter(
+                name,
+                b.domain,
+                b.shape,
+                b.size,
+                b,
+                **entry,
+            )
+        return Parameters(parameters)
+
+    @property
+    def pyhf(self) -> PyhfView:
+        """The pyhf view of a module that :func:`from_pyhf` converted.
+
+        It reads the selected measurement's settings record. See
+        :class:`flatppl.pyhf.PyhfView`.
+
+        Raises:
+            AttributeError: The module has no pyhf settings record.
+        """
+        if "_pyhf" not in self.__dict__:
+            from .pyhf import PyhfView
+
+            self.__dict__["_pyhf"] = PyhfView._from_module(self)  # pyright: ignore[reportPrivateUsage]
+        view: PyhfView | None = self.__dict__["_pyhf"]
+        if view is None:
+            raise AttributeError(_NO_PYHF)
+        return view
 
     def constant(self, name: str) -> object:
         """Read a binding's right-hand side back as a Python value.
@@ -447,6 +514,10 @@ class Module:
         return value(json.loads(native_call(self._native.constant, name)))
 
     def __getattr__(self, name: str) -> Binding:
+        # A property that raises AttributeError lands here, and must not
+        # fall back to a binding of the same name.
+        if name == "pyhf":
+            raise AttributeError(_NO_PYHF)
         try:
             return self._bindings[name]
         except KeyError:

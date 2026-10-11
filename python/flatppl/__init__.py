@@ -19,7 +19,7 @@ from ._api import (
 )
 from ._constants import Fixed, Reference
 from ._graph import Graph
-from ._imports import from_pyhf
+from .pyhf import from_pyhf
 
 if TYPE_CHECKING:
     from ._jax import CompiledFunction

@@ -1,15 +1,17 @@
 """Matrix values and first derivatives against independent linear algebra."""
 
 from math import lgamma
+from typing import Any
 
 import jax
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from flatppl import flatppl
 
 
-def test_inverse_values_and_asymmetric_cotangents():
+def test_inverse_values_and_asymmetric_cotangents() -> None:
     query = flatppl("""
         n = external(posintegers)
         A = external(cartpow(reals, [n, n]))
@@ -31,7 +33,7 @@ def test_inverse_values_and_asymmetric_cotangents():
         )
 
 
-def test_inverse_native_batches_keep_pivot_permutations_per_cell():
+def test_inverse_native_batches_keep_pivot_permutations_per_cell() -> None:
     inverse = flatppl("""
         A = external(cartpow(cartpow(reals, [2, 2]), 2))
         inputs = A
@@ -47,7 +49,7 @@ def test_inverse_native_batches_keep_pivot_permutations_per_cell():
     )
 
 
-def cofactor_oracle(matrix):
+def cofactor_oracle(matrix: NDArray[np.float64]) -> NDArray[np.float64]:
     n = len(matrix)
     return np.array(
         [
@@ -61,7 +63,7 @@ def cofactor_oracle(matrix):
     )
 
 
-def test_determinant_pivoting_and_cofactor_gradients():
+def test_determinant_pivoting_and_cofactor_gradients() -> None:
     query = flatppl("""
         n = external(posintegers)
         A = external(cartpow(reals, [n, n]))
@@ -91,7 +93,7 @@ def test_determinant_pivoting_and_cofactor_gradients():
 
 
 @pytest.mark.parametrize("operation", ["det", "logabsdet"])
-def test_determinant_native_batches(operation):
+def test_determinant_native_batches(operation: str) -> None:
     function = flatppl(f"""
         A = external(cartpow(cartpow(reals, [2, 2]), 2))
         inputs = A
@@ -111,7 +113,7 @@ def test_determinant_native_batches(operation):
     np.testing.assert_allclose(gradient, derivatives, rtol=3e-6, atol=1e-6)
 
 
-def test_determinant_native_batch_mixes_matrix_ranks():
+def test_determinant_native_batch_mixes_matrix_ranks() -> None:
     source = """
         A = external(cartpow(cartpow(reals, [2, 2]), 3))
         inputs = A
@@ -131,7 +133,14 @@ def test_determinant_native_batch_mixes_matrix_ranks():
     )
 
 
-def normal_oracle(mean, covariance, point):
+def normal_oracle(
+    mean: NDArray[np.float64],
+    covariance: NDArray[np.float64],
+    point: NDArray[np.float64],
+) -> tuple[
+    np.floating[Any],
+    tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
+]:
     residual = point - mean
     alpha = np.linalg.solve(covariance, residual)
     value = -0.5 * (
@@ -143,7 +152,7 @@ def normal_oracle(mean, covariance, point):
     return value, (alpha, covariance_gradient, -alpha)
 
 
-def test_cholesky_factor_and_symmetric_derivative():
+def test_cholesky_factor_and_symmetric_derivative() -> None:
     factor = flatppl("""
         A = external(cartpow(reals, [2, 2]))
         inputs = A
@@ -164,7 +173,7 @@ def test_cholesky_factor_and_symmetric_derivative():
         np.testing.assert_allclose(gradient, [[da, db / 2], [db / 2, dc]], rtol=5e-6)
 
 
-def test_mvnormal_covariance_mean_and_point_gradients():
+def test_mvnormal_covariance_mean_and_point_gradients() -> None:
     query = flatppl("""
         n = external(posintegers)
         mu = external(cartpow(reals, n))
@@ -187,7 +196,7 @@ def test_mvnormal_covariance_mean_and_point_gradients():
                 np.testing.assert_allclose(gradient, derivative, rtol=1e-5, atol=1e-6)
 
 
-def test_mvnormal_fixed_covariance_keeps_point_and_mean_gradients():
+def test_mvnormal_fixed_covariance_keeps_point_and_mean_gradients() -> None:
     function = flatppl("""
         mu = external(cartpow(reals, 2))
         x = external(cartpow(reals, 2))
@@ -209,7 +218,7 @@ def test_mvnormal_fixed_covariance_keeps_point_and_mean_gradients():
 @pytest.mark.parametrize(
     "expression", ["sum(score.(mu, cov, x))", "logdensityof(MvNormal.(mu, cov), x)"]
 )
-def test_mvnormal_native_batches_keep_each_matrix_and_point(expression):
+def test_mvnormal_native_batches_keep_each_matrix_and_point(expression: str) -> None:
     function = flatppl(f"""
         mu = external(cartpow(cartpow(reals, 2), 2))
         cov = external(cartpow(cartpow(reals, [2, 2]), 2))
@@ -234,7 +243,7 @@ def test_mvnormal_native_batches_keep_each_matrix_and_point(expression):
         )
 
 
-def test_broadcast_cholesky_preserves_matrix_cells():
+def test_broadcast_cholesky_preserves_matrix_cells() -> None:
     factor = flatppl("""
         matrices = external(cartpow(cartpow(reals, [2, 2]), 2))
         inputs = matrices
@@ -254,7 +263,7 @@ def test_broadcast_cholesky_preserves_matrix_cells():
     np.testing.assert_allclose(gradient, expected, rtol=3e-6)
 
 
-def test_native_batch_reuses_the_same_mean_and_point():
+def test_native_batch_reuses_the_same_mean_and_point() -> None:
     function = flatppl("""
         x = external(cartpow(cartpow(reals, 2), 2))
         cov = external(cartpow(cartpow(reals, [2, 2]), 2))
@@ -271,7 +280,7 @@ def test_native_batch_reuses_the_same_mean_and_point():
     np.testing.assert_allclose(gradient, np.ones_like(points), rtol=3e-6)
 
 
-def test_lkj_correlation_coordinate_gradient():
+def test_lkj_correlation_coordinate_gradient() -> None:
     function = flatppl("""
         rho = elementof(interval(-1.0, 1.0))
         C = rowstack([[1.0, rho], [rho, 1.0]])
@@ -287,7 +296,7 @@ def test_lkj_correlation_coordinate_gradient():
     np.testing.assert_allclose(gradient, -3 * rho / (1 - rho * rho), rtol=3e-6)
 
 
-def test_iid_mvnormal_shares_covariance_across_observations():
+def test_iid_mvnormal_shares_covariance_across_observations() -> None:
     function = flatppl("""
         mu = external(cartpow(reals, 2))
         cov = external(cartpow(reals, [2, 2]))
@@ -312,7 +321,7 @@ def test_iid_mvnormal_shares_covariance_across_observations():
     )
 
 
-def test_matrix_rhs_densities_have_independent_gradients():
+def test_matrix_rhs_densities_have_independent_gradients() -> None:
     scale = np.eye(2)
     point = np.array([[4.0, 2.0], [2.0, 3.0]])
     inverse = np.linalg.inv(point)

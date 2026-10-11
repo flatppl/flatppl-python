@@ -2,6 +2,8 @@ import io
 import json
 import math
 import re
+from pathlib import Path
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -12,7 +14,7 @@ import pytest
 from flatppl import CompilationError, Context, flatppl, from_pyhf
 
 
-def test_pyhf_input_forms_keep_streams_open(tmp_path):
+def test_pyhf_input_forms_keep_streams_open(tmp_path: Path) -> None:
     spec = pyhf.simplemodels.uncorrelated_background([5, 10], [50, 60], [5, 12]).spec
     text = json.dumps(spec)
     path = tmp_path / "model.json"
@@ -20,7 +22,7 @@ def test_pyhf_input_forms_keep_streams_open(tmp_path):
     stream = io.StringIO("prefix" + text)
     stream.seek(len("prefix"))
     with path.open() as file:
-        sources = [
+        sources: list[Any] = [
             text,
             path,
             str(path),
@@ -46,7 +48,7 @@ def test_pyhf_input_forms_keep_streams_open(tmp_path):
                 assert not source.closed
 
 
-def test_pyhf_model_runtime_observations_and_workspace_match_full_logpdf():
+def test_pyhf_model_runtime_observations_and_workspace_match_full_logpdf() -> None:
     reference = pyhf.simplemodels.uncorrelated_background([5, 10], [50, 60], [5, 12])
     context = Context()
     model = from_pyhf(json.dumps(reference.spec), context=context)
@@ -122,7 +124,7 @@ def test_pyhf_model_runtime_observations_and_workspace_match_full_logpdf():
         )
 
 
-def test_pyhf_diagnostics_retain_input_origin(tmp_path):
+def test_pyhf_diagnostics_retain_input_origin(tmp_path: Path) -> None:
     path = tmp_path / "invalid.json"
     path.write_text('{"channels":')
     with pytest.raises(CompilationError) as caught:
@@ -131,7 +133,7 @@ def test_pyhf_diagnostics_retain_input_origin(tmp_path):
     assert caught.value.source == str(path)
 
 
-def test_sliced_reduction_counts_support_vmap():
+def test_sliced_reduction_counts_support_vmap() -> None:
     evaluate = flatppl("""
         x = elementof(cartpow(reals, [4, 3]))
         inputs = x
@@ -142,4 +144,6 @@ def test_sliced_reduction_counts_support_vmap():
     compiled = jax.jit(jax.vmap(evaluate)).lower(values).compile()
     actual = compiled(values)
     np.testing.assert_allclose(actual, np.asarray(values)[:, [0, 2], :].sum(axis=1))
-    assert not re.search(r"\bwhile\(", compiled.as_text())
+    text = compiled.as_text()
+    assert text is not None
+    assert not re.search(r"\bwhile\(", text)

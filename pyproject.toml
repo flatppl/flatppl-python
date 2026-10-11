@@ -36,7 +36,7 @@ Repository = "https://github.com/flatppl/flatppl-python"
 test = ["pytest>=8", "blackjax==1.7.1", "pandas==3.0.6", "polars>=2", "pyhf==0.7.6"]
 
 [dependency-groups]
-lint = ["ruff>=0.16"]
+lint = ["ruff>=0.16", "pyright>=1.1.414", "pandas-stubs>=3"]
 
 [tool.maturin]
 features = ["extension"]
@@ -46,6 +46,25 @@ exclude = ["dist/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+include = ["python", "tests", "examples"]
+extraPaths = ["python"]
+# Stubs declare the untyped imports as Any: enzyme_ad, blackjax, pyhf, pyarrow.
+stubPath = "typings"
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+# JAX 0.11.2 types jit, grad, value_and_grad and jvp with a bare Callable, and
+# jaxlib 0.11.2 ships _jax.so without a stub, so Device in jnp.array is Unknown
+# to pyright 1.1.414. Tests and examples call these throughout, so only there
+# reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType
+# and reportUnknownLambdaType are off. The package marks its JAX call sites.
+# Retry the full rule set after each JAX bump.
+executionEnvironments = [
+    { root = "tests", reportUnknownMemberType = false, reportUnknownArgumentType = false, reportUnknownVariableType = false, reportUnknownLambdaType = false },
+    { root = "examples", reportUnknownMemberType = false, reportUnknownArgumentType = false, reportUnknownVariableType = false, reportUnknownLambdaType = false },
+    { root = "python" },
+]
 
 [tool.ruff]
 target-version = "py312"

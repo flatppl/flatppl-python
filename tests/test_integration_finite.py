@@ -1,6 +1,7 @@
 """Exact finite latent sums checked against analytic Gaussian mixtures."""
 
 import math
+from collections.abc import Mapping
 
 import jax
 import jax.numpy as jnp
@@ -9,12 +10,14 @@ import pytest
 
 from flatppl import Integration, flatppl
 
+Scalar = float | jax.Array
 
-def normal_logpdf(point, mean):
+
+def normal_logpdf(point: Scalar, mean: Scalar) -> jax.Array:
     return -0.5 * (point - mean) ** 2 - 0.5 * jnp.log(2 * jnp.pi)
 
 
-def bernoulli_mixture(p, point):
+def bernoulli_mixture(p: Scalar, point: Scalar) -> jax.Array:
     return jnp.logaddexp(
         jnp.log1p(-p) + normal_logpdf(point, 0.0),
         jnp.log(p) + normal_logpdf(point, 2.0),
@@ -22,7 +25,7 @@ def bernoulli_mixture(p, point):
 
 
 @pytest.mark.parametrize("measure", ["lawof(y)", "kchain(Bernoulli(p), k)"])
-def test_bernoulli_marginal_matches_weighted_sum(measure):
+def test_bernoulli_marginal_matches_weighted_sum(measure: str) -> None:
     function = flatppl(f"""
         p = 0.25
         point = 0.5
@@ -46,7 +49,7 @@ def test_bernoulli_marginal_matches_weighted_sum(measure):
     np.testing.assert_allclose(function(1.0, 0.5), normal_logpdf(0.5, 2.0), rtol=3e-5)
 
 
-def test_record_marginal_preserves_one_shared_finite_latent():
+def test_record_marginal_preserves_one_shared_finite_latent() -> None:
     model = """
         p = 0.25
         point = record(x=0.3, y=1.2)
@@ -57,7 +60,7 @@ def test_record_marginal_preserves_one_shared_finite_latent():
         inputs = (p, point)
     """
 
-    def oracle(p, point):
+    def oracle(p: Scalar, point: Mapping[str, Scalar]) -> jax.Array:
         return jnp.logaddexp(
             jnp.log1p(-p) + normal_logpdf(point["x"], 0) + normal_logpdf(point["y"], 0),
             jnp.log(p) + normal_logpdf(point["x"], 1) + normal_logpdf(point["y"], 2),
@@ -94,7 +97,9 @@ def test_record_marginal_preserves_one_shared_finite_latent():
         ("Categorical(record(p=p))", 1),
     ],
 )
-def test_categorical_marginal_keeps_runtime_weights(constructor, first):
+def test_categorical_marginal_keeps_runtime_weights(
+    constructor: str, first: int
+) -> None:
     function = flatppl(f"""
         p = [0.2, 0.5, 0.3]
         point = 0.5
@@ -104,7 +109,7 @@ def test_categorical_marginal_keeps_runtime_weights(constructor, first):
         outputs = logdensityof(lawof(y), point)
     """).compile()
 
-    def oracle(p, point):
+    def oracle(p: jax.Array, point: Scalar) -> jax.Array:
         atoms = jnp.arange(first, first + 3)
         return jax.scipy.special.logsumexp(jnp.log(p) + normal_logpdf(point, atoms))
 
@@ -120,7 +125,7 @@ def test_categorical_marginal_keeps_runtime_weights(constructor, first):
             np.testing.assert_allclose(found, wanted, rtol=3e-5, atol=3e-6)
 
 
-def test_binomial_marginal_uses_static_size_and_live_probability():
+def test_binomial_marginal_uses_static_size_and_live_probability() -> None:
     function = flatppl("""
         n = 3
         count = n
@@ -132,7 +137,7 @@ def test_binomial_marginal_uses_static_size_and_live_probability():
         outputs = logdensityof(lawof(y), point)
     """).compile()
 
-    def oracle(p, point):
+    def oracle(p: Scalar, point: Scalar) -> jax.Array:
         atoms = jnp.arange(4)
         terms = jnp.log(jnp.asarray([math.comb(3, i) for i in range(4)]))
         terms += atoms * jnp.log(p) + (3 - atoms) * jnp.log1p(-p)
@@ -148,7 +153,7 @@ def test_binomial_marginal_uses_static_size_and_live_probability():
     np.testing.assert_allclose(function(1.0, 0.5), normal_logpdf(0.5, 3), rtol=3e-5)
 
 
-def test_discrete_density_endpoints_keep_finite_values_and_gradients():
+def test_discrete_density_endpoints_keep_finite_values_and_gradients() -> None:
     function = flatppl("""
         p = 0.25
         k = 0
@@ -165,7 +170,7 @@ def test_discrete_density_endpoints_keep_finite_values_and_gradients():
         np.testing.assert_allclose(value_and_grad(p, k)[1], 0.0, atol=1e-6)
 
 
-def test_dirac_marginal_evaluates_at_its_live_atom():
+def test_dirac_marginal_evaluates_at_its_live_atom() -> None:
     function = flatppl("""
         location = 0.25
         point = 0.5
@@ -175,7 +180,7 @@ def test_dirac_marginal_evaluates_at_its_live_atom():
         outputs = logdensityof(lawof(y), point)
     """).compile()
 
-    def oracle(location, point):
+    def oracle(location: Scalar, point: Scalar) -> jax.Array:
         return normal_logpdf(point, 2 * location)
 
     for args in [(0.25, 0.8), (-1.2, 0.3)]:
@@ -187,7 +192,7 @@ def test_dirac_marginal_evaluates_at_its_live_atom():
             np.testing.assert_allclose(found, wanted, rtol=3e-5, atol=3e-6)
 
 
-def test_atomic_and_zero_inflated_mixtures_keep_their_mass():
+def test_atomic_and_zero_inflated_mixtures_keep_their_mass() -> None:
     function = flatppl("""
         p = 0.25
         k = 0
@@ -208,7 +213,7 @@ def test_atomic_and_zero_inflated_mixtures_keep_their_mass():
 
 
 @pytest.mark.parametrize("prior", ["Bernoulli(p)", "Uniform(interval(0.0, 1.0))"])
-def test_singleton_prior_record_uses_the_public_kernel_input(prior):
+def test_singleton_prior_record_uses_the_public_kernel_input(prior: str) -> None:
     function = flatppl(f"""
         p = 0.25
         point = 0.5
@@ -222,7 +227,7 @@ def test_singleton_prior_record_uses_the_public_kernel_input(prior):
         oracle = bernoulli_mixture
     else:
 
-        def oracle(p, point):
+        def oracle(p: Scalar, point: Scalar) -> jax.Array:
             return jnp.log(
                 (jax.scipy.special.ndtr(point) - jax.scipy.special.ndtr(point - 2)) / 2
             )

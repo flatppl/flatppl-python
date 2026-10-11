@@ -64,6 +64,13 @@ jobs:
           "$RUNNER_TEMP/consumer/bin/python" -m pip install -r requirements.txt "pytest>=8" "blackjax==1.7.1" "pandas==3.0.6" "polars>=2" "pyhf==0.7.6"
           cp -R tests examples docs pyproject.toml "$RUNNER_TEMP/consumer/"
 
+      - name: Check Python types against the installed wheel's dependencies
+        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.14'
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/consumer/bin/python" -m pip install --group lint
+          "$RUNNER_TEMP/consumer/bin/pyright" --pythonpath "$RUNNER_TEMP/consumer/bin/python"
+
       - name: Test installed wheel outside the checkout
         shell: bash
         env:

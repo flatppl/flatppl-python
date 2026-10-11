@@ -1,13 +1,16 @@
 """Runtime matrix data, a vector parameter, and a BlackJAX consumer."""
 
+from typing import Any
+
 import blackjax
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from flatppl import Context, flatppl
 
 
-def make_query(n, p):
+def make_query(n: int, p: int):
     """Compile the posterior log density for ``n`` observations and ``p`` predictors."""
     context = Context()
     model = flatppl(
@@ -42,24 +45,32 @@ def make_query(n, p):
     return query.set(n=n, p=p).compile()
 
 
-def run(X, y, *, warmup_steps=512, num_samples=2048, seed=827):
+def run(
+    X: ArrayLike,
+    y: ArrayLike,
+    *,
+    warmup_steps: int = 512,
+    num_samples: int = 2048,
+    seed: int = 827,
+) -> tuple[jax.Array, jax.Array]:
     """Adapt NUTS on data ``X`` and ``y``, then return ``beta`` draws and divergences."""
-    X, y = jnp.asarray(X, dtype=jnp.float32), jnp.asarray(y, dtype=jnp.float32)
-    evaluate = make_query(*X.shape)
+    design = jnp.asarray(X, dtype=jnp.float32)
+    observed = jnp.asarray(y, dtype=jnp.float32)
+    evaluate = make_query(*design.shape)
 
-    def logdensity(beta):
-        return evaluate({"beta": beta}, X, y)
+    def logdensity(beta: jax.Array) -> jax.Array:
+        return evaluate({"beta": beta}, design, observed)
 
     warmup_key, sample_key = jax.random.split(jax.random.key(seed))
     warmup = blackjax.window_adaptation(blackjax.nuts, logdensity)
     (state, parameters), _ = warmup.run(
-        warmup_key, jnp.zeros(X.shape[1]), num_steps=warmup_steps
+        warmup_key, jnp.zeros(design.shape[1]), num_steps=warmup_steps
     )
     sampler = blackjax.nuts(logdensity, **parameters)
 
     @jax.jit
-    def sample(key, initial):
-        def step(current, draw_key):
+    def sample(key: jax.Array, initial: Any) -> tuple[jax.Array, jax.Array]:
+        def step(current: Any, draw_key: jax.Array) -> tuple[Any, Any]:
             updated, info = sampler.step(draw_key, current)
             return updated, (updated.position, info.is_divergent)
 

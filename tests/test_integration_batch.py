@@ -1,5 +1,8 @@
 """Each broadcast lane has an independent scalar normalizer and derivative."""
 
+from collections.abc import Callable
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -8,11 +11,20 @@ import pytest
 from flatppl import Integration, flatppl
 
 
-def logpdf(a, lo, hi, point):
+def logpdf(
+    a: float | jax.Array,
+    lo: float | jax.Array,
+    hi: float | jax.Array,
+    point: float | jax.Array,
+) -> jax.Array:
     return a * (point - lo) - jnp.log(jnp.expm1(a * (hi - lo)) / a)
 
 
-def assert_values_and_gradients(function, expected, args):
+def assert_values_and_gradients(
+    function: Callable[..., jax.Array],
+    expected: Callable[..., jax.Array],
+    args: tuple[Any, ...],
+) -> None:
     actual = jax.jit(function)(*args)
     np.testing.assert_allclose(actual, expected(*args), rtol=1e-4, atol=1e-5)
     argnums = tuple(range(len(args)))
@@ -25,7 +37,9 @@ def assert_values_and_gradients(function, expected, args):
 
 
 @pytest.mark.parametrize("named_score", [False, True])
-def test_varying_integrals_keep_live_bounds_and_named_bindings(named_score):
+def test_varying_integrals_keep_live_bounds_and_named_bindings(
+    named_score: bool,
+) -> None:
     expression = "logdensityof(measure, point)"
     alias = f"score_value = {expression}" if named_score else ""
     body = "score_value" if named_score else expression
@@ -52,7 +66,7 @@ def test_varying_integrals_keep_live_bounds_and_named_bindings(named_score):
     assert_values_and_gradients(function, logpdf, (args[0] * 1.3, *args[1:]))
 
 
-def test_table_parameters_keep_each_record_lane():
+def test_table_parameters_keep_each_record_lane() -> None:
     function = flatppl("""
         params = elementof(cartprod(a=reals, lo=reals, hi=reals, point=reals))
         measure = normalize(logweighted(t -> params.a*t,
@@ -73,7 +87,7 @@ def test_table_parameters_keep_each_record_lane():
     assert_values_and_gradients(function, lambda rows: logpdf(**rows), (rows,))
 
 
-def test_matrix_batch_with_singleton_bound_axis():
+def test_matrix_batch_with_singleton_bound_axis() -> None:
     function = flatppl("""
         a = elementof(reals)
         hi = elementof(posreals)
@@ -90,7 +104,7 @@ def test_matrix_batch_with_singleton_bound_axis():
     )
 
 
-def test_failed_lane_does_not_change_another_lanes_value_or_gradient():
+def test_failed_lane_does_not_change_another_lanes_value_or_gradient() -> None:
     function = flatppl("""
         a = elementof(reals)
         measure = normalize(logweighted(t -> a*t, Lebesgue(interval(0.0, 1.0))))
@@ -108,7 +122,7 @@ def test_failed_lane_does_not_change_another_lanes_value_or_gradient():
     np.testing.assert_allclose(gradient, [expected, 0.0], atol=2e-5)
 
 
-def test_nested_batches_keep_vector_parameter_cells():
+def test_nested_batches_keep_vector_parameter_cells() -> None:
     function = flatppl("""
         params = elementof(cartpow(reals, 2))
         rate = params[1] + 2*params[2]
@@ -128,7 +142,7 @@ def test_nested_batches_keep_vector_parameter_cells():
     )
 
 
-def test_moving_cuts_keep_each_lanes_boundary_gradient():
+def test_moving_cuts_keep_each_lanes_boundary_gradient() -> None:
     function = flatppl("""
         cut = elementof(unitinterval)
         measure = normalize(weighted(t -> ifelse(t < cut, 1.0, 2.0),

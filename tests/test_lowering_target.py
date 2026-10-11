@@ -1,5 +1,7 @@
 """The lowering target follows the JAX backend and leaves values unchanged."""
 
+from typing import Literal
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -20,7 +22,9 @@ SOURCE = r"""
 @pytest.mark.parametrize(
     ("backend", "target"), [("cpu", "cpu"), ("gpu", "gpu"), ("tpu", "gpu")]
 )
-def test_default_target_follows_the_jax_backend(monkeypatch, backend, target):
+def test_default_target_follows_the_jax_backend(
+    monkeypatch: pytest.MonkeyPatch, backend: str, target: Literal["cpu", "gpu"]
+) -> None:
     monkeypatch.setattr(jax, "default_backend", lambda: backend)
     assert lowering_target() == target
     assert lowering_target("cpu") == "cpu"
@@ -28,7 +32,7 @@ def test_default_target_follows_the_jax_backend(monkeypatch, backend, target):
         lowering_target("tpu")
 
 
-def test_gpu_target_runs_on_cpu_with_the_same_values():
+def test_gpu_target_runs_on_cpu_with_the_same_values() -> None:
     module = flatppl(SOURCE)
     cpu = module.compile(target="cpu")
     gpu = module.compile(target="gpu")

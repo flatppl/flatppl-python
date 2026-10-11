@@ -7,8 +7,10 @@ import pytest
 
 from flatppl import Integration, flatppl
 
+Scalar = float | jax.Array
 
-def gamma2_logdensity(rate, lo, hi, point):
+
+def gamma2_logdensity(rate: Scalar, lo: Scalar, hi: Scalar, point: Scalar) -> jax.Array:
     lo = jnp.maximum(lo, 0.0)
     # Factor out the lower survival to retain precision in a far tail.
     log_mass = (
@@ -20,7 +22,7 @@ def gamma2_logdensity(rate, lo, hi, point):
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
-def test_truncated_gamma_preserves_tail_mass_and_live_derivatives(dtype):
+def test_truncated_gamma_preserves_tail_mass_and_live_derivatives(dtype: str) -> None:
     with jax.enable_x64(dtype == "float64"):
         function = flatppl("""
             rate = 2.0
@@ -51,7 +53,7 @@ def test_truncated_gamma_preserves_tail_mass_and_live_derivatives(dtype):
         assert np.isneginf(function(2.0, 0.2, 2.4, 0.1))
 
 
-def test_truncated_pareto_intersects_the_live_scale():
+def test_truncated_pareto_intersects_the_live_scale() -> None:
     function = flatppl("""
         scale = 1.6
         lo = 0.5
@@ -62,7 +64,7 @@ def test_truncated_pareto_intersects_the_live_scale():
             interval(lo, hi))), point)
     """).compile(integration=Integration())
 
-    def oracle(scale, lo, hi, point):
+    def oracle(scale: Scalar, lo: Scalar, hi: Scalar, point: Scalar) -> jax.Array:
         lower = jnp.maximum(lo, scale)
         mass = (scale / lower) ** 3 - (scale / hi) ** 3
         return jnp.log(3.0) + 3 * jnp.log(scale) - 4 * jnp.log(point) - jnp.log(mass)
@@ -78,7 +80,7 @@ def test_truncated_pareto_intersects_the_live_scale():
             np.testing.assert_allclose(found, wanted, rtol=3e-4, atol=3e-5)
 
 
-def test_truncated_beta_clips_both_support_bounds():
+def test_truncated_beta_clips_both_support_bounds() -> None:
     function = flatppl("""
         lo = -0.3
         hi = 1.5
@@ -88,8 +90,8 @@ def test_truncated_beta_clips_both_support_bounds():
             interval(lo, hi))), point)
     """).compile(integration=Integration())
 
-    def oracle(lo, hi, point):
-        def cdf(x):
+    def oracle(lo: Scalar, hi: Scalar, point: Scalar) -> jax.Array:
+        def cdf(x: Scalar) -> jax.Array:
             x = jnp.clip(x, 0.0, 1.0)
             return 6 * x**2 - 8 * x**3 + 3 * x**4
 
@@ -106,7 +108,7 @@ def test_truncated_beta_clips_both_support_bounds():
             np.testing.assert_allclose(found, wanted, rtol=3e-4, atol=3e-5)
 
 
-def test_interval_mass_failure_preserves_nan_normalization():
+def test_interval_mass_failure_preserves_nan_normalization() -> None:
     query = flatppl("""
         lo = 0.2
         hi = 3.0
@@ -121,7 +123,7 @@ def test_interval_mass_failure_preserves_nan_normalization():
     assert np.isnan(unresolved(0.2, 3.0))
 
 
-def test_supported_cdfs_retain_exact_rules_with_integration_enabled():
+def test_supported_cdfs_retain_exact_rules_with_integration_enabled() -> None:
     function = flatppl("""
         point = 0.7
         inputs = point
@@ -141,7 +143,7 @@ def test_supported_cdfs_retain_exact_rules_with_integration_enabled():
     )
 
 
-def test_iid_truncated_gamma_shares_the_interval_mass():
+def test_iid_truncated_gamma_shares_the_interval_mass() -> None:
     function = flatppl("""
         rate = 2.0
         points = [0.4, 0.7, 1.2]
@@ -150,7 +152,7 @@ def test_iid_truncated_gamma_shares_the_interval_mass():
         outputs = logdensityof(iid(measure, 3), points)
     """).compile(integration=Integration())
 
-    def oracle(rate, points):
+    def oracle(rate: Scalar, points: jax.Array) -> jax.Array:
         return jnp.sum(gamma2_logdensity(rate, 0.2, 3.0, points))
 
     args = (2.0, jnp.asarray([0.4, 0.7, 1.2]))
@@ -162,7 +164,7 @@ def test_iid_truncated_gamma_shares_the_interval_mass():
         np.testing.assert_allclose(found, wanted, rtol=3e-4, atol=3e-5)
 
 
-def test_truncated_gamma_shape_derivative_matches_score_expectation():
+def test_truncated_gamma_shape_derivative_matches_score_expectation() -> None:
     function = flatppl("""
         shape = 2.4
         inputs = shape

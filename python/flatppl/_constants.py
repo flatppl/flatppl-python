@@ -1,15 +1,17 @@
 """Convert fixed Python values to the shared host constant representation."""
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any, Literal, cast
 
 import numpy as np
 
+from ._schema import Constant
 from ._tables import columns as table_columns
 
 
-def constant(value):
+def constant(value: Any) -> Constant:
     if isinstance(value, np.generic):
-        value = value.item()
+        return constant(cast("np.generic[Any]", value).item())
     if isinstance(value, bool):
         return {"kind": "bool", "value": value}
     if isinstance(value, int):
@@ -19,22 +21,18 @@ def constant(value):
     if isinstance(value, str):
         return {"kind": "string", "value": value}
     if isinstance(value, tuple):
-        return {"kind": "tuple", "value": [constant(item) for item in value]}
-    if not isinstance(value, Mapping):
-        columns = table_columns(value)
-        if columns is not None:
-            return {
-                "kind": "table",
-                "value": [(name, constant(column)) for name, column in columns.items()],
-            }
-    if isinstance(value, Mapping) or hasattr(value, "columns"):
-        names = value if isinstance(value, Mapping) else value.columns
-        if not all(isinstance(name, str) for name in names):
-            raise TypeError("constant field names must be strings")
+        items = cast(tuple[Any, ...], value)
+        return {"kind": "tuple", "value": [constant(item) for item in items]}
+    if isinstance(value, Mapping):
+        return _fields("record", value, cast(Mapping[Any, Any], value))
+    columns = table_columns(value)
+    if columns is not None:
         return {
-            "kind": "record" if isinstance(value, Mapping) else "table",
-            "value": [(name, constant(value[name])) for name in names],
+            "kind": "table",
+            "value": [(name, constant(column)) for name, column in columns.items()],
         }
+    if hasattr(value, "columns"):
+        return _fields("table", value, value.columns)
     array = np.asarray(value)
     if array.dtype.kind not in "biuf":
         raise TypeError("constant arrays require boolean, integer, or real values")
@@ -47,3 +45,11 @@ def constant(value):
             "data": [constant(item) for item in array.ravel().tolist()],
         },
     }
+
+
+def _fields(
+    kind: Literal["record", "table"], value: Any, names: Iterable[Any]
+) -> Constant:
+    if not all(isinstance(name, str) for name in names):
+        raise TypeError("constant field names must be strings")
+    return {"kind": kind, "value": [(name, constant(value[name])) for name in names]}

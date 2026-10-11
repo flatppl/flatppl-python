@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import IO
+from typing import IO, cast
 
-from ._api import Context, Module, _native_call
+from ._api import Context, Module, native_call
 
 
 def from_pyhf(
@@ -23,7 +23,7 @@ def from_pyhf(
     The result's ``source`` contains the generated FlatPPL, not the JSON input.
     Registration and query inputs/outputs remain explicit.
     """
-    source_path = None
+    source_path: str | None = None
     if isinstance(source, str) and source.lstrip("\ufeff \t\r\n").startswith(
         ("{", "[")
     ):
@@ -35,12 +35,15 @@ def from_pyhf(
         text = source.read()
         filename = getattr(source, "name", None)
         if isinstance(filename, (str, os.PathLike)):
-            source_path = os.fspath(filename)
+            source_path = os.fspath(cast("str | os.PathLike[str]", filename))
     if isinstance(text, bytes):
         text = text.decode("utf-8-sig")
     if context is None:
         context = Context()
-    native = _native_call(
-        context._native.import_pyhf, text.removeprefix("\ufeff"), name, source_path
+    native = native_call(
+        context._native.import_pyhf,  # pyright: ignore[reportPrivateUsage]
+        text.removeprefix("\ufeff"),
+        name,
+        source_path,
     )
     return Module(native, context)

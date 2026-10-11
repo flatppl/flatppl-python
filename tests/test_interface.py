@@ -13,7 +13,7 @@ import pytest
 from flatppl import CompilationError, Context, flatppl
 
 
-def test_inline_posterior_values_and_gradients():
+def test_inline_posterior_values_and_gradients() -> None:
     example = runpy.run_path(str(Path(__file__).parents[1] / "examples" / "nuts.py"))
     density = example["make_logdensity"]()
     evaluate = jax.jit(jax.value_and_grad(density))
@@ -24,7 +24,7 @@ def test_inline_posterior_values_and_gradients():
         np.testing.assert_allclose(gradient["theta"], 1 - 2 * theta, atol=2e-6)
 
 
-def test_product_density_gradient_at_zero_and_value_only_calls():
+def test_product_density_gradient_at_zero_and_value_only_calls() -> None:
     module = flatppl(r"""
         x = elementof(cartpow(reals, 6))
         inputs = x
@@ -41,7 +41,7 @@ def test_product_density_gradient_at_zero_and_value_only_calls():
         jax.grad(value_only)(x)
 
 
-def test_forward_optimization_preserves_values_and_shared_derivatives():
+def test_forward_optimization_preserves_values_and_shared_derivatives() -> None:
     module = flatppl("x = elementof(reals)\ninputs = x\noutputs = exp(x*x)")
     function = module.compile(optimize_forward=True)
     x = jnp.float32(0.25)
@@ -54,10 +54,12 @@ def test_forward_optimization_preserves_values_and_shared_derivatives():
     )
     joint = jax.jit(jax.value_and_grad(function)).lower(x).compile()
     np.testing.assert_allclose(joint(x), [expected, 2 * x * expected], rtol=2e-6)
-    assert len(re.findall(r"\bexponential\(", joint.as_text())) == 1
+    text = joint.as_text()
+    assert text is not None
+    assert len(re.findall(r"\bexponential\(", text)) == 1
 
 
-def test_nested_inputs_use_schema_order_and_support_gradients():
+def test_nested_inputs_use_schema_order_and_support_gradients() -> None:
     function = flatppl(r"""
         p = elementof(cartprod(z = reals, a = cartprod(beta = reals, v = cartpow(reals, 2))))
         inputs = p
@@ -74,7 +76,7 @@ def test_nested_inputs_use_schema_order_and_support_gradients():
     np.testing.assert_allclose(gradient["z"], 1)
 
 
-def test_declared_order_unused_input_and_nested_outputs():
+def test_declared_order_unused_input_and_nested_outputs() -> None:
     function = flatppl(r"""
         a = elementof(reals)
         b = elementof(reals)
@@ -95,7 +97,7 @@ def test_declared_order_unused_input_and_nested_outputs():
     assert function.schema["output_names"] == ("difference", "result")
 
 
-def test_promoted_table_data_changes_without_source_io():
+def test_promoted_table_data_changes_without_source_io() -> None:
     function = flatppl(r"""
         data = load_data("absent.csv", cartpow(cartprod(x = reals, y = reals), 3))
         inputs = data
@@ -112,7 +114,7 @@ def test_promoted_table_data_changes_without_source_io():
     np.testing.assert_array_equal([first["count"], second["count"]], [3, 3])
 
 
-def test_numpy_vectors_and_pandas_tables_use_query_precision():
+def test_numpy_vectors_and_pandas_tables_use_query_precision() -> None:
     summarize = flatppl(r"""
         data = external(cartpow(cartprod(x = reals, y = reals), 3))
         inputs = data
@@ -127,7 +129,7 @@ def test_numpy_vectors_and_pandas_tables_use_query_precision():
     assert summarize(data=table).dtype == jnp.float32
 
 
-def test_bound_sizes_arrays_and_registered_models_keep_their_snapshots():
+def test_bound_sizes_arrays_and_registered_models_keep_their_snapshots() -> None:
     context = Context()
     source = flatppl(
         r"""
@@ -161,7 +163,7 @@ def test_bound_sizes_arrays_and_registered_models_keep_their_snapshots():
     np.testing.assert_allclose(direct([3.0, 2.0, 1.0]), 38 / 3)
 
 
-def test_imported_values_inside_expressions_preserve_parameters():
+def test_imported_values_inside_expressions_preserve_parameters() -> None:
     context = Context()
     context.register(
         "values.flatppl",
@@ -187,7 +189,7 @@ def test_imported_values_inside_expressions_preserve_parameters():
     np.testing.assert_allclose(gradient["a"], [2, 2])
 
 
-def test_context_snapshots_and_registration_lifecycle(tmp_path):
+def test_context_snapshots_and_registration_lifecycle(tmp_path: Path) -> None:
     model_path = tmp_path / "model.flatppl"
     model_path.write_text("value = 2.0\noutputs = value")
     query_source = 'm = load_module("model.flatppl")\noutputs = m.value'
@@ -213,7 +215,7 @@ def test_context_snapshots_and_registration_lifecycle(tmp_path):
     )
 
 
-def test_registry_origins_file_origins_and_collision(tmp_path):
+def test_registry_origins_file_origins_and_collision(tmp_path: Path) -> None:
     context = Context()
     model = flatppl("value = 3.0", context=context)
     context.register("models/value.flatppl", model)
@@ -248,7 +250,7 @@ def test_registry_origins_file_origins_and_collision(tmp_path):
         flatppl(query, context=labelled, source_path=file_path.parent / "host.py")
 
 
-def test_binding_collisions_and_native_ownership():
+def test_binding_collisions_and_native_ownership() -> None:
     context = Context()
     module = flatppl("compile = 5.0\noutputs = compile", context=context)
     handle = module.bindings["compile"]
@@ -258,7 +260,7 @@ def test_binding_collisions_and_native_ownership():
     assert handle.name == "compile"
 
 
-def test_import_diagnostic_and_corrected_context(tmp_path):
+def test_import_diagnostic_and_corrected_context(tmp_path: Path) -> None:
     source = tmp_path / "bad.flatppl"
     source.write_text("value = )")
     query = 'm = load_module("bad.flatppl")\noutputs = m.value'
@@ -273,7 +275,7 @@ def test_import_diagnostic_and_corrected_context(tmp_path):
     )
 
 
-def test_import_instances_preserve_independent_and_shared_laws():
+def test_import_instances_preserve_independent_and_shared_laws() -> None:
     context = Context()
     context.register(
         "leaf.flatppl",
@@ -315,7 +317,7 @@ def test_import_instances_preserve_independent_and_shared_laws():
     )
 
 
-def test_promoted_bindings_replace_only_their_named_values():
+def test_promoted_bindings_replace_only_their_named_values() -> None:
     function = flatppl(r"""
         origin = 1.0
         a = origin
@@ -332,7 +334,7 @@ def test_promoted_bindings_replace_only_their_named_values():
     np.testing.assert_allclose(function(2.0, 7.0, {"x": 11.0}, 13.0), expected)
 
 
-def test_nested_record_joint_density():
+def test_nested_record_joint_density() -> None:
     density = flatppl(r"""
         p = elementof(cartprod(x = reals, nested = cartprod(y = reals)))
         inputs = p
@@ -345,7 +347,7 @@ def test_nested_record_joint_density():
     np.testing.assert_allclose(gradient["nested"]["y"], -0.5)
 
 
-def test_directory_bundle_alias_and_containment(tmp_path):
+def test_directory_bundle_alias_and_containment(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     (bundle / "leaf.flatppl").write_text("value = 3.0")
@@ -380,7 +382,7 @@ def test_directory_bundle_alias_and_containment(tmp_path):
     np.testing.assert_allclose(query.compile()(), 3)
 
 
-def test_rng_pairs_chaining_and_output_order():
+def test_rng_pairs_chaining_and_output_order() -> None:
     source = r"""
         s = rnginit(0)
         a = rand(s, Normal(0.0, 1.0))
@@ -416,7 +418,7 @@ def test_rng_pairs_chaining_and_output_order():
             np.testing.assert_array_equal(actual, expected)
 
 
-def test_precision_and_repeated_device_calls():
+def test_precision_and_repeated_device_calls() -> None:
     module = flatppl("x = elementof(reals)\ninputs = x\noutputs = (x + 1.0) - x")
     with jax.enable_x64(False):
         single = jax.jit(module.compile())
@@ -436,7 +438,7 @@ def test_precision_and_repeated_device_calls():
         np.testing.assert_array_equal(double(jnp.float64(2**24)), 1)
 
 
-def test_array_axis_order_matches_explicit_matrices():
+def test_array_axis_order_matches_explicit_matrices() -> None:
     evaluate = flatppl(r"""
         data = external(cartpow(reals, 6))
         rows = array(data, [2, 3], [1, 2])

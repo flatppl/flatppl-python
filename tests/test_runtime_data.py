@@ -9,7 +9,7 @@ import pytest
 from flatppl import flatppl
 
 
-def test_scalar_indices_keep_both_bases_and_selected_gradients():
+def test_scalar_indices_keep_both_bases_and_selected_gradients() -> None:
     function = flatppl("""
         x = external(cartpow(reals, 4))
         i = external(integers)
@@ -28,7 +28,7 @@ def test_scalar_indices_keep_both_bases_and_selected_gradients():
         np.testing.assert_array_equal(gradient, expected)
 
 
-def test_scalar_index_preserves_nested_cells():
+def test_scalar_index_preserves_nested_cells() -> None:
     function = flatppl("""
         rows = external(cartpow(cartpow(reals, 3), 2))
         i = external(integers)
@@ -41,7 +41,7 @@ def test_scalar_index_preserves_nested_cells():
     np.testing.assert_array_equal(gradient, [[0, 0, 0], [1, 1, 1]])
 
 
-def test_scalar_indices_preserve_callable_batches():
+def test_scalar_indices_preserve_callable_batches() -> None:
     function = flatppl("""
         rows = external(cartpow(cartpow(reals, 3), 2))
         indices = external(cartpow(integers, 2))
@@ -56,7 +56,9 @@ def test_scalar_indices_preserve_callable_batches():
 
 
 @pytest.mark.parametrize("base", [0, 1])
-def test_runtime_categories_preserve_support_and_probability_gradients(base):
+def test_runtime_categories_preserve_support_and_probability_gradients(
+    base: int,
+) -> None:
     ctor = "Categorical" if base else "Categorical0"
     function = flatppl(f"""
         p = elementof(stdsimplex(3))
@@ -78,7 +80,7 @@ def test_runtime_categories_preserve_support_and_probability_gradients(base):
     assert np.isneginf(function(probabilities, base))
 
 
-def test_categorical_table_observations_change_without_recompilation():
+def test_categorical_table_observations_change_without_recompilation() -> None:
     function = flatppl("""
         p = elementof(stdsimplex(3))
         data = external(cartpow(cartprod(y=integers), 4))
@@ -100,7 +102,7 @@ def test_categorical_table_observations_change_without_recompilation():
         )
 
 
-def test_host_integer_conversion_preserves_values_and_rejects_overflow():
+def test_host_integer_conversion_preserves_values_and_rejects_overflow() -> None:
     function = flatppl("""
         values = external(cartpow(integers, 2))
         inputs = values
@@ -121,7 +123,7 @@ def test_host_integer_conversion_preserves_values_and_rejects_overflow():
         np.testing.assert_array_equal(function([jnp.int32(7), jnp.int32(-3)]), [7, -3])
 
 
-def test_categorical_broadcast_keeps_each_probability_row():
+def test_categorical_broadcast_keeps_each_probability_row() -> None:
     function = flatppl("""
         p = external(cartpow(stdsimplex(3), 2))
         y = external(cartpow(integers, 2))
@@ -137,7 +139,7 @@ def test_categorical_broadcast_keeps_each_probability_row():
     np.testing.assert_allclose(gradient, [[0, 0, 1 / 0.75], [2, 0, 0]], atol=1e-6)
 
 
-def test_batched_iid_categories_keep_each_row_and_observation_axis():
+def test_batched_iid_categories_keep_each_row_and_observation_axis() -> None:
     function = flatppl("""
         p = external(cartpow(stdsimplex(3), 2))
         y = external(cartpow(cartpow(integers, 4), 2))
@@ -154,7 +156,7 @@ def test_batched_iid_categories_keep_each_row_and_observation_axis():
     np.testing.assert_allclose(gradient, [[0, 4, 4], [6, 2, 0]], atol=1e-6)
 
 
-def test_vector_indices_keep_each_callable_batch():
+def test_vector_indices_keep_each_callable_batch() -> None:
     function = flatppl("""
         rows = external(cartpow(cartpow(reals, 3), 2))
         indices = external(cartpow(cartpow(integers, 2), 2))
@@ -170,7 +172,7 @@ def test_vector_indices_keep_each_callable_batch():
     np.testing.assert_array_equal(gradient, [[1, 0, 1], [0, 2, 0]])
 
 
-def test_static_array_helpers_use_bound_sizes_and_outer_shapes():
+def test_static_array_helpers_use_bound_sizes_and_outer_shapes() -> None:
     query = flatppl("""
         n = external(posintegers)
         data = external(cartpow(reals, [2, n]))

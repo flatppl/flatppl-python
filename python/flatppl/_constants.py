@@ -46,10 +46,11 @@ def _real(value: float) -> Real:
 
 
 def constant(value: Any) -> Constant:
-    if isinstance(value, np.float32):
-        return {"kind": "real32", "value": _real(float(value))}
     if isinstance(value, np.generic):
-        return constant(cast("np.generic[Any]", value).item())
+        scalar = cast("np.generic[Any]", value)
+        if scalar.dtype == np.dtype("float32"):
+            return {"kind": "real32", "value": _real(float(scalar.item()))}
+        return constant(scalar.item())
     if isinstance(value, bool):
         return {"kind": "bool", "value": value}
     if isinstance(value, int):

@@ -35,7 +35,8 @@ model = from_formula(
     ],
 )
 print(model.formula.info["design_columns"])
-print([level["value"] for level in model.formula.recipe["groups"][0]["levels"]])
+groups = model.formula.recipe["predictors"]["mu"]["groups"]
+print([level["value"] for level in groups[0]["levels"]])
 
 # %%
 # The generated prior uses a centred population intercept and non-centred

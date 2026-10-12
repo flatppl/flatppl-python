@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- `from_formula(..., dpars=...)` forwards family-parameter formulas and their
+  links to Rust. The bundled frontend supports categorical predictors and
+  one-dimensional thin-plate smooths with retained prediction recipes, explicit
+  ordinary intercepts, hurdle families and zero-inflated beta responses.
 - `flatppl.formula.from_formula` imports regression formulas and dataframe
   tables through Rust. `module.formula` exposes metadata and a retained recipe
   for preparing immutable prediction modules with the training contrasts,

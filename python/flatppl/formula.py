@@ -28,6 +28,7 @@ def from_formula(
     priors: Sequence[Mapping[str, object]] | None = None,
     *,
     link: str | None = None,
+    dpars: Mapping[str, Mapping[str, object]] | None = None,
     context: Context | None = None,
     name: str | None = None,
     **options: object,
@@ -51,6 +52,9 @@ def from_formula(
             the frontend's brms defaults, including improper Flat priors for
             ordinary regression coefficients.
         link: Override the family's default link.
+        dpars: Formulas for family parameters, for example
+            ``{"sigma": {"formula": "sigma ~ x", "link": "log"}}``.
+            Rust validates each predictor and chooses any omitted link.
         context: The owning context. The default creates a new one.
         name: The registry path that relative registry imports start from.
         **options: Rust converter options, such as ``center`` and ``contrasts``.
@@ -72,6 +76,8 @@ def from_formula(
         spec["priors"] = list(priors)
     if link is not None:
         spec["link"] = link
+    if dpars is not None:
+        spec["dpars"] = {name: dict(predictor) for name, predictor in dpars.items()}
     if context is None:
         context = Context()
     source = json.dumps(spec, allow_nan=False)

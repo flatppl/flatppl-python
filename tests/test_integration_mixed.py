@@ -30,6 +30,20 @@ MODEL = """
 """
 
 
+def test_coincident_atom_gradients_batch_at_zero_weights() -> None:
+    function = flatppl("""
+        p = external(unitinterval)
+        mixture = superpose(weighted(2 * p, Dirac(0.0)),
+                            weighted(3 * (1 - p), Dirac(0.0)))
+        inputs = (p)
+        outputs = logdensityof(mixture, 0.0)
+    """).compile()
+    points = jnp.array([0.0, 0.5, 1.0])
+    values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(points)
+    np.testing.assert_allclose(values, jnp.log(3 - points), rtol=1e-6)
+    np.testing.assert_allclose(gradients, -1 / (3 - points), rtol=1e-6)
+
+
 def oracle(p: Scalar, atom: Scalar, scale: Scalar, point: Scalar) -> jax.Array:
     return jnp.logaddexp(
         jnp.log(p) + normal_logpdf(point, atom),

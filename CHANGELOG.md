@@ -58,6 +58,8 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: coincident fixed `Dirac` components retain finite
+  weight gradients at zero weights, including batched JAX evaluation.
 - Bundled Rust compiler update: formula imports gain lognormal, geometric,
   Weibull, beta, von Mises, cumulative-logit and zero-inflated count families,
   response weights, and known observation scales through `se()`.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
@@ -22,10 +22,12 @@ if TYPE_CHECKING:
     from ._graph import Graph
     from ._jax import Batch, CompiledFunction
     from ._schema import BindingInfo, Export, MathRow
+    from .formula import FormulaView
     from .pyhf import PyhfView
 
 
 _NO_PYHF = "the module has no pyhf settings record; convert it with from_pyhf"
+_NO_FORMULA = "the module has no formula recipe; create it with from_formula"
 
 
 def _span(span: Sequence[int] | None) -> tuple[int, int] | None:
@@ -374,7 +376,8 @@ class Context:
 class Module:
     """An immutable FlatPPL definition with a fixed dependency closure.
 
-    Get modules from :func:`flatppl`, :func:`from_pyhf` or :meth:`Context.load`.
+    Get modules from :func:`flatppl`, :func:`from_pyhf`, :func:`from_formula`
+    or :meth:`Context.load`.
     A module that declares ``inputs`` and ``outputs`` is a query, and
     :meth:`compile` turns it into a JAX function.
 
@@ -389,6 +392,7 @@ class Module:
         self._context = context
         # A gradient query keeps the flag through `set` and `slice`.
         self._gradient = gradient
+        self._formula: FormulaView | None = None
         self._exports: dict[_ExportKey, Export] = {}
         items: list[BindingInfo] = json.loads(native.bindings())
         label = native.source_name
@@ -481,6 +485,26 @@ class Module:
             raise AttributeError(_NO_PYHF)
         return view
 
+    @property
+    def formula(self) -> FormulaView:
+        """The training recipe and metadata of a formula import.
+
+        See :class:`flatppl.formula.FormulaView` for preparing new data without
+        changing the training module.
+
+        Raises:
+            AttributeError: The module was not created from a formula.
+        """
+        if self._formula is None:
+            raise AttributeError(_NO_FORMULA)
+        return self._formula
+
+    def _derived_module(self, native: _native.Module) -> Module:
+        module = Module(native, self._context, gradient=self._gradient)
+        if self._formula is not None:
+            module._formula = replace(self._formula, module=module)
+        return module
+
     def constant(self, name: str) -> object:
         """Read a binding's right-hand side back as a Python value.
 
@@ -518,6 +542,8 @@ class Module:
         # fall back to a binding of the same name.
         if name == "pyhf":
             raise AttributeError(_NO_PYHF)
+        if name == "formula":
+            raise AttributeError(_NO_FORMULA)
         try:
             return self._bindings[name]
         except KeyError:
@@ -671,7 +697,7 @@ class Module:
         """
         names = [outputs] if isinstance(outputs, str) else list(outputs)
         native = native_call(self._context._native.slice, self._native, names)  # pyright: ignore[reportPrivateUsage]
-        return Module(native, self._context, gradient=self._gradient)
+        return self._derived_module(native)
 
     def math(
         self, format: Literal["tex", "mathml", "typst"] = "tex"
@@ -734,7 +760,7 @@ class Module:
             allow_nan=False,
         )
         native = native_call(self._context._native.set, self._native, values)  # pyright: ignore[reportPrivateUsage]
-        return Module(native, self._context, gradient=self._gradient)
+        return self._derived_module(native)
 
     def compile(
         self,

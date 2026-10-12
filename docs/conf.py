@@ -49,6 +49,7 @@ autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
     "CompiledFunction": "flatppl.CompiledFunction",
     "DTypeLike": "jax.typing.DTypeLike",
+    "FormulaView": "flatppl.formula.FormulaView",
 }
 napoleon_numpy_docstring = False
 intersphinx_mapping = {
@@ -80,6 +81,7 @@ _NO_SIGNATURE = {
     "flatppl.pyhf.Channel",
     "flatppl.pyhf.ParameterSlice",
     "flatppl.pyhf.PyhfView",
+    "flatppl.formula.FormulaView",
 }
 
 

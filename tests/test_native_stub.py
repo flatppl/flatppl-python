@@ -48,7 +48,7 @@ def test_stub_matches_native_names_and_signatures() -> None:
     assert _declared(stub) == _public(native)
     assert issubclass(_native.Error, Exception)
 
-    for name in ("Context", "Module"):
+    for name in ("Context", "Module", "FormulaModel"):
         declared, runtime = stub[name], native[name]
         assert _public(vars(declared)) == _public(vars(runtime)), name
         constructible = runtime.__text_signature__ is not None

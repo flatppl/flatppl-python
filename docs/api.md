@@ -13,6 +13,8 @@ whose names start with an underscore, is private.
 .. autofunction:: flatppl.flatppl
 
 .. autofunction:: flatppl.from_pyhf
+
+.. autofunction:: flatppl.from_formula
 ```
 
 ## Context
@@ -81,6 +83,21 @@ whose names start with an underscore, is private.
 ```
 
 `flatppl.from_pyhf` is the same function, re-exported at the top level.
+
+## Formulas
+
+```{eval-rst}
+.. automodule:: flatppl.formula
+   :no-members:
+
+.. autofunction:: flatppl.formula.from_formula
+
+.. autoclass:: flatppl.formula.FormulaView
+   :members:
+   :exclude-members: module, info, recipe, rows
+```
+
+`flatppl.from_formula` is the same function, re-exported at the top level.
 
 ## Compiled functions
 

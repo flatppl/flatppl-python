@@ -36,6 +36,7 @@ quickstart
 :caption: Guides
 
 modules
+formula
 pyhf
 values
 jax

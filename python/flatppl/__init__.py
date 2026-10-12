@@ -19,6 +19,7 @@ from ._api import (
 )
 from ._constants import Fixed, Reference
 from ._graph import Graph
+from .formula import from_formula
 from .pyhf import from_pyhf
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ __all__ = [
     "Parameters",
     "Reference",
     "flatppl",
+    "from_formula",
     "from_pyhf",
 ]
 

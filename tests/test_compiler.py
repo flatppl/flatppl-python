@@ -9,6 +9,70 @@ import numpy as np
 from flatppl import flatppl
 
 
+def test_dirac_tensor_scores_compare_whole_events() -> None:
+    for domain, atom in (
+        ("cartpow(reals, 2)", jnp.array([1.0, 2.0])),
+        ("cartpow(reals, [2, 2])", jnp.array([[1.0, 2.0], [3.0, 4.0]])),
+        ("cartpow(cartpow(reals, 2), 2)", jnp.array([[1.0, 2.0], [3.0, 4.0]])),
+    ):
+        function = flatppl(f"""
+            atom = external({domain})
+            point = external({domain})
+            inputs = (atom, point)
+            outputs = logdensityof(Dirac(atom), point)
+        """).compile()
+        changed = atom.at[(0,) * atom.ndim].add(0.5)
+        evaluate = jax.jit(function)
+        np.testing.assert_array_equal(evaluate(atom, atom), 0.0)
+        np.testing.assert_array_equal(evaluate(atom, changed), -np.inf)
+        # The batch extent equals an event extent, so confusing them changes the score.
+        mapped = jax.jit(jax.vmap(function, in_axes=(None, 0)))
+        np.testing.assert_array_equal(
+            mapped(atom, jnp.stack([atom, changed])), [0.0, -np.inf]
+        )
+
+
+def test_dirac_record_scores_use_runtime_fields_and_preserve_vmap() -> None:
+    function = flatppl("""
+        atom = record(a = 9.0, b = [8.0, 7.0])
+        point = external(cartprod(a = reals, b = cartpow(reals, 2)))
+        inputs = (atom, point)
+        outputs = logdensityof(Dirac(atom), point)
+    """).compile()
+    atom = {"a": jnp.array(1.0), "b": jnp.array([2.0, 3.0])}
+    evaluate = jax.jit(function)
+    np.testing.assert_array_equal(evaluate(atom, atom), 0.0)
+    np.testing.assert_array_equal(
+        evaluate(atom, {"a": jnp.array(4.0), "b": atom["b"]}), -np.inf
+    )
+    np.testing.assert_array_equal(
+        evaluate(atom, {"a": atom["a"], "b": jnp.array([2.0, 4.0])}), -np.inf
+    )
+    points = {"a": jnp.array([1.0, 1.0]), "b": jnp.array([[2.0, 3.0], [2.0, 4.0]])}
+    mapped = jax.jit(jax.vmap(function, in_axes=(None, 0)))
+    np.testing.assert_array_equal(mapped(atom, points), [0.0, -np.inf])
+
+
+def test_dirac_iid_vector_events_and_smooth_gradient() -> None:
+    function = flatppl("""
+        mu = elementof(reals)
+        atom = external(cartpow(reals, 2))
+        point = external(cartpow(cartpow(reals, 2), 2))
+        inputs = (mu, atom, point)
+        outputs = logdensityof(Normal(0, 1), mu) + logdensityof(iid(Dirac(atom), 2), point)
+    """).compile()
+    atom = jnp.array([1.0, 2.0])
+    point = jnp.stack([atom, atom])
+    value, gradient = jax.jit(jax.value_and_grad(function))(0.5, atom, point)
+    np.testing.assert_allclose(
+        value, -math.log(2 * math.pi) / 2 - 0.5**2 / 2, rtol=1e-6
+    )
+    np.testing.assert_allclose(gradient, -0.5, rtol=1e-6)
+    np.testing.assert_array_equal(
+        jax.jit(function)(0.5, atom, point.at[1, 0].add(0.5)), -np.inf
+    )
+
+
 def test_dotted_affine_eight_schools_scores_and_gradients() -> None:
     function = flatppl("""
         J = 8

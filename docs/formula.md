@@ -50,6 +50,25 @@ and null masks reach Rust intact. Rows missing model variables are omitted;
 nulls in unused columns do not remove rows. `model.formula.rows` records
 retained zero-based row positions, independently of dataframe index labels.
 
+CSV, JSON and Arrow IPC files can be passed as strings or `pathlib.Path` objects:
+
+```python
+from pathlib import Path
+
+model = from_formula("y ~ x + (1 | site)", Path("training.csv"))
+prediction = model.formula.prepare(Path("prediction.arrow"))
+```
+
+Rust reads these files and applies the same training recipe used for dataframe
+inputs. File-based modules refer to prepared numeric JSON through `load_data`.
+The prepared files live in FlatPPL's shared cache, selected by
+`FLATPPL_CACHEDIR` or the platform cache directory, and remain after the Python
+objects are released. Their absolute paths make `model.source` reloadable from
+another working directory. Each prepared dataset has its own content address,
+so preparing new rows leaves earlier modules unchanged. In-memory tables keep
+external declarations in their generated source, with values bound to the
+returned module.
+
 Inspect `model.source` for the generated FlatPPL. `Pi_prior`, `K_model`, `L`
 and `Pi_post` are its prior, response kernel, likelihood and posterior.
 `model.formula.info` maps coefficient names to bindings and indices;

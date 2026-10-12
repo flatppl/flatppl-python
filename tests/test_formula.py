@@ -1,6 +1,11 @@
 """Formula imports keep the Rust recipe through host-table preparation."""
 
+import gc
+import json
 import math
+import re
+import weakref
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -149,3 +154,66 @@ def test_ordered_factors_and_observed_preparation_keep_training_defaults() -> No
     assert observed.formula.recipe == model.formula.recipe
     np.testing.assert_array_equal(observed.constant("y_data"), [100.0])
     assert observed.formula.info["has_improper_prior"] is True
+
+
+def test_formula_paths_retain_reloadable_data_and_immutable_predictions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FLATPPL_CACHEDIR", "cache")
+    training = tmp_path / "training.csv"
+    training.write_text("y,x,f\n2,1,low\n4,3,high\n8,,low\n5,5,low\n,9,high\n")
+    model = from_formula("y ~ x + f", training, priors=PRIORS)
+    source = model.source
+    match = re.search(r'load_data\(\s*("[^"\n]*")', source)
+    assert match is not None
+    sidecar = Path(json.loads(match[1]))
+    assert sidecar.is_absolute() and sidecar.is_relative_to(
+        (tmp_path / "cache").resolve()
+    )
+    expected_training = np.array([[-2, 1 / 3], [0, -2 / 3], [2, 1 / 3]])
+    before = model.query("X").compile(autodiff=False)
+    np.testing.assert_allclose(before(), expected_training, atol=1e-7)
+    snapshot = np.asarray(before()).copy()
+    fresh = from_formula("y ~ x + f", str(training), priors=PRIORS)
+    assert fresh.source == source
+
+    prediction_data = pa.table({"x": [7.0, 11.0], "f": ["low", "high"]})
+    prediction_path = tmp_path / "prediction.arrow"
+    with pa.OSFile(str(prediction_path), "wb") as sink:
+        with pa.ipc.new_file(sink, prediction_data.schema) as writer:
+            writer.write_table(prediction_data)
+    prediction = model.formula.prepare(prediction_path)
+    expected_prediction = np.array([[4, 1 / 3], [8, -2 / 3]])
+    np.testing.assert_allclose(
+        prediction.query("X").compile(autodiff=False)(), expected_prediction, atol=1e-7
+    )
+    assert prediction.formula.recipe == model.formula.recipe
+    assert prediction.context is model.context
+    in_memory = model.formula.prepare(prediction_data)
+    assert "load_data(" not in in_memory.source
+    np.testing.assert_allclose(
+        in_memory.query("X").compile(autodiff=False)(), expected_prediction, atol=1e-7
+    )
+
+    observed_path = tmp_path / "observed.json"
+    observed_path.write_text('{"x":[7.0],"f":["low"],"y":[10.0]}')
+    observed = model.formula.prepare(observed_path, mode="training")
+    np.testing.assert_array_equal(
+        observed.query("y_data").compile(autodiff=False)(), [10]
+    )
+    np.testing.assert_array_equal(before(), snapshot)
+    # Compiled programs retain their source modules for later batching. The
+    # uncompiled owner verifies that the cached file survives its Context.
+    context = weakref.ref(fresh.context)
+    training.unlink()
+    del model, prediction, observed, in_memory, before, fresh
+    gc.collect()
+    assert context() is None
+    monkeypatch.chdir(tmp_path.parent)
+    np.testing.assert_allclose(
+        flatppl(source).query("X").compile(autodiff=False)(),
+        expected_training,
+        atol=1e-7,
+    )
+    assert sidecar.is_file()

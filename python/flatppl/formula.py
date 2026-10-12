@@ -8,9 +8,10 @@ contrasts, row selection and prior construction all run in Rust. See
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from . import _native  # pyright: ignore[reportMissingModuleSource]
 from ._api import Context, Module, native_call
@@ -40,9 +41,10 @@ def from_formula(
 
     Args:
         formula: An R-style formula, such as ``"y ~ x + group"``.
-        data: A pandas or Polars dataframe, Arrow table or record batch, another
-            dataframe interchange producer, or a mapping of column names to
-            arrays. Categories, numeric precision and nulls reach Rust intact.
+        data: A CSV, JSON or Arrow IPC path, or a pandas or Polars dataframe,
+            Arrow table or record batch, another dataframe interchange producer,
+            or a mapping of column names to arrays. Categories, numeric
+            precision and nulls reach Rust intact.
         family: The observation family. Rust selects its default link.
         priors: Prior entries, for example
             ``[{"class": "b", "prior": "Normal(0, 2)"}]``. Omitted entries use
@@ -72,12 +74,21 @@ def from_formula(
         spec["link"] = link
     if context is None:
         context = Context()
-    model = native_call(
-        context._native.import_formula,  # pyright: ignore[reportPrivateUsage]
-        json.dumps(spec, allow_nan=False),
-        ipc(data),
-        name,
-    )
+    source = json.dumps(spec, allow_nan=False)
+    if isinstance(data, (str, os.PathLike)):
+        model = native_call(
+            context._native.import_formula_path,  # pyright: ignore[reportPrivateUsage]
+            source,
+            os.fsdecode(cast("str | os.PathLike[str] | os.PathLike[bytes]", data)),
+            name,
+        )
+    else:
+        model = native_call(
+            context._native.import_formula,  # pyright: ignore[reportPrivateUsage]
+            source,
+            ipc(data),
+            name,
+        )
     info = freeze(json.loads(model.info()))
     module = Module(model.module, context)
     module._formula = FormulaView(  # pyright: ignore[reportPrivateUsage]
@@ -124,7 +135,7 @@ class FormulaView:
         Unseen factor/group levels are diagnosed instead of recoded.
 
         Args:
-            data: A table accepted by :func:`from_formula`.
+            data: A table or file path accepted by :func:`from_formula`.
             mode: ``"prediction"`` leaves observations external. ``"training"``
                 also binds the supplied response for scoring, using the same
                 recipe and prior defaults. Call :func:`from_formula` for a new
@@ -136,12 +147,20 @@ class FormulaView:
         Raises:
             CompilationError: Data are incompatible with the training recipe.
         """
-        native, rows = native_call(
-            self.module.context._native.prepare_formula,  # pyright: ignore[reportPrivateUsage]
-            self._native,
-            ipc(data),
-            mode,
-        )
+        if isinstance(data, (str, os.PathLike)):
+            native, rows = native_call(
+                self.module.context._native.prepare_formula_path,  # pyright: ignore[reportPrivateUsage]
+                self._native,
+                os.fsdecode(cast("str | os.PathLike[str] | os.PathLike[bytes]", data)),
+                mode,
+            )
+        else:
+            native, rows = native_call(
+                self.module.context._native.prepare_formula,  # pyright: ignore[reportPrivateUsage]
+                self._native,
+                ipc(data),
+                mode,
+            )
         module = Module(native, self.module.context)
         module._formula = FormulaView(  # pyright: ignore[reportPrivateUsage]
             module, self.info, self.recipe, tuple(json.loads(rows)), self._native

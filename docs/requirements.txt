@@ -4,3 +4,5 @@ furo==2025.12.19
 sphinx-gallery>=0.22
 # The example gallery runs the BlackJAX examples, at the version the tests use.
 blackjax==1.7.1
+# The formula gallery starts from a Polars dataframe, as the package tests do.
+polars>=2

@@ -48,6 +48,8 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: `Dirac` densities compare whole tensor and record
+  atoms, preserving event boundaries under broadcasting and `jax.vmap`.
 - Bundled Rust compiler update: densities for dotted scalar affine vector
   pushforwards and scalar-only `locscale` broadcasts, with live parameter
   derivatives.

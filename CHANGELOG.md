@@ -54,6 +54,9 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: formula imports gain lognormal, geometric,
+  Weibull, beta, von Mises, cumulative-logit and zero-inflated count families,
+  response weights, and known observation scales through `se()`.
 - Bundled Rust compiler update: `Dirac` densities compare whole tensor and record
   atoms, preserving event boundaries under broadcasting and `jax.vmap`.
 - Bundled Rust compiler update: densities for dotted scalar affine vector

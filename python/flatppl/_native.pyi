@@ -20,10 +20,43 @@ class Context:
         observations: str = "bound",
         auxiliary: str = "bound",
     ) -> Module: ...
+    def import_formula(
+        self,
+        spec: str,
+        data_ipc: bytes | None = None,
+        name: str | None = None,
+        source_path: str | None = None,
+    ) -> FormulaModel: ...
+    def prepare_formula(
+        self,
+        model: FormulaModel,
+        data_ipc: bytes,
+        mode: str = "prediction",
+    ) -> tuple[Module, str]: ...
+    def import_formula_path(
+        self,
+        spec: str,
+        path: str,
+        name: str | None = None,
+        source_path: str | None = None,
+    ) -> FormulaModel: ...
+    def prepare_formula_path(
+        self,
+        model: FormulaModel,
+        path: str,
+        mode: str = "prediction",
+    ) -> tuple[Module, str]: ...
     def load(self, path: str) -> Module: ...
     def register(self, name: str, module: Module) -> None: ...
     def set(self, module: Module, constants: str) -> Module: ...
     def slice(self, module: Module, outputs: Sequence[str]) -> Module: ...
+
+@final
+class FormulaModel:
+    @property
+    def module(self) -> Module: ...
+    def info(self) -> str: ...
+    def recipe(self) -> str: ...
 
 @final
 class Module:

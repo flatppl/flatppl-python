@@ -7,6 +7,12 @@ tagged release.
 
 ### Added
 
+- `flatppl.formula.from_formula` imports regression formulas and dataframe
+  tables through Rust. `module.formula` exposes metadata and a retained recipe
+  for preparing immutable prediction modules with the training contrasts,
+  centring and prior defaults. CSV, JSON and Arrow IPC paths use retained
+  prepared data files, so their generated `load_data` source can be reloaded
+  after the original file or Context is gone.
 - Type annotations across the package. Pyright checks them in strict mode, and
   `py.typed` now covers the compiled `_native` module through a stub that a
   test holds to the extension's signatures.

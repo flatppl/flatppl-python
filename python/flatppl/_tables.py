@@ -1,11 +1,12 @@
 """Read host table columns through dataframe interchange protocols."""
 
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 
 
-def columns(value: object) -> dict[str, np.ndarray[Any, Any]] | None:
+def _table(value: object) -> Any | None:
     arrow = callable(getattr(value, "__arrow_c_stream__", None)) or callable(
         getattr(value, "__arrow_c_array__", None)
     )
@@ -31,9 +32,35 @@ def columns(value: object) -> dict[str, np.ndarray[Any, Any]] | None:
     indices = {
         name for name in metadata.get("index_columns", ()) if isinstance(name, str)
     }
-    names = [name for name in table.column_names if name not in indices]
+    return table.select([name for name in table.column_names if name not in indices])
+
+
+def ipc(value: object) -> bytes:
+    """Transport a table to Rust without interpreting categories or nulls."""
+    import pyarrow as pa
+
+    table = _table(value)
+    if table is None:
+        if not isinstance(value, Mapping):
+            raise TypeError(
+                "data must be a dataframe, an Arrow table, or column mapping"
+            )
+        table = pa.table(value)
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    return sink.getvalue().to_pybytes()
+
+
+def columns(value: object) -> dict[str, np.ndarray[Any, Any]] | None:
+    table = _table(value)
+    if table is None:
+        return None
+
+    import pyarrow as pa
+
     result: dict[str, np.ndarray[Any, Any]] = {}
-    for name in names:
+    for name in table.column_names:
         column = table[name]
         if column.null_count:
             raise ValueError(f"table column {name!r} contains null values")

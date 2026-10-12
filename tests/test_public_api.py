@@ -133,7 +133,9 @@ def test_compiled_function_is_exported_without_importing_jax() -> None:
     assert imported.stdout.strip() == "False"
 
 
-@pytest.mark.parametrize("module", [package, package.pyhf], ids=lambda m: m.__name__)
+@pytest.mark.parametrize(
+    "module", [package, package.pyhf, package.formula], ids=lambda m: m.__name__
+)
 def test_public_symbols_have_docstrings_and_reference_entries(module: Any) -> None:
     # Autodoc drops an undocumented member without a warning.
     reference = (Path(__file__).parents[1] / "docs" / "api.md").read_text()

@@ -8,6 +8,7 @@ import weakref
 from pathlib import Path
 from typing import Any
 
+import jax
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -130,6 +131,85 @@ def test_prediction_reuses_training_recipe_without_response_or_mutation() -> Non
     assert model.formula.rows == (0, 1, 3)
     with pytest.raises(CompilationError):
         model.formula.prepare({"x": [1.0], "f": ["unseen"]})
+
+
+def test_distributional_formula_scores_gradients_and_saved_prediction_means() -> None:
+    data = {
+        "x": [1.0, 2.0, 3.0, 100.0],
+        "g": [-0.5, 0.0, 0.5, None],
+        "y": [1.5, 2.1, 2.8, 9.0],
+    }
+    model = from_formula(
+        "y ~ x",
+        data,
+        dpars={"sigma": {"formula": "sigma ~ g", "link": "log"}},
+        priors=[
+            {"class": kind, "prior": "normal(0, 1)", **selector}
+            for selector in ({}, {"dpar": "sigma"})
+            for kind in ("Intercept", "b")
+        ],
+    )
+    prediction = model.formula.prepare({"x": [4.0, 5.0], "g": [1.0, 2.0]})
+    assert model.formula.rows == (0, 1, 2)
+    assert prediction.context is model.context
+    assert prediction.formula.recipe == model.formula.recipe
+    assert model.constant("N") == 3
+    assert prediction.constant("N") == 2
+    point = {
+        "temp_Intercept": 2.0,
+        "b": np.array([0.6]),
+        "temp_Intercept_sigma": -0.2,
+        "b_sigma": np.array([0.4]),
+    }
+    for name, module, x, g, y, posterior in [
+        ("training", model, [1.0, 2.0, 3.0], [-0.5, 0.0, 0.5], [1.5, 2.1, 2.8], True),
+        ("prediction", prediction, [4.0, 5.0], [1.0, 2.0], [3.2, 3.5], False),
+    ]:
+        model.context.register(f"{name}.flatppl", module)
+        target = (
+            "logdensityof(m.Pi_post, p)"
+            if posterior
+            else f"logdensityof(m.K_model(p), record(y = {y}))"
+        )
+        query = flatppl(
+            f"""
+            m = load_module("{name}.flatppl")
+            p = elementof(cartprod(temp_Intercept=reals, b=cartpow(reals,1),
+                                  temp_Intercept_sigma=reals, b_sigma=cartpow(reals,1)))
+            inputs = p
+            outputs = {target}
+            """,
+            context=model.context,
+        ).compile()
+        value, gradient = jax.jit(jax.value_and_grad(query))(point)
+        # Both predictors use the retained training means: x=2 and g=0.
+        centered = np.asarray(x) - 2
+        scale_predictor = np.asarray(g)
+        residual = np.asarray(y) - (2 + 0.6 * centered)
+        sigma = np.exp(-0.2 + 0.4 * scale_predictor)
+        mean_score = residual / sigma**2
+        scale_score = (residual / sigma) ** 2 - 1
+        expected = np.sum(
+            -0.5 * math.log(2 * math.pi) - np.log(sigma) - 0.5 * (residual / sigma) ** 2
+        )
+        expected_gradient = {
+            "temp_Intercept": np.sum(mean_score),
+            "b": np.array([centered @ mean_score]),
+            "temp_Intercept_sigma": np.sum(scale_score),
+            "b_sigma": np.array([scale_predictor @ scale_score]),
+        }
+        if posterior:
+            expected -= 2 * math.log(2 * math.pi) + 0.5 * sum(
+                np.sum(v**2) for v in point.values()
+            )
+            expected_gradient = {
+                key: value - point[key] for key, value in expected_gradient.items()
+            }
+        np.testing.assert_allclose(value, expected, rtol=3e-6, atol=3e-6)
+        for key, expected_value in expected_gradient.items():
+            np.testing.assert_allclose(
+                gradient[key], expected_value, rtol=3e-6, atol=3e-6
+            )
 
 
 def test_ordered_factors_and_observed_preparation_keep_training_defaults() -> None:

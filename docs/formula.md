@@ -76,6 +76,31 @@ and `Pi_post` are its prior, response kernel, likelihood and posterior.
 tree. Parameter names depend on the formula and prior selectors, so inspect
 this metadata when constructing a query for a different model.
 
+Each `info["parameters"]` entry has a `role`: `sampled`, `fixed` or `derived`.
+Its `index` or `indices`, when present, are one-based FlatPPL coordinates.
+`prior_factors` maps actual draw bindings to their inferred mass class and
+`contains_flat` flag. `prior_sampling` is `unavailable` for a Flat source;
+otherwise it is `not_checked`, which does not promise a sampler lowering.
+
+```{testcode} formula
+density_only = from_formula(
+    "y ~ 0 + x", data,
+    priors=[{"class": "sigma", "prior": "constant(1)"}],
+)
+info = density_only.formula.info
+roles = {parameter["name"]: parameter["role"] for parameter in info["parameters"]}
+assert roles["b_x"] == "sampled" and roles["sigma"] == "fixed"
+assert info["prior_factors"]["b"] == {"mass": "locallyfinite", "contains_flat": True}
+assert info["prior_sampling"] == "unavailable"
+```
+
+`factor_levels`, `group_levels` and `response_levels` retain original names
+and level order; `info["dpars"]` includes each predictor's coding metadata.
+The FlatPPL exports `formula_model` and `formula_parameter_names` encode
+sequences as records with a length and one-based entries, and integer level
+labels as tagged decimal strings. Python's `formula.info` exposes sequences
+as tuples and preserves numeric labels.
+
 ## Evaluate the posterior
 
 The generated parameters are draws. Write an explicit query over their joint
@@ -146,6 +171,48 @@ retaining the original recipe and prior defaults. For a new fit or a
 cross-validation fold, call `from_formula` again to learn a new recipe.
 Unseen factor and group levels currently raise a conversion error.
 
+## Model a family parameter
+
+Use `dpars` to give a family parameter its own formula. For example, both the
+mean and log-scale of a Gaussian response can depend on `x`:
+
+```{testcode} formula
+varying_scale = from_formula(
+    "y ~ x", data,
+    dpars={"sigma": {"formula": "sigma ~ x", "link": "log"}},
+    priors=[
+        {"class": "Intercept", "prior": "normal(0, 3)"},
+        {"class": "b", "prior": "normal(0, 2)"},
+        {"class": "Intercept", "dpar": "sigma", "prior": "normal(0, 1)"},
+        {"class": "b", "dpar": "sigma", "prior": "normal(0, 0.5)"},
+    ],
+)
+assert varying_scale.formula.info["dpars"]["sigma"]["link"] == "log"
+scale_prediction = varying_scale.formula.prepare({"x": [4.0, 5.0]})
+assert scale_prediction.formula.recipe == varying_scale.formula.recipe
+assert scale_prediction.constant("N") == 2
+```
+
+This is the typed equivalent of brms's `bf(y ~ x, sigma ~ x)`; a `bf(...)`
+string is not accepted. Each predictor retains its own training means,
+contrasts, offsets, group effects and smooths. Training omits incomplete rows
+jointly across all predictors. Prediction needs their columns but no response,
+and reuses every saved recipe.
+
+The same interface supports `sigma`, `nu`, `shape`, `phi`, `kappa`, `zi` and `hu`
+when the family provides them. Positive parameters default to `log`, Student
+`nu` to `logm1` (`1 + exp(eta)`), and `zi`/`hu` to `logit`. `identity` is also
+available; positive parameters other than `nu` also accept `softplus` and
+`squareplus`.
+
+Use `dpar` in a prior selector for that predictor's coefficients, intercept
+or group effects. For scalar families, omitting it selects the mean predictor.
+A direct `sigma` prior is unavailable once `sigma` has a predictor: put priors
+on its linear predictor instead. In the example, the sampled scale coordinates
+are `temp_Intercept_sigma` and `b_sigma`; `b_Intercept_sigma` reports the
+intercept on the original predictor scale. Inspect `formula.info["parameters"]`
+for the complete binding map.
+
 ## Supported formulas and families
 
 The current core supports numeric, logical and factor predictors; intercept
@@ -162,19 +229,27 @@ Explicit dataframe categories retain their order; plain strings use sorted
 levels. Training drops unused levels. A no-intercept formula such as `y ~ 0 + f`
 uses full cell coding.
 
+Use `y ~ 0 + Intercept + x` for an ordinary, uncentred intercept coefficient.
+Select its prior with `class="b", coef="Intercept"`; it defaults to `Flat()`.
+Rust supplies the column of ones for training and prediction. Any supplied
+`Intercept` column must contain only ones. Factor predictors retain contrast
+coding in this form.
+
 Pass `family` and, optionally, `link` to `from_formula`:
 
 | Family | Default link | Other links |
 | --- | --- | --- |
 | `gaussian`, `student` | `identity` | `log`, `inverse`, `softplus`, `squareplus`, `logit`, `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit` |
-| `lognormal` | `identity` | `inverse` |
+| `lognormal`, `hurdle_lognormal` | `identity` | `inverse` |
 | `bernoulli`, `binomial`, `beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
-| `zero_inflated_binomial` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
+| `zero_inflated_binomial`, `zero_inflated_beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
 | `poisson`, `negbinomial`, `geometric` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
 | `zero_inflated_poisson`, `zero_inflated_negbinomial` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
-| `Gamma` (also `gamma`), `exponential`, `weibull` | `log` | `identity`, `inverse`, `softplus`, `squareplus` |
+| `hurdle_poisson`, `hurdle_negbinomial` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
+| `Gamma` (also `gamma`), `hurdle_gamma`, `exponential`, `weibull` | `log` | `identity`, `inverse`, `softplus`, `squareplus` |
 | `von_mises` | `tan_half` | `identity` |
 | `cumulative` | `logit` | — |
+| `categorical` | `logit` | — |
 
 Student models have `sigma` and `nu`, with `nu >= 1`. Gamma and negative-binomial
 models have `shape`; their FlatPPL rate is `shape / mu`. Exponential models use
@@ -189,10 +264,24 @@ needed for prediction. Bernoulli responses can be numeric, logical or factors, w
 training event coding retained in the recipe. Counts must be nonnegative
 integers; Gamma, exponential, lognormal and Weibull responses must be strictly
 positive. Zero-inflated families have an additional `zi` probability for the
-extra zero component; their base count law keeps the listed link.
+extra zero component; their base law keeps the listed link.
 
 Beta models use mean `mu` and precision `phi`, with responses strictly between
-zero and one. von Mises responses are radians in `[-pi, pi]`, with concentration
+zero and one. `zero_inflated_beta` also accepts exact zeros, so responses lie in
+`[0, 1)`. The continuous beta component contributes no mass at zero.
+
+Hurdle families use `hu` for the total probability of zero. Their other
+component is the listed base law conditioned on a positive response. Thus
+`hurdle_poisson` and `hurdle_negbinomial` normalize over positive counts;
+`hurdle_gamma` and `hurdle_lognormal` retain their ordinary positive laws.
+The base mean, shape and scale parameterizations are unchanged. Direct `zi`
+and `hu` parameters default to `Beta(1, 1)`; their predictors default to logit.
+For hurdle lognormal response-based priors, zeros are replaced by 0.1 before
+taking logs, following brms. Rust can evaluate hurdle-count densities and
+gradients, but forward sampling their positive-count component is not yet
+implemented.
+
+von Mises responses are radians in `[-pi, pi]`, with concentration
 `kappa`; its default inverse link is `2 * atan(eta)`.
 
 Cumulative-logit responses use ordered factors or positive integer category
@@ -203,6 +292,68 @@ order. Its normalization adds `log(m!)` to the brms target for `m` thresholds;
 `Intercept[1]`, `Intercept[2]`, etc. to the centred thresholds, while derived
 `b_Intercept` reports them on the original predictor scale. Unequal threshold
 priors, removing the intercept and other ordinal links are not supported.
+
+Categorical responses accept factors, logical values or numeric labels. The
+first retained level is the reference category, with logit zero. Each other
+category receives its own predictor, named `mu` followed by the category name.
+Use `dpars` to override one of their formulas:
+
+```{testcode} formula
+categories = pl.DataFrame({
+    "color": ["red", "blue", "green", "red"],
+    "x": [1.0, 2.0, 3.0, 4.0], "z": [0.0, 1.0, 0.0, 2.0],
+}).with_columns(pl.col("color").cast(pl.Enum(["red", "blue", "green"])))
+categorical = from_formula(
+    "color ~ x", categories, family="categorical",
+    dpars={"mublue": {"formula": "mublue ~ 0 + z"}},
+    priors=[
+        {"class": "b", "dpar": "mublue", "prior": "normal(0, 1)"},
+        {"class": "b", "dpar": "mugreen", "prior": "normal(0, 1)"},
+    ],
+)
+assert tuple(categorical.formula.info["dpars"]) == ("mublue", "mugreen")
+category_prediction = categorical.formula.prepare({"x": [5.0], "z": [1.5]})
+assert category_prediction.formula.recipe == categorical.formula.recipe
+```
+
+Categorical `b`, `Intercept` and `sd` priors require `dpar`. Correlation priors
+use global or group selectors across categories. The recipe retains the
+training category order; prediction needs no response. Nonreference labels
+must be ASCII and produce unambiguous brms names. To choose the reference
+category, order the explicit factor levels before fitting; a separate `refcat`
+option is not supported. Omitting missing rows in a way that removes a whole
+response level is refused; filter and fit again with explicit levels.
+
+## Smooth predictors
+
+Additive `s(x)` or `s(x, k=6)` uses a one-dimensional mgcv/brms thin-plate
+basis, fitted in Rust and saved in the recipe:
+
+```{testcode} formula
+smooth = from_formula(
+    "y ~ s(x, k=4)",
+    {"x": [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+     "y": [1.0, 0.5, 0.2, 0.8, 1.5, 2.0]},
+    priors=[
+        {"class": "b", "prior": "normal(0, 1)"},
+        {"class": "sds", "prior": "normal(0, 1)"},
+    ],
+)
+smooth_prediction = smooth.formula.prepare({"x": [0.5, 4.0]})
+assert smooth_prediction.formula.recipe == smooth.formula.recipe
+assert smooth_prediction.constant("N") == 2
+```
+
+The unpenalized slope uses class `b` and coefficient `sx_1`; the smooth's scale
+uses class `sds`. Add `coef="s(x, k = 4)"` to select that scale specifically,
+and `dpar` when the smooth belongs to an auxiliary predictor. Penalized
+coefficients are standard Normals. Prediction reuses the fitted basis and
+centering, including outside the training range.
+
+The default rank is 10. Rank must be at least 3 and no greater than the number
+of distinct retained training values, which is currently limited to 2,000.
+Only a named numeric column is accepted inside `s`. `by` smooths, tensor
+products, other bases, custom knots and smooth interactions are not supported.
 
 ## Response weights and known observation scales
 
@@ -257,12 +408,12 @@ Prior text is a FlatPPL measure expression. Both native names such as
 `Flat()` names the density-only prior from the `regression` standard module.
 
 Use `class="b"` for population coefficients, `Intercept` for the centred
-intercept, `sd` for group scales, and `sigma`, `nu`, `shape`, `phi`, `kappa` or
-`zi` for an auxiliary parameter provided by the family. Add `coef` to select a
-named coefficient or `group` to select a grouping factor. A coefficient-specific `sd` prior also
+intercept, `sd` for group scales, `sds` for smooth scales, and `sigma`, `nu`,
+`shape`, `phi`, `kappa`, `zi` or `hu` for an auxiliary parameter provided by the family.
+Add `coef` to select a named coefficient or `group` to select a grouping factor.
+A coefficient-specific `sd` prior also
 requires `group`. More specific entries override their class defaults.
-The `dpar` field is reserved for distributional parameter selectors; the
-current single-predictor core leaves it unset.
+Add `dpar` to select a distributional or categorical predictor as described above.
 
 For correlated group effects, `class="cor"` (or `"L"`) selects the Cholesky
 factor's prior. `lkj(2)`, `lkj_corr(2)` and `lkj_corr_cholesky(2)` all use the
@@ -299,11 +450,10 @@ sampled as a prior source.
 
 ## Current limits
 
-Splines, monotonic terms, nonlinear and distributional formulas, other response
-families, and response additions other than `trials`, `weights` and `se` are
-not implemented.
-`center=False` with an intercept is not supported; use the default centred
-intercept or an explicit no-intercept formula. Arbitrary R function calls are
+Monotonic terms, nonlinear formulas, other response families, and response
+additions other than `trials`, `weights` and `se` are not implemented.
+`center=False` is not supported; use `0 + Intercept + ...` for an uncentred
+intercept, or keep the default centred intercept. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.
 
 Some intersections of an explicit open Flat support and an additional bound

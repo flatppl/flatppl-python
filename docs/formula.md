@@ -167,17 +167,86 @@ Pass `family` and, optionally, `link` to `from_formula`:
 | Family | Default link | Other links |
 | --- | --- | --- |
 | `gaussian`, `student` | `identity` | `log`, `inverse`, `softplus`, `squareplus`, `logit`, `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit` |
-| `bernoulli`, `binomial` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
-| `poisson`, `negbinomial` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
-| `Gamma` (also `gamma`), `exponential` | `log` | `identity`, `inverse`, `softplus`, `squareplus` |
+| `lognormal` | `identity` | `inverse` |
+| `bernoulli`, `binomial`, `beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
+| `zero_inflated_binomial` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
+| `poisson`, `negbinomial`, `geometric` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
+| `zero_inflated_poisson`, `zero_inflated_negbinomial` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
+| `Gamma` (also `gamma`), `exponential`, `weibull` | `log` | `identity`, `inverse`, `softplus`, `squareplus` |
+| `von_mises` | `tan_half` | `identity` |
+| `cumulative` | `logit` | — |
 
 Student models have `sigma` and `nu`, with `nu >= 1`. Gamma and negative-binomial
 models have `shape`; their FlatPPL rate is `shape / mu`. Exponential models use
-rate `1 / mu`. Binomial formulas require `y | trials(n) ~ ...`, where `n` is
-a nonnegative integer or a column of counts; that column is also needed for
-prediction. Bernoulli responses can be numeric, logical or factors, with the
+rate `1 / mu`. Geometric models count failures before the first success, with
+expected count `mu`. Weibull models use mean `mu` and `shape`, giving scale
+`mu / gamma(1 + 1 / shape)`. A lognormal predictor controls the log-location,
+with `sigma` as the log-scale.
+
+Binomial and zero-inflated binomial formulas require `y | trials(n) ~ ...`,
+where `n` is a nonnegative integer or a column of counts; that column is also
+needed for prediction. Bernoulli responses can be numeric, logical or factors, with the
 training event coding retained in the recipe. Counts must be nonnegative
-integers; Gamma and exponential responses must be strictly positive.
+integers; Gamma, exponential, lognormal and Weibull responses must be strictly
+positive. Zero-inflated families have an additional `zi` probability for the
+extra zero component; their base count law keeps the listed link.
+
+Beta models use mean `mu` and precision `phi`, with responses strictly between
+zero and one. von Mises responses are radians in `[-pi, pi]`, with concentration
+`kappa`; its default inverse link is `2 * atan(eta)`.
+
+Cumulative-logit responses use ordered factors or positive integer category
+codes. The recipe saves the training category order. Ordered `cuts` replace the
+ordinary intercept, and a shared `Intercept` prior is conditioned on their
+order. Its normalization adds `log(m!)` to the brms target for `m` thresholds;
+`model.formula.info["score_offset"]` records that difference. Metadata maps
+`Intercept[1]`, `Intercept[2]`, etc. to the centred thresholds, while derived
+`b_Intercept` reports them on the original predictor scale. Unequal threshold
+priors, removing the intercept and other ordinal links are not supported.
+
+## Response weights and known observation scales
+
+Use `y | weights(w) ~ ...` for a numeric weight column. Retained weights must be
+finite and nonnegative; zero weights are allowed and weights are not rescaled.
+Separate response additions with `+`, for example
+`y | trials(n) + weights(w) ~ x` for binomial data.
+
+`Pi_post` applies the weights to the row log likelihoods once. `K_model` and `L`
+retain the ordinary unweighted observation law, and `log_lik` returns unweighted
+pointwise log likelihoods with the same parameter arguments as `K_model`.
+Prediction needs neither responses nor weights. Weight expressions, constant
+weights and `scale=TRUE` are outside the supported subset.
+
+Gaussian and Student models accept `y | se(s) ~ ...`, where `s` is a numeric
+column, a constant or a supported column expression. This replaces residual
+`sigma`, so a `sigma` prior is unavailable. Use `se(s, sigma=TRUE)` to retain
+`sigma` and combine scales as `sqrt(s^2 + sigma^2)`. For Student models this is
+the distribution's scale, without a degrees-of-freedom correction. Known scales
+must be finite and nonnegative; zero is allowed only when residual `sigma` is
+retained. Prediction also needs any columns used in the `se()` expression.
+
+For example, this model combines known observation scales with likelihood
+weights while estimating residual `sigma`:
+
+```{testcode} formula
+weighted_data = data.with_columns(
+    pl.Series("w", [1.0, 2.0, 0.5]),
+    pl.Series("s", [0.2, 0.3, 0.4]),
+)
+weighted = from_formula(
+    "y | weights(w) + se(s, sigma=TRUE) ~ x",
+    weighted_data,
+    priors=[
+        {"class": "Intercept", "prior": "normal(0, 3)"},
+        {"class": "b", "prior": "normal(0, 2)"},
+        {"class": "sigma", "prior": "normal(0, 1)"},
+    ],
+)
+np.testing.assert_array_equal(weighted.constant("weights_data"), [1.0, 2.0, 0.5])
+new_rows = weighted.formula.prepare(pl.DataFrame({"x": [4.0], "s": [0.25]}))
+assert new_rows.formula.recipe == weighted.formula.recipe
+assert new_rows.constant("N") == 1
+```
 
 ## Select priors and bounds
 
@@ -188,9 +257,9 @@ Prior text is a FlatPPL measure expression. Both native names such as
 `Flat()` names the density-only prior from the `regression` standard module.
 
 Use `class="b"` for population coefficients, `Intercept` for the centred
-intercept, `sd` for group scales, and `sigma`, `nu` or `shape` for an auxiliary
-parameter provided by the family. Add `coef` to select a named coefficient or
-`group` to select a grouping factor. A coefficient-specific `sd` prior also
+intercept, `sd` for group scales, and `sigma`, `nu`, `shape`, `phi`, `kappa` or
+`zi` for an auxiliary parameter provided by the family. Add `coef` to select a
+named coefficient or `group` to select a grouping factor. A coefficient-specific `sd` prior also
 requires `group`. More specific entries override their class defaults.
 The `dpar` field is reserved for distributional parameter selectors; the
 current single-predictor core leaves it unset.
@@ -222,14 +291,17 @@ remain in the model.
 
 Defaults follow brms: improper Flat population coefficients, a centred
 Student-t intercept and half-Student-t scales. Student `nu` has a Gamma(2, 0.1)
-prior normalized above 1; Gamma `shape` has Gamma(0.01, 0.01), and negative-binomial
-`shape` has inverse-Gamma(0.4, 0.3). Use explicit proper priors when appropriate,
-as in the example. Flat cannot be sampled as a prior source.
+prior normalized above 1; Gamma and Weibull `shape` and beta `phi` have
+Gamma(0.01, 0.01), while negative-binomial `shape` has inverse-Gamma(0.4, 0.3).
+von Mises `kappa` has Gamma(2, 0.01), and zero-inflation `zi` has Beta(1, 1).
+Use explicit proper priors when appropriate, as in the example. Flat cannot be
+sampled as a prior source.
 
 ## Current limits
 
 Splines, monotonic terms, nonlinear and distributional formulas, other response
-families, and response additions other than `trials` are not implemented.
+families, and response additions other than `trials`, `weights` and `se` are
+not implemented.
 `center=False` with an intercept is not supported; use the default centred
 intercept or an explicit no-intercept formula. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.

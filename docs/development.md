@@ -76,8 +76,8 @@ sphinx-build -b doctest -W --keep-going -D plot_gallery=0 docs docs/_build/docte
 
 The `testcode` blocks run in page-local namespaces. Their `testoutput` blocks
 check the displayed results. The doctest builder also runs the examples in the
-API docstrings. The BlackJAX guide includes `examples/nuts.py` directly, and
-the package tests execute that file too.
+API docstrings. The tutorials come from `examples/*.py`, and the package tests
+also execute the Normal and regression sampling scripts.
 
 CI builds the HTML with the executed gallery from the Linux x86-64 Python 3.14
 wheel that the same run built. It executes the documentation examples against

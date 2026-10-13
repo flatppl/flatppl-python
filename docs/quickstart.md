@@ -63,4 +63,6 @@ and dtype. Python scalar arguments use the query's ABI dtype.
 
 - Read [modules and contexts](modules.md) to separate a reusable model from its query.
 - Read [Python values](values.md) to pass records, tables, and multiple inputs.
-- Read [BlackJAX sampling](blackjax.md) to turn a posterior density into samples.
+- Follow [BlackJAX sampling](examples/nuts.rst) for a complete posterior example.
+- Use [automatic coordinate transforms](transforms.md) for constrained parameters.
+- Fit a dataframe with the [mixed-model tutorial](examples/formula.rst).

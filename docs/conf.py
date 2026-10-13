@@ -11,6 +11,7 @@ from sphinx.application import Sphinx
 from sphinx.environment import BuildEnvironment
 from sphinx.ext import intersphinx
 from sphinx.util import logging
+from sphinx_gallery.sorting import ExplicitOrder
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -70,6 +71,16 @@ sphinx_gallery_conf = {
     "reset_modules_order": "both",
     "image_scrapers": (),
     "min_reported_time": 0,
+    "within_subsection_order": ExplicitOrder(
+        [
+            "nuts.py",
+            "formula.py",
+            "regression.py",
+            "query.py",
+            "inspection.py",
+            "corpus.py",
+        ]
+    ),
 }
 
 # The package creates these objects, so their constructors stay out of the reference.

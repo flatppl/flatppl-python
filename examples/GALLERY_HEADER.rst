@@ -1,7 +1,18 @@
-Examples
-========
+Worked tutorials
+================
 
-Each page runs its script against the installed package when the documentation
-builds. Each script states a runtime budget for its configuration on the build
-machine, and the build fails when a page exceeds it. Download a script from
-its page and run it with ``python``.
+Start with :doc:`/quickstart`, then follow a complete workflow below.
+Each page combines the explanation, runnable code and output. Download its
+Python script or Jupyter notebook from the bottom of the page.
+
+* **New to inference?** Start with the Normal model and its known posterior.
+* **Have a dataframe?** Fit a mixed model with automatic coordinate transforms.
+* **Have arrays?** Pass runtime data to the Gaussian regression.
+* **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
+  from the example corpus.
+
+For a pyhf workspace, use :doc:`/pyhf`. The :doc:`/transforms` reference explains
+how to pass constrained parameters to an unconstrained sampler.
+
+The documentation build executes these scripts against the installed package.
+Each script states its runtime budget; the build fails if it exceeds that limit.

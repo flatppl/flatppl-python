@@ -3,8 +3,8 @@
 
 This command-line script loads one target from a ``flatppl-examples``
 checkout, checks its density and gradient, samples it with BlackJAX NUTS on
-two chains, and writes diagnostics as JSON. The support transforms live in
-this script, outside the FlatPPL package. A successful run is not a
+two chains, and writes diagnostics as JSON. Rust compiles canonical support transforms
+and their density correction from the query domains. A successful run is not a
 convergence proof. Run each target in a separate process. See :doc:`/corpus`.
 
 The gallery runs ``poisson-model`` with 64 warmup steps and 64 draws per
@@ -21,7 +21,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Each target maps to (initial point, bounds) in its own nested layout.
+# Each target supplies an interior starting point and its authored support bounds.
+# These bounds declare the query domains; Rust implements the coordinate charts.
 CASES: dict[str, tuple[Any, Any]] = {
     "ar1-noise-estimation": ({"sigma_step": 0.83}, {"sigma_step": [0, None]}),
     **{
@@ -126,93 +127,63 @@ def run(
         model = context.load(path)
         context.register("model.flatppl", model)
 
-        def domain(value: Any) -> str:
+        def domain(value: Any, limits: Any = None) -> str:
             if isinstance(value, dict):
                 return (
                     "cartprod("
-                    + ", ".join(f"{k} = {domain(v)}" for k, v in value.items())
+                    + ", ".join(
+                        f"{k} = {domain(v, (limits or {}).get(k))}"
+                        for k, v in value.items()
+                    )
                     + ")"
                 )
+            lower, upper = limits or (None, None)
+            if isinstance(lower, list):
+                return (
+                    "cartprod("
+                    + ", ".join(
+                        domain(v, (lo, hi))
+                        for v, lo, hi in zip(value, lower, upper, strict=True)
+                    )
+                    + ")"
+                )
+            support = (
+                "reals"
+                if lower is None and upper is None
+                else (
+                    f"interval({lower if lower is not None else '-inf'}, "
+                    f"{upper if upper is not None else 'inf'})"
+                )
+            )
             shape = np.shape(value)
-            return f"cartpow(reals, {list(shape)})" if shape else "reals"
+            return f"cartpow({support}, {list(shape)})" if shape else support
 
         target = TARGETS.get(name, "Pi_post")
         query = flatppl(
             f"""m = load_module("model.flatppl")
-            point = elementof({domain(initial)})
+            point = elementof({domain(initial, bounds)})
             inputs = point
             outputs = logdensityof(m.{target}, point)""",
             context=context,
         )
         result["stage"] = "compile"
-        density = query.compile(
-            integration=Integration() if name == "minimal" else None
+        compiled = query.compile_transformed(
+            logdensity=True, integration=Integration() if name == "minimal" else None
         )
         initial = (
             {k: jnp.asarray(v, dtype=jnp.float32) for k, v in initial.items()}
             if isinstance(initial, dict)
             else jnp.asarray(initial, dtype=jnp.float32)
         )
-        flat, unflatten = ravel_pytree(initial)
-        if isinstance(initial, dict):
-            lower = {
-                k: jnp.broadcast_to(
-                    jnp.float32(bounds.get(k, [None, None])[0] or 0), v.shape
-                )
-                for k, v in initial.items()
-            }
-            upper = {
-                k: jnp.broadcast_to(
-                    jnp.float32(bounds.get(k, [None, None])[1] or 1), v.shape
-                )
-                for k, v in initial.items()
-            }
-            positive = {
-                k: jnp.full(v.shape, k in bounds and bounds[k][1] is None)
-                for k, v in initial.items()
-            }
-            bounded = {
-                k: jnp.full(v.shape, k in bounds and bounds[k][1] is not None)
-                for k, v in initial.items()
-            }
-            lower, _ = ravel_pytree(lower)
-            upper, _ = ravel_pytree(upper)
-            positive, _ = ravel_pytree(positive)
-            bounded, _ = ravel_pytree(bounded)
-        else:
-            lower = jnp.broadcast_to(
-                jnp.asarray(0 if bounds[0] is None else bounds[0]), flat.shape
-            )
-            upper = jnp.broadcast_to(
-                jnp.asarray(1 if bounds[1] is None else bounds[1]), flat.shape
-            )
-            positive = jnp.full(flat.shape, bounds[0] is not None and bounds[1] is None)
-            bounded = jnp.full(flat.shape, bounds[1] is not None)
-        width = upper - lower
+        z, unflatten = ravel_pytree(compiled.unconstrain(initial))
 
         def constrain(z: jax.Array) -> jax.Array:
-            positive_value = lower + jnp.exp(jnp.where(positive, z, 0))
-            return jnp.where(
-                bounded,
-                lower + width * jax.nn.sigmoid(z),
-                jnp.where(positive, positive_value, z),
-            )
+            # Flatten only for the report's common parameter axis.
+            return ravel_pytree(compiled.constrain(unflatten(z)))[0]
 
         def logdensity(z: jax.Array) -> jax.Array:
-            log_jac = jnp.where(
-                bounded,
-                jnp.log(width) + jax.nn.log_sigmoid(z) + jax.nn.log_sigmoid(-z),
-                jnp.where(positive, z, 0),
-            )
-            return density(unflatten(constrain(z))) + jnp.sum(log_jac)
+            return compiled.unconstrained(unflatten(z))
 
-        p = np.asarray(flat)
-        lo, w = np.asarray(lower), np.asarray(width)
-        z = p.copy()
-        b, e = np.asarray(bounded), np.asarray(positive)
-        z[b] = np.log((p[b] - lo[b]) / (w[b] - p[b] + lo[b]))
-        z[e] = np.log(p[e] - lo[e])
-        z = jnp.asarray(z, dtype=jnp.float32)
         result["stage"] = "gradient"
         evaluate = jax.jit(jax.value_and_grad(logdensity))
         value, gradient = evaluate(z)
@@ -229,7 +200,7 @@ def run(
             result["stage"] = "sampling"
             chains, divergences = [], []
             warm = blackjax.window_adaptation(
-                blackjax.nuts, logdensity, target_acceptance_rate=0.9
+                blackjax.nuts, logdensity, target_acceptance_rate=0.8
             )
             for chain in range(2):
                 warm_key, draw_key = jax.random.split(jax.random.key(827 + chain))
@@ -240,8 +211,7 @@ def run(
                     and chain
                 ):
                     altered = dict(initial, theta1=-initial["theta1"])
-                    other, _ = ravel_pytree(altered)
-                    start_point = z.at[0].set(other[0])
+                    start_point, _ = ravel_pytree(compiled.unconstrain(altered))
                 (state, parameters), _ = warm.run(
                     warm_key, start_point, num_steps=warmup
                 )

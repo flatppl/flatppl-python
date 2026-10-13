@@ -138,7 +138,7 @@ def run(
                     + ")"
                 )
             lower, upper = limits or (None, None)
-            if isinstance(lower, list):
+            if isinstance(lower, list) and isinstance(upper, list):
                 return (
                     "cartprod("
                     + ", ".join(

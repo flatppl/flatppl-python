@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ._graph import Graph
     from ._jax import Batch, CompiledFunction
     from ._schema import BindingInfo, Export, MathRow
+    from ._transforms import TransformedFunction
     from .formula import FormulaView
     from .pyhf import PyhfView
 
@@ -614,8 +615,8 @@ class Module:
                 ``cartprod`` takes all scalars or all vectors, so each scalar
                 becomes a length-one vector, such as ``cartpow(posreals, 1)``.
                 Each parameter's set is kept in the domain of ``theta`` but
-                not enforced at run time. Transforms to unconstrained
-                coordinates come in a later release.
+                not enforced at run time. Use :meth:`compile_transformed`
+                for unconstrained coordinates.
             gradient: Compile to a function that returns
                 ``(outputs, jacobian)``, with the Jacobian of the outputs with
                 respect to the parameter input. For a scalar output it is the
@@ -850,6 +851,71 @@ class Module:
             export_batch=export_batch,
             optimize_forward=optimize_forward,
             gradient=self._gradient,
+        )
+
+    def compile_transformed(
+        self,
+        *,
+        logdensity: bool = False,
+        dtype: DTypeLike = "float32",
+        autodiff: bool = True,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+        target: Literal["cpu", "gpu"] | None = None,
+    ) -> TransformedFunction:
+        """Compile a query and canonical coordinate wrappers for its input.
+
+        The query must have one continuous ``elementof`` input, which may be
+        a record or array of parameters. Bind fixed data before compiling.
+        Rust chooses the transforms from the declared domains and emits them
+        with the query into StableHLO. No Python callback runs during execution.
+
+        Args:
+            logdensity: Add the change-of-variables correction to a scalar
+                log density with respect to the input domain's coordinate
+                Lebesgue measure. Use ``True`` for NUTS. Ordinary functions
+                keep the default ``False`` and only transform their inputs.
+            dtype: Floating-point precision, as in :meth:`compile`.
+            autodiff: Enable differentiation, as in :meth:`compile`.
+            integration: Numerical integration settings, as in :meth:`compile`.
+            optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
+            target: Lowering profile, as in :meth:`compile`.
+
+        Returns:
+            The original query, the unconstrained query, and both coordinate
+            transforms. Use ``unconstrain`` for initial values and ``constrain``
+            for retained draws. See :doc:`/formula` for a BlackJAX example.
+
+        Raises:
+            CompilationError: The input has no supported continuous chart,
+                sizes or bounds are unresolved, the query has several inputs,
+                or log-density mode receives a non-scalar output.
+            ValueError: The query requests a gradient instead of a scalar value.
+        """
+        from ._transforms import TransformedFunction
+
+        if self._gradient:
+            raise ValueError("transform the scalar query before requesting gradients")
+        native = native_call(
+            self._context._native.transform,  # pyright: ignore[reportPrivateUsage]
+            self._native,
+            logdensity,
+        )
+
+        def compile_module(module: Module) -> CompiledFunction:
+            return module.compile(
+                dtype=dtype,
+                autodiff=autodiff,
+                integration=integration,
+                optimize_forward=optimize_forward,
+                target=target,
+            )
+
+        unconstrained, constrain, unconstrain = (
+            compile_module(Module(module, self._context)) for module in native
+        )
+        return TransformedFunction(
+            compile_module(self), unconstrained, constrain, unconstrain
         )
 
 

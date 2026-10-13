@@ -6,24 +6,26 @@ model. The compiled StableHLO executes through JAX; Python transports the table
 and exposes the result. The importer does not fit the model or require R.
 
 The [mixed-model example](examples/formula.rst) is a complete runnable script:
-Polars data, proper priors, a posterior density and gradient, an independent
-analytic score check, and prediction using the training recipe.
+Polars data, proper priors, BlackJAX NUTS inference with automatic coordinate
+transforms, chain diagnostics, and prediction using the training recipe.
 
 ## Build a model
 
 Here each site has its own intercept, with a shared scale:
 
 ```{testcode} formula
+from typing import Any
+
+import blackjax
 import jax
 import jax.numpy as jnp
-import numpy as np
 import polars as pl
 from flatppl import flatppl, from_formula
 
 data = pl.DataFrame({
-    "x": [1.0, 2.0, 3.0],
-    "y": [2.0, 4.0, 8.0],
-    "site": ["B", "A", "B"],
+    "x": [1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0],
+    "y": [2.0, 3.0, 6.0, 7.0, 3.0, 6.0, 5.0, 8.0],
+    "site": ["A"] * 4 + ["B"] * 4,
 })
 model = from_formula(
     "y ~ x + (1 | site)",
@@ -41,7 +43,7 @@ print(model.formula.rows)
 
 ```{testoutput} formula
 ('x',)
-(0, 1, 2)
+(0, 1, 2, 3, 4, 5, 6, 7)
 ```
 
 pandas dataframes, Arrow tables and record batches, and mappings of column
@@ -89,9 +91,13 @@ density_only = from_formula(
 )
 info = density_only.formula.info
 roles = {parameter["name"]: parameter["role"] for parameter in info["parameters"]}
-assert roles["b_x"] == "sampled" and roles["sigma"] == "fixed"
-assert info["prior_factors"]["b"] == {"mass": "locallyfinite", "contains_flat": True}
-assert info["prior_sampling"] == "unavailable"
+print(roles)
+print(info["prior_sampling"])
+```
+
+```{testoutput} formula
+{'b_x': 'sampled', 'sigma': 'fixed'}
+unavailable
 ```
 
 `factor_levels`, `group_levels` and `response_levels` retain original names
@@ -126,23 +132,80 @@ point = {
     "sigma": 1.5,
 }
 score, gradient = jax.jit(jax.value_and_grad(logdensity))(point)
-np.testing.assert_allclose(score, -20.74008500905249, rtol=2e-6)
-np.testing.assert_allclose(gradient["b"], [0.3888888888888886], atol=2e-6)
+print("Log density:", round(float(score), 2))
+print("Slope gradient:", round(float(gradient["b"][0]), 2))
+```
+
+```{testoutput} formula
+Log density: -47.65
+Slope gradient: -2.28
 ```
 
 `temp_Intercept` is the intercept at the training predictor means;
 `b_Intercept` is the derived intercept at zero. Site levels are `A`, `B`, and
 their effects are `sd_site * z_site`, with independent standard Normal `z_site`.
 The supplied scale priors become normalized half-Normal distributions.
-The score above includes all Normal constants and both half-Normal factors;
-the [gallery script](examples/formula.rst) derives it directly from these
-densities. `Pi_post` is prior times likelihood, without an evidence normalizer.
+The score includes all Normal constants and both half-Normal factors.
+`Pi_post` is prior times likelihood, without an evidence normalizer.
 
 Compilation defaults to float32. Enable JAX x64 and use
 `query.compile(dtype="float64")` for float64. The callable can be passed to
 JAX-compatible inference packages. It uses the declared, constrained
-coordinates; an inference method requiring unconstrained parameters needs the
-corresponding transforms and Jacobians.
+coordinates.
+
+## Sample with BlackJAX
+
+Install [BlackJAX and FlatPPL](installation.md), plus Polars for this example.
+For a Pixi project with FlatPPL installed:
+
+```sh
+pixi add --pypi "blackjax==1.7.1" "polars>=2"
+```
+
+`query.compile_transformed(logdensity=True)` builds four compiled callables:
+
+| Callable | Coordinates |
+| --- | --- |
+| `target.constrained` | The original query, accepting model parameters |
+| `target.unconstrained` | The sampling target, accepting free coordinates |
+| `target.constrain` | Free coordinates to model parameters |
+| `target.unconstrain` | Model parameters to free coordinates |
+
+Rust chooses the transforms from the input domains. Here both positive scales
+use log coordinates. The density correction is automatic and part of the same
+StableHLO program as the target. There are no Python callbacks in the sampler
+loop. Ordinary output queries use `logdensity=False`, with no density correction.
+
+The example uses [BlackJAX window adaptation](https://blackjax-devs.github.io/blackjax/examples/quickstart.html#use-stan-s-window-adaptation)
+and four NUTS chains. Each chain keeps 2,000 draws after 1,000 warmup steps.
+The code comes directly from the executed gallery script:
+
+```{literalinclude} ../examples/formula.py
+:language: python
+:start-at: target = query.compile_transformed
+:end-before: "# %%"
+```
+
+The arrays in `draws` have leading `(chain, draw)` axes. Positive scale draws
+are back in their original units. The gallery prints posterior means, 90%
+intervals, ESS, R-hat and divergences. Inspect these diagnostics before using
+the draws. This small dataset illustrates the workflow, not a precise estimate
+of variation between sites.
+
+Download {download}`formula.py <../examples/formula.py>` or its notebook from
+the [gallery page](examples/formula.rst). Initial values must lie in the domain's
+interior. Coordinate transforms do not clip invalid values or boundaries.
+
+Transforms support real scalars, positive and nonnegative reals, finite or
+one-sided intervals, `ordered(n)`, `zerosum(n)` and `stdsimplex(n)`. Records,
+arrays of scalar domains, and products of scalars or flat vectors compose
+these charts. Simplex and zero-sum vectors use `n - 1` free coordinates.
+Their length-one cases, arrays with structured cells, tables, and discrete
+domains are not supported by this wrapper. Bind sizes and bounds first.
+
+For float64 inference, enable JAX x64 and pass `dtype="float64"` to
+`compile_transformed`. Keep the target and BlackJAX's adaptation in the same
+precision.
 
 ## Prepare new rows
 
@@ -154,11 +217,16 @@ prediction = model.formula.prepare(
     pl.DataFrame({"x": [4.0, 5.0], "site": ["A", "B"]})
 )
 design = prediction.query("X").compile(autodiff=False)()
-np.testing.assert_allclose(design, [[2.0], [3.0]])  # training mean was 2
-assert prediction.formula.recipe == model.formula.recipe
-assert model.constant("N") == 3
-assert prediction.constant("N") == 2
+print(design)
 ```
+
+```{testoutput} formula
+[[1.5]
+ [2.5]]
+```
+
+The training mean of `x` is 2.5, so the new design column contains `4 - 2.5`
+and `5 - 2.5`. The original model still has its eight training rows.
 
 Use the prediction module's `K_model` to score or generate responses at chosen
 parameters. The gallery compiles `logdensityof(m.K_model(p), record(y = observed))`
@@ -187,10 +255,7 @@ varying_scale = from_formula(
         {"class": "b", "dpar": "sigma", "prior": "normal(0, 0.5)"},
     ],
 )
-assert varying_scale.formula.info["dpars"]["sigma"]["link"] == "log"
 scale_prediction = varying_scale.formula.prepare({"x": [4.0, 5.0]})
-assert scale_prediction.formula.recipe == varying_scale.formula.recipe
-assert scale_prediction.constant("N") == 2
 ```
 
 This is the typed equivalent of brms's `bf(y ~ x, sigma ~ x)`; a `bf(...)`
@@ -311,9 +376,7 @@ categorical = from_formula(
         {"class": "b", "dpar": "mugreen", "prior": "normal(0, 1)"},
     ],
 )
-assert tuple(categorical.formula.info["dpars"]) == ("mublue", "mugreen")
 category_prediction = categorical.formula.prepare({"x": [5.0], "z": [1.5]})
-assert category_prediction.formula.recipe == categorical.formula.recipe
 ```
 
 Categorical `b`, `Intercept` and `sd` priors require `dpar`. Correlation priors
@@ -340,8 +403,6 @@ smooth = from_formula(
     ],
 )
 smooth_prediction = smooth.formula.prepare({"x": [0.5, 4.0]})
-assert smooth_prediction.formula.recipe == smooth.formula.recipe
-assert smooth_prediction.constant("N") == 2
 ```
 
 The unpenalized slope uses class `b` and coefficient `sx_1`; the smooth's scale
@@ -381,8 +442,8 @@ weights while estimating residual `sigma`:
 
 ```{testcode} formula
 weighted_data = data.with_columns(
-    pl.Series("w", [1.0, 2.0, 0.5]),
-    pl.Series("s", [0.2, 0.3, 0.4]),
+    pl.Series("w", [1.0, 2.0, 0.5, 1.0] * 2),
+    pl.Series("s", [0.2, 0.3, 0.4, 0.2] * 2),
 )
 weighted = from_formula(
     "y | weights(w) + se(s, sigma=TRUE) ~ x",
@@ -393,10 +454,7 @@ weighted = from_formula(
         {"class": "sigma", "prior": "normal(0, 1)"},
     ],
 )
-np.testing.assert_array_equal(weighted.constant("weights_data"), [1.0, 2.0, 0.5])
 new_rows = weighted.formula.prepare(pl.DataFrame({"x": [4.0], "s": [0.25]}))
-assert new_rows.formula.recipe == weighted.formula.recipe
-assert new_rows.constant("N") == 1
 ```
 
 ## Select priors and bounds

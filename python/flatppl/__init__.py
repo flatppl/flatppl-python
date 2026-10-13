@@ -24,6 +24,7 @@ from .pyhf import from_pyhf
 
 if TYPE_CHECKING:
     from ._jax import CompiledFunction
+    from ._transforms import TransformedFunction
 
 __all__ = [
     "Binding",
@@ -38,6 +39,7 @@ __all__ = [
     "Parameter",
     "Parameters",
     "Reference",
+    "TransformedFunction",
     "flatppl",
     "from_formula",
     "from_pyhf",
@@ -50,4 +52,8 @@ def __getattr__(name: str) -> object:
         from ._jax import CompiledFunction
 
         return CompiledFunction
+    if name == "TransformedFunction":
+        from ._transforms import TransformedFunction
+
+        return TransformedFunction
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

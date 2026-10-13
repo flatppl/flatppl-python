@@ -4,6 +4,10 @@ BlackJAX consumes a callable that returns a scalar log density.
 The callable can accept a dictionary of parameter arrays and return a JAX scalar.
 The FlatPPL wrapper supplies that callable. BlackJAX supplies adaptation and sampling.
 
+For a formula and dataframe workflow with positive scales, see
+[formula inference](formula.md#sample-with-blackjax). It includes automatic
+coordinate transforms and a four-chain NUTS run.
+
 ## Model and analytic result
 
 The example uses a `Normal(0, 1)` prior for `theta` and a `Normal(theta, 1)`

@@ -105,6 +105,8 @@ whose names start with an underscore, is private.
 .. autoclass:: flatppl.CompiledFunction
    :members:
    :special-members: __call__
+
+.. autoclass:: flatppl.TransformedFunction
 ```
 
 ## Integration

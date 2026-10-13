@@ -48,6 +48,7 @@ autodoc_typehints_description_target = "documented_params"
 # Names the package imports only for type checking.
 autodoc_type_aliases = {
     "CompiledFunction": "flatppl.CompiledFunction",
+    "TransformedFunction": "flatppl.TransformedFunction",
     "DTypeLike": "jax.typing.DTypeLike",
     "FormulaView": "flatppl.formula.FormulaView",
 }
@@ -77,6 +78,7 @@ _NO_SIGNATURE = {
     "flatppl.CompilationError",
     "flatppl.Module",
     "flatppl.CompiledFunction",
+    "flatppl.TransformedFunction",
     "flatppl.Parameter",
     "flatppl.pyhf.Channel",
     "flatppl.pyhf.ParameterSlice",

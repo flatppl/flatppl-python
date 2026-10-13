@@ -8,7 +8,9 @@ Binomial and Poisson GLMs, a Poisson mixed model, Mh, Rate 1, autoregression,
 Bayesian linear regression, centred Eight Schools, Gaussian-process regression
 and Kidscore interaction. Each model loads its data from the `data/` subdirectory.
 The collection README records the original Stan sources and prior conventions.
-The targets retain their original priors, including improper `Flat` priors.
+The targets retain their original posterior laws. Constant priors on fixed
+finite intervals use `Uniform`; only Kidscore's unbounded coefficients use
+improper `Flat` priors.
 
 All ten pass density, full-gradient, batching and coordinate-transform checks
 on Apple silicon CPU, A100 and GH200 in float32 and float64. Frozen reference
@@ -22,8 +24,9 @@ Finite draws alone do not establish convergence.
 
 The models and data are also inspectable in the
 [playground](https://live.flatppl.org/#model=posteriordb%2FREADME.md).
-Density-based MCMC supports the improper priors. IS, AMIS and SMC still require
-a sampleable joint prior. See the [transform reference](transforms.md) and
+Density-based MCMC supports Kidscore's improper priors. The other nine models
+have sampleable joint priors, as required by IS, AMIS and SMC.
+See the [transform reference](transforms.md) and
 [BlackJAX tutorial](examples/formula.rst) for the Python workflow.
 
 ## Original example sweep

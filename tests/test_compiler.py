@@ -9,6 +9,19 @@ import numpy as np
 from flatppl import flatppl
 
 
+def test_uniform_unitinterval_scores_boundaries_and_batches() -> None:
+    function = flatppl("""
+        point = external(reals)
+        inputs = point
+        outputs = logdensityof(Uniform(unitinterval), point)
+    """).compile()
+    points = jnp.array([-0.25, 0.0, 0.5, 1.0, 1.25])
+    np.testing.assert_array_equal(
+        jax.jit(jax.vmap(function))(points), [-np.inf, 0.0, 0.0, 0.0, -np.inf]
+    )
+    np.testing.assert_array_equal(jax.jit(jax.grad(function))(0.5), 0.0)
+
+
 def test_dirac_tensor_scores_compare_whole_events() -> None:
     for domain, atom in (
         ("cartpow(reals, 2)", jnp.array([1.0, 2.0])),

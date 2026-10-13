@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- `Module.compile_transformed` exposes the constrained query, a target in free
+  coordinates, and both coordinate transforms. Rust emits the transforms and
+  optional log-density correction into StableHLO. The formula example uses
+  these callables for BlackJAX NUTS without user-written Jacobians.
 - `from_formula(..., dpars=...)` forwards family-parameter formulas and their
   links to Rust. The bundled frontend supports categorical predictors and
   one-dimensional thin-plate smooths with retained prediction recipes, explicit

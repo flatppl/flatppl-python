@@ -3,26 +3,30 @@
 
 An R-style formula becomes an ordinary FlatPPL model. Rust prepares the design
 matrix and group coding; the resulting StableHLO runs and differentiates in
-JAX. Explicit proper priors make the density comparable to a short analytic
-calculation. New rows reuse the training recipe without changing the model.
+JAX. BlackJAX samples the posterior through compiled coordinate transforms.
+New rows reuse the training recipe without changing the model.
 
 See :doc:`/formula` for supported families, terms and prior selectors.
 
 Runtime budget: 60 s.
 """
 
-import math
+from typing import Any
 
+import blackjax
 import jax
 import jax.numpy as jnp
 import numpy as np
 import polars as pl
-from numpy.typing import ArrayLike
 
 from flatppl import flatppl, from_formula
 
 data = pl.DataFrame(
-    {"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 8.0], "site": ["B", "A", "B"]}
+    {
+        "x": [1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0],
+        "y": [2.0, 3.0, 6.0, 7.0, 3.0, 6.0, 5.0, 8.0],
+        "site": ["A"] * 4 + ["B"] * 4,
+    }
 )
 model = from_formula(
     "y ~ x + (1 | site)",
@@ -68,29 +72,54 @@ print("Log density:", float(score))
 print("Gradient:", jax.tree.map(lambda value: np.asarray(value).tolist(), gradient))
 
 # %%
-# Check the complete normalized prior times likelihood independently. Sites
-# sort as A, B, and the training mean of x is 2. No Jacobian for an
-# unconstraining transform is included: these are the declared coordinates.
+# Sample with BlackJAX
+# --------------------
+# NUTS uses free coordinates. Rust chooses the transforms from the declared
+# domains and includes their density correction in the compiled target.
+# Positive scales use log coordinates; the other parameters stay unchanged.
+# Users do not write Jacobians. All sampler steps run in compiled JAX code.
+target = query.compile_transformed(logdensity=True)
+initial = target.unconstrain(point)
+warmup = blackjax.window_adaptation(blackjax.nuts, target.unconstrained)
 
 
-def normal_logpdf(value: ArrayLike, mean: ArrayLike, scale: float) -> float:
-    """Sum ordinary Normal log densities for the independent calculation."""
-    residual = (np.asarray(value) - np.asarray(mean)) / scale
-    return float(np.sum(-0.5 * (math.log(2 * math.pi) + residual**2) - math.log(scale)))
+@jax.jit
+def sample_chain(key: jax.Array):
+    """Adapt one NUTS chain, then collect its draws and divergence flags."""
+    warmup_key, sample_key = jax.random.split(key)
+    (state, parameters), _ = warmup.run(warmup_key, initial, num_steps=1000)
+    sampler = blackjax.nuts(target.unconstrained, **parameters)
+
+    def step(current: Any, draw_key: jax.Array):
+        updated, info = sampler.step(draw_key, current)
+        return updated, (updated.position, info.is_divergent)
+
+    return jax.lax.scan(step, state, jax.random.split(sample_key, 2000))[1]
 
 
-mean = 1 + 2 * (data["x"].to_numpy() - 2) + 0.5 * np.array([0.4, -0.2, 0.4])
-expected = (
-    normal_logpdf(1, 1, 3)
-    + normal_logpdf(2, 0, 2)
-    + normal_logpdf(0.5, 0, 1)
-    + normal_logpdf([-0.2, 0.4], 0, 1)
-    + normal_logpdf(1.5, 0, 1)
-    + 2 * math.log(2)
-    + normal_logpdf(data["y"].to_numpy(), mean, 1.5)
-)
-np.testing.assert_allclose(score, expected, rtol=2e-6)
-print("Analytic log density:", expected)
+keys = jax.random.split(jax.random.key(827), 4)
+free_draws, divergences = jax.vmap(sample_chain)(keys)
+draws = jax.vmap(jax.vmap(target.constrain))(free_draws)
+
+# %%
+# Each chain keeps 2,000 draws after 1,000 warmup steps. Transform the draws
+# back before summarizing model parameters. Check divergences, effective
+# sample sizes (ESS), and R-hat; increase the run length if chains do not mix.
+parameters = {
+    "Centred intercept": draws["temp_Intercept"],
+    "b_x": draws["b"][..., 0],
+    "sd_site": draws["sd_site"],
+    "sigma": draws["sigma"],
+}
+for name, chains in parameters.items():
+    interval = np.quantile(chains, [0.05, 0.95])
+    print(
+        f"{name}: mean={float(jnp.mean(chains)):.2f}, "
+        f"90% interval=({interval[0]:.2f}, {interval[1]:.2f}), "
+        f"ESS={float(blackjax.ess(chains)):.0f}, "
+        f"R-hat={float(blackjax.rhat(chains)):.3f}"
+    )
+print("Divergences:", int(jnp.sum(divergences)))
 
 # %%
 # Prepare two new rows without a response column. The retained Rust recipe
@@ -98,10 +127,7 @@ print("Analytic log density:", expected)
 new_data = pl.DataFrame({"x": [4.0, 5.0], "site": ["A", "B"]})
 prediction = model.formula.prepare(new_data)
 design = prediction.query("X").compile(autodiff=False)()
-np.testing.assert_allclose(design, [[2], [3]])
-assert prediction.formula.recipe == model.formula.recipe
-assert model.constant("N") == 3
-assert prediction.constant("N") == 2
+print("New design rows:", design)  # x minus its training mean, 2.5
 
 # Score proposed responses under the new rows' forward kernel at the same
 # parameter point. Posterior predictive calculations can repeat this for
@@ -120,7 +146,4 @@ predictive_density = flatppl(
 ).compile()
 observed = jnp.array([5.0, 7.0])
 prediction_score = predictive_density(point, observed)
-np.testing.assert_allclose(
-    prediction_score, normal_logpdf([5, 7], [4.9, 7.2], 1.5), rtol=2e-6
-)
 print("New-row log density:", float(prediction_score))

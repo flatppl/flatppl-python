@@ -62,6 +62,10 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: imported query domains retain their input
+  layout and coordinate transforms, array indices lower to StableHLO, and
+  matrix contractions preserve float32 precision on GPUs. These support the
+  ten models in `flatppl-examples/posteriordb`.
 - Bundled Rust compiler update: coincident fixed `Dirac` components retain finite
   weight gradients at zero weights, including batched JAX evaluation.
 - Bundled Rust compiler update: formula imports gain lognormal, geometric,

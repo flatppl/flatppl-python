@@ -53,6 +53,12 @@ For the sampling example, add BlackJAX separately:
 pixi add --pypi "blackjax==1.7.1"
 ```
 
+The [mixed-model tutorial](examples/formula.rst) also uses Polars:
+
+```sh
+pixi add --pypi "polars>=2"
+```
+
 ## Install a wheel
 
 Wheels are currently distributed through GitHub Actions artifacts.
@@ -126,7 +132,9 @@ After installing FlatPPL, install the version used by the package's tests:
 python -m pip install "blackjax==1.7.1"
 ```
 
-BlackJAX is optional. The [sampling guide](blackjax.md) shows the complete example.
+BlackJAX is optional. The [Normal tutorial](examples/nuts.rst) shows a complete
+example. For the [mixed-model tutorial](examples/formula.rst), also install
+Polars with `python -m pip install "polars>=2"`.
 
 ## Build from source
 

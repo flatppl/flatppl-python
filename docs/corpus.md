@@ -1,5 +1,33 @@
 # Example corpus qualification
 
+## PosteriorDB models
+
+The 2026-10-13 checks add ten models in the
+[`posteriordb` collection](https://github.com/flatppl/flatppl-examples/tree/main/posteriordb):
+Binomial and Poisson GLMs, a Poisson mixed model, Mh, Rate 1, autoregression,
+Bayesian linear regression, centred Eight Schools, Gaussian-process regression
+and Kidscore interaction. Each model loads its data from the `data/` subdirectory.
+The collection README records the original Stan sources and prior conventions.
+The targets retain their original priors, including improper `Flat` priors.
+
+All ten pass density, full-gradient, batching and coordinate-transform checks
+on Apple silicon CPU, A100 and GH200 in float32 and float64. Frozen reference
+points come from the original Stan models. Each device/precision pair also runs
+two BlackJAX NUTS chains with 500 warmup steps and 1,000 retained draws per chain,
+at target acceptance 0.8. All 60 runs produce finite draws.
+
+These are capability checks. Centred Eight Schools still has 44–85 divergences
+per run, and the Poisson mixed model needs longer runs for useful diagnostics.
+Finite draws alone do not establish convergence.
+
+The models and data are also inspectable in the
+[playground](https://live.flatppl.org/#model=posteriordb%2FREADME.md).
+Density-based MCMC supports the improper priors. IS, AMIS and SMC still require
+a sampleable joint prior. See the [transform reference](transforms.md) and
+[BlackJAX tutorial](examples/formula.rst) for the Python workflow.
+
+## Original example sweep
+
 The 2026-10-07 sweep covers every tracked FlatPPL source in
 [`flatppl-examples`](https://github.com/flatppl/flatppl-examples/tree/b9ed33856b7fb1969d4ed92e4cd61f872ed5c1fe/examples).
 All 24 distribution targets produce finite BlackJAX NUTS draws on Apple silicon
@@ -141,5 +169,7 @@ moments, ESS, Rhat, divergences, device and errors. Longer runs remain available
 through `--warmup` and `--samples`. Multimodal and funnel-shaped targets need
 appropriate transforms and sampling diagnostics beyond these smoke runs.
 
-Support transforms and Jacobians belong to this BlackJAX consumer example.
-The FlatPPL package contains no sampler and does not choose sampling coordinates.
+The script declares the support domains and calls
+`compile_transformed(logdensity=True)`. Rust emits the coordinate transforms
+and density correction inside StableHLO. BlackJAX supplies the sampler;
+the Python example contains no hand-written Jacobians.

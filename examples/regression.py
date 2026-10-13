@@ -19,6 +19,12 @@ from jax.typing import ArrayLike
 from flatppl import Context, flatppl
 
 
+# %%
+# Separate fixed sizes from runtime data
+# --------------------------------------
+# Bind ``n`` and ``p`` before compilation. Keep ``X`` and ``y_data`` in the query
+# signature so new arrays of the same shape reuse the executable. ``beta`` has
+# a ``Normal(0, 2)`` prior per coefficient, and observation noise has scale 0.5.
 def make_query(n: int, p: int):
     """Compile the posterior log density for ``n`` observations and ``p`` predictors."""
     context = Context()
@@ -54,6 +60,13 @@ def make_query(n: int, p: int):
     return query.set(n=n, p=p).compile()
 
 
+# %%
+# Fix one dataset for inference
+# -----------------------------
+# The sampler varies only ``beta``. The closure supplies the same design matrix
+# and observations to every density call; JAX stages it with the sampler. There
+# is no host callback or data transfer per step. Real coefficients need no
+# coordinate transform. For positive scales, see :doc:`formula`.
 def run(
     X: ArrayLike,
     y: ArrayLike,
@@ -88,9 +101,23 @@ def run(
     return sample(sample_key, state)
 
 
+# %%
+# Fit a reproducible dataset
+# --------------------------
+# The last cosine term supplies a small deterministic residual. The exact
+# posterior precision is ``I/4 + X.T@X/0.25`` and its mean is
+# ``solve(precision, X.T@y/0.25)``. Compare the sampled mean with that result.
 if __name__ == "__main__":
     x = jnp.linspace(-1, 1, 48)
     X = jnp.column_stack((jnp.ones_like(x), x, jnp.sin(3 * x)))
     y = X @ jnp.array([0.4, -0.6, 1.2]) + 0.3 * jnp.cos(1.3 * x)
     draws, divergences = run(X, y)
-    print({"mean": draws.mean(axis=0).tolist(), "divergences": int(divergences.sum())})
+    precision = jnp.eye(X.shape[1]) / 4 + X.T @ X / 0.25
+    exact_mean = jnp.linalg.solve(precision, X.T @ y / 0.25)
+    print("Sampled mean:", draws.mean(axis=0).tolist())
+    print("Exact mean:", exact_mean.tolist())
+    print("Divergences:", int(divergences.sum()))
+
+# %%
+# Changing only array values reuses the query. Changing their shape needs new
+# size bindings and compilation. See :doc:`/values` for dataframes and tables.

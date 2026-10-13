@@ -6,6 +6,7 @@ Inference libraries such as BlackJAX consume the callable separately.
 
 **[Documentation](https://flatppl.org/flatppl-python/)** ·
 [Installation](https://flatppl.org/flatppl-python/installation.html) ·
+[Tutorials](https://flatppl.org/flatppl-python/examples/index.html) ·
 [API reference](https://flatppl.org/flatppl-python/api.html)
 
 ```python
@@ -27,8 +28,8 @@ Use inline source or load files, declare inputs and outputs in FlatPPL, and pass
 values from Python. Float32 is the default.
 See the [quickstart](https://flatppl.org/flatppl-python/quickstart.html) for a complete
 example, [modules and contexts](https://flatppl.org/flatppl-python/modules.html)
-for reusable queries, and the [BlackJAX guide](https://flatppl.org/flatppl-python/blackjax.html)
-for sampling.
+for reusable queries, and the [mixed-model tutorial](https://flatppl.org/flatppl-python/examples/formula.html)
+for BlackJAX sampling with automatic coordinate transforms.
 
 The alpha package supports Python 3.12–3.14 on Linux x86-64 and Apple silicon macOS.
 Wheels include the native compiler. Follow the

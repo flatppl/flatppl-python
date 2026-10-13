@@ -884,7 +884,7 @@ class Module:
         Returns:
             The original query, the unconstrained query, and both coordinate
             transforms. Use ``unconstrain`` for initial values and ``constrain``
-            for retained draws. See :doc:`/formula` for a BlackJAX example.
+            for retained draws. See :doc:`/examples/formula` for a BlackJAX example.
 
         Raises:
             CompilationError: The input has no supported continuous chart,

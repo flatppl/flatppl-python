@@ -5,35 +5,28 @@ FlatPPL module. Rust parses the formula, prepares the data and builds the
 model. The compiled StableHLO executes through JAX; Python transports the table
 and exposes the result. The importer does not fit the model or require R.
 
-The [mixed-model example](examples/formula.rst) is a complete runnable script:
-Polars data, proper priors, BlackJAX NUTS inference with automatic coordinate
-transforms, chain diagnostics, and prediction using the training recipe.
+Start with the [mixed-model tutorial](examples/formula.rst) for a complete fit:
+proper priors, compiled coordinate transforms, BlackJAX NUTS, diagnostics and
+prediction. This page is the formula, data and prior reference.
 
 ## Build a model
 
-Here each site has its own intercept, with a shared scale:
+The default family is Gaussian. Supply priors and formula options at import:
 
 ```{testcode} formula
-from typing import Any
-
-import blackjax
-import jax
-import jax.numpy as jnp
 import polars as pl
-from flatppl import flatppl, from_formula
+from flatppl import from_formula
 
 data = pl.DataFrame({
-    "x": [1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0],
-    "y": [2.0, 3.0, 6.0, 7.0, 3.0, 6.0, 5.0, 8.0],
-    "site": ["A"] * 4 + ["B"] * 4,
+    "x": [1.0, 2.0, 3.0, 4.0],
+    "y": [2.0, 3.0, 6.0, 7.0],
 })
 model = from_formula(
-    "y ~ x + (1 | site)",
+    "y ~ x",
     data,
     priors=[
         {"class": "Intercept", "prior": "normal(1, 3)"},
         {"class": "b", "prior": "normal(0, 2)"},
-        {"class": "sd", "group": "site", "prior": "normal(0, 1)"},
         {"class": "sigma", "prior": "normal(0, 1)"},
     ],
 )
@@ -43,8 +36,10 @@ print(model.formula.rows)
 
 ```{testoutput} formula
 ('x',)
-(0, 1, 2, 3, 4, 5, 6, 7)
+(0, 1, 2, 3)
 ```
+
+## Data inputs
 
 pandas dataframes, Arrow tables and record batches, and mappings of column
 names to arrays also work. Category order and orderedness, numeric precision
@@ -57,7 +52,7 @@ CSV, JSON and Arrow IPC files can be passed as strings or `pathlib.Path` objects
 ```python
 from pathlib import Path
 
-model = from_formula("y ~ x + (1 | site)", Path("training.csv"))
+model = from_formula("y ~ x", Path("training.csv"))
 prediction = model.formula.prepare(Path("prediction.arrow"))
 ```
 
@@ -71,8 +66,14 @@ so preparing new rows leaves earlier modules unchanged. In-memory tables keep
 external declarations in their generated source, with values bound to the
 returned module.
 
+## Generated model and metadata
+
 Inspect `model.source` for the generated FlatPPL. `Pi_prior`, `K_model`, `L`
 and `Pi_post` are its prior, response kernel, likelihood and posterior.
+`Pi_post` is prior times likelihood, without an evidence normalizer.
+The centred `temp_Intercept` is the intercept at the training predictor means;
+derived `b_Intercept` reports the intercept at zero.
+
 `model.formula.info` maps coefficient names to bindings and indices;
 `model.formula.recipe` exposes the training preprocessing state as a read-only
 tree. Parameter names depend on the formula and prior selectors, so inspect
@@ -109,103 +110,18 @@ as tuples and preserves numeric labels.
 
 ## Evaluate the posterior
 
-The generated parameters are draws. Write an explicit query over their joint
-law; the [general query helper](modules.md#query-from-python) is for models
-whose free parameters are declared with `elementof`.
-
-```{testcode} formula
-context = model.context
-context.register("regression.flatppl", model)
-query = flatppl('''
-    m = load_module("regression.flatppl")
-    p = elementof(cartprod(temp_Intercept = reals, b = cartpow(reals, 1),
-                          sd_site = posreals, z_site = cartpow(reals, 2), sigma = posreals))
-    inputs = p
-    outputs = logdensityof(m.Pi_post, p)
-''', context=context)
-logdensity = query.compile()
-point = {
-    "temp_Intercept": 1.0,
-    "b": jnp.array([2.0]),
-    "sd_site": 0.5,
-    "z_site": jnp.array([-0.2, 0.4]),
-    "sigma": 1.5,
-}
-score, gradient = jax.jit(jax.value_and_grad(logdensity))(point)
-print("Log density:", round(float(score), 2))
-print("Slope gradient:", round(float(gradient["b"][0]), 2))
-```
-
-```{testoutput} formula
-Log density: -47.65
-Slope gradient: -2.28
-```
-
-`temp_Intercept` is the intercept at the training predictor means;
-`b_Intercept` is the derived intercept at zero. Site levels are `A`, `B`, and
-their effects are `sd_site * z_site`, with independent standard Normal `z_site`.
-The supplied scale priors become normalized half-Normal distributions.
-The score includes all Normal constants and both half-Normal factors.
-`Pi_post` is prior times likelihood, without an evidence normalizer.
-
-Compilation defaults to float32. Enable JAX x64 and use
-`query.compile(dtype="float64")` for float64. The callable can be passed to
-JAX-compatible inference packages. It uses the declared, constrained
-coordinates.
+The generated parameters are draws. Query their joint law explicitly, as in
+the [tutorial](examples/formula.rst); the
+[general query helper](modules.md#query-from-python) applies to free parameters
+declared with `elementof`. The [coordinate-transform reference](transforms.md)
+covers `compile_transformed(logdensity=True)`, automatic density corrections,
+precision and supported input domains.
 
 ## Sample with BlackJAX
 
-Install [BlackJAX and FlatPPL](installation.md), plus Polars for this example.
-For a Pixi project with FlatPPL installed:
-
-```sh
-pixi add --pypi "blackjax==1.7.1" "polars>=2"
-```
-
-`query.compile_transformed(logdensity=True)` builds four compiled callables:
-
-| Callable | Coordinates |
-| --- | --- |
-| `target.constrained` | The original query, accepting model parameters |
-| `target.unconstrained` | The sampling target, accepting free coordinates |
-| `target.constrain` | Free coordinates to model parameters |
-| `target.unconstrain` | Model parameters to free coordinates |
-
-Rust chooses the transforms from the input domains. Here both positive scales
-use log coordinates. The density correction is automatic and part of the same
-StableHLO program as the target. There are no Python callbacks in the sampler
-loop. Ordinary output queries use `logdensity=False`, with no density correction.
-
-The example uses [BlackJAX window adaptation](https://blackjax-devs.github.io/blackjax/examples/quickstart.html#use-stan-s-window-adaptation)
-and four NUTS chains. Each chain keeps 2,000 draws after 1,000 warmup steps.
-The code comes directly from the executed gallery script:
-
-```{literalinclude} ../examples/formula.py
-:language: python
-:start-at: target = query.compile_transformed
-:end-before: "# %%"
-```
-
-The arrays in `draws` have leading `(chain, draw)` axes. Positive scale draws
-are back in their original units. The gallery prints posterior means, 90%
-intervals, ESS, R-hat and divergences. Inspect these diagnostics before using
-the draws. This small dataset illustrates the workflow, not a precise estimate
-of variation between sites.
-
-Download {download}`formula.py <../examples/formula.py>` or its notebook from
-the [gallery page](examples/formula.rst). Initial values must lie in the domain's
-interior. Coordinate transforms do not clip invalid values or boundaries.
-
-Transforms support real scalars, positive and nonnegative reals, finite or
-one-sided intervals, `ordered(n)`, `zerosum(n)` and `stdsimplex(n)`. Records,
-arrays of scalar domains, and products of scalars or flat vectors compose
-these charts. Simplex and zero-sum vectors use `n - 1` free coordinates.
-Their length-one cases, arrays with structured cells, tables, and discrete
-domains are not supported by this wrapper. Bind sizes and bounds first.
-
-For float64 inference, enable JAX x64 and pass `dtype="float64"` to
-`compile_transformed`. Keep the target and BlackJAX's adaptation in the same
-precision.
+Follow the [mixed-model tutorial](examples/formula.rst) for four-chain NUTS,
+compiled constrain/unconstrain functions, diagnostics and prediction. Download
+its Python script or notebook from that page.
 
 ## Prepare new rows
 
@@ -213,9 +129,7 @@ Prediction reuses the training levels, contrasts, centring and prior defaults.
 It needs no response column and creates a fresh module:
 
 ```{testcode} formula
-prediction = model.formula.prepare(
-    pl.DataFrame({"x": [4.0, 5.0], "site": ["A", "B"]})
-)
+prediction = model.formula.prepare(pl.DataFrame({"x": [4.0, 5.0]}))
 design = prediction.query("X").compile(autodiff=False)()
 print(design)
 ```
@@ -226,12 +140,11 @@ print(design)
 ```
 
 The training mean of `x` is 2.5, so the new design column contains `4 - 2.5`
-and `5 - 2.5`. The original model still has its eight training rows.
+and `5 - 2.5`. The original model still has its four training rows.
 
 Use the prediction module's `K_model` to score or generate responses at chosen
-parameters. The gallery compiles `logdensityof(m.K_model(p), record(y = observed))`
-for new rows. Evaluating this kernel across posterior parameter draws supplies
-posterior predictive calculations. A new array shape may require compilation.
+parameters. The tutorial shows how to integrate its conditional density over
+posterior draws. A new array shape may require compilation.
 
 `prediction.set(y_data=...)` binds observations when needed.
 `prepare(new_data, mode="training")` also binds the supplied response while
@@ -442,8 +355,8 @@ weights while estimating residual `sigma`:
 
 ```{testcode} formula
 weighted_data = data.with_columns(
-    pl.Series("w", [1.0, 2.0, 0.5, 1.0] * 2),
-    pl.Series("s", [0.2, 0.3, 0.4, 0.2] * 2),
+    pl.Series("w", [1.0, 2.0, 0.5, 1.0]),
+    pl.Series("s", [0.2, 0.3, 0.4, 0.2]),
 )
 weighted = from_formula(
     "y | weights(w) + se(s, sigma=TRUE) ~ x",

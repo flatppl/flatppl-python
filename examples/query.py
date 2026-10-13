@@ -5,7 +5,8 @@
 an expression over the model's bindings, and the query takes the free
 parameters those outputs depend on as one input. ``gradient=True`` returns the
 Jacobian of the outputs next to their values, and ``layout="flat"`` passes the
-parameters as one real vector for a sampler.
+parameters as one vector in model coordinates. A flat layout does not
+unconstrain parameters; see :doc:`/transforms` for compiled sampling charts.
 
 Runtime budget: 60 s.
 """

@@ -4,7 +4,11 @@
 Two inline FlatPPL modules give a JAX log density, and BlackJAX NUTS samples
 it. The prior is ``Normal(0, 1)`` and one observation ``y = 1`` has
 ``Normal(theta, 1)`` noise, so the posterior has mean and variance 0.5. The
-printed moments approach both. See :doc:`/blackjax` for the walk-through.
+printed moments approach both. This page contains the complete workflow.
+
+Install FlatPPL and BlackJAX using :doc:`/installation`. For positive scales,
+bounds or structured domains, continue with :doc:`formula`, which uses
+automatic coordinate transforms.
 
 Runtime budget: 60 s.
 """
@@ -18,6 +22,16 @@ import jax.numpy as jnp
 from flatppl import Context, flatppl
 
 
+# %%
+# Write the model and its query
+# -----------------------------
+# ``lawof`` collects the prior parameters. ``kernelof`` describes the observation
+# model; ``likelihoodof`` fixes the observed value. ``bayesupdate`` multiplies
+# prior and likelihood. The posterior binding can have any name: here ``steve``.
+#
+# Both inline modules share a context. Registering a logical filename lets the
+# query load the model without creating a file. The query declares one record
+# input and one scalar output.
 def make_logdensity():
     """Compile the posterior log density of ``theta`` as a JAX callable."""
     context = Context()
@@ -47,6 +61,16 @@ def make_logdensity():
     return query.compile()
 
 
+# %%
+# Adapt and sample
+# ----------------
+# BlackJAX needs a scalar log density and an initial point. This parameter is
+# real-valued, so it already lives in unconstrained coordinates. Warmup tunes
+# NUTS with BlackJAX's default target acceptance of 0.8. Its returned parameters
+# stay fixed during sampling. Separate keys keep the two phases independent.
+#
+# ``lax.scan`` runs the transition loop in compiled code and collects the retained
+# draws. The Python function describes the loop once during JAX tracing.
 def run(
     *, warmup_steps: int = 512, num_samples: int = 4096, seed: int = 827
 ) -> tuple[jax.Array, jax.Array]:
@@ -70,6 +94,11 @@ def run(
     return sample(sample_key, state)
 
 
+# %%
+# Compare with the known posterior
+# --------------------------------
+# Completing the square gives ``Normal(0.5, sqrt(0.5))``. Monte Carlo means and
+# variances approach 0.5; finite runs need not equal it. Check divergences too.
 if __name__ == "__main__":
     draws, divergences = run()
     print(
@@ -79,3 +108,7 @@ if __name__ == "__main__":
             "divergences": int(jnp.sum(divergences)),
         }
     )
+
+# %%
+# Next, use :doc:`regression` for vector parameters and runtime data, or
+# :doc:`formula` for constrained scales, multiple chains and prediction.

@@ -377,6 +377,8 @@ Prior text is a FlatPPL measure expression. Both native names such as
 `student_t`, `cauchy`, `exponential`, `gamma`, `inv_gamma`, `beta`, `lognormal`,
 `logistic`, `weibull`, `double_exponential`, `chi_square` and `uniform`.
 `Flat()` names the density-only prior from the `regression` standard module.
+Use `Uniform(interval(a, b))` for a constant prior on a fixed finite interval.
+Reserve `Flat` for improper priors on supports of infinite volume.
 
 Use `class="b"` for population coefficients, `Intercept` for the centred
 intercept, `sd` for group scales, `sds` for smooth scales, and `sigma`, `nu`,
@@ -428,7 +430,7 @@ intercept, or keep the default centred intercept. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.
 
 Some intersections of an explicit open Flat support and an additional bound
-are not yet supported. Use `Flat(interval(...))` when a closed interval is
-intended. Proper prior
-normalizers must have a supported lowering; accepting a formula is not a
+are not yet supported. Use `Uniform(interval(...))` for a proper prior on a
+fixed finite interval. Proper prior normalizers must have a supported
+lowering; accepting a formula is not a
 promise that every FlatPPL measure expression has one.

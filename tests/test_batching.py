@@ -135,6 +135,47 @@ def test_empty_gather_map_keeps_empty_values_and_gradients() -> None:
     np.testing.assert_array_equal(gradient, np.empty((0, 3)))
 
 
+def test_dynamic_matrix_axes_keep_batched_values_and_gradients() -> None:
+    function = flatppl("""
+        x = external(cartpow(reals, [2, 3, 4]))
+        rows = external(cartpow(integers, 3))
+        columns = external(cartpow(integers, 3))
+        pick(i, j) = sum(x[i, :, j] .* [1.0, 2.0, 4.0])
+        inputs = (x, rows, columns)
+        outputs = sum(pick.(rows, columns))
+    """).compile()
+    x = jnp.arange(48, dtype=jnp.float32).reshape(2, 2, 3, 4) / 7
+    rows = jnp.array([[2, 1, 2], [1, 1, 2]])
+    columns = jnp.array([[4, 2, 4], [3, 1, 2]])
+
+    def oracle(x: jax.Array, rows: jax.Array, columns: jax.Array) -> jax.Array:
+        return jnp.sum(x[rows - 1, :, columns - 1] * jnp.array([1.0, 2.0, 4.0]))
+
+    actual = jax.jit(jax.vmap(jax.value_and_grad(function)))(x, rows, columns)
+    expected = jax.vmap(jax.value_and_grad(oracle))(x, rows, columns)
+    for found, wanted in zip(
+        jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True
+    ):
+        np.testing.assert_allclose(found, wanted, rtol=2e-6)
+
+
+def test_scan_in_callable_broadcast_keeps_state_and_host_gradients() -> None:
+    function = flatppl("""
+        q = external(reals)
+        a = elementof(reals)
+        step(s, x) = a*s + x
+        states = scan(step, 0.0, [1.0, 2.0, 3.0])
+        trajectory = functionof(states, a = a)
+        inputs = q
+        outputs = sum(sum.(trajectory.([q, q+1.0])))
+    """).compile()
+    q = jnp.array([[-0.5, 0.0, 0.25], [1.0, 1.5, 2.0]])
+    actual, gradient = jax.jit(jax.vmap(jax.vmap(jax.value_and_grad(function))))(q)
+    # Each trajectory is [1, a+2, a*a+2*a+3]. Sum it at a=q and a=q+1.
+    np.testing.assert_allclose(actual, 2 * q * q + 8 * q + 16)
+    np.testing.assert_allclose(gradient, 4 * q + 8)
+
+
 def test_composed_primitives_keep_host_axes_separate_from_callable_axes() -> None:
     function = flatppl("""
         rows = external(cartpow(cartpow(reals, 4), 3))

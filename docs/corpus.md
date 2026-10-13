@@ -2,21 +2,28 @@
 
 ## PosteriorDB models
 
-The 2026-10-13 checks add ten models in the
+The 2026-10-13 checks cover sixteen models in the
 [`posteriordb` collection](https://github.com/flatppl/flatppl-examples/tree/main/posteriordb):
 Binomial and Poisson GLMs, a Poisson mixed model, Mh, Rate 1, autoregression,
 Bayesian linear regression, centred Eight Schools, Gaussian-process regression
-and Kidscore interaction. Each model loads its data from the `data/` subdirectory.
+Kidscore interaction, Dogs avoidance learning, a two-component Gaussian mixture,
+M0 and Mb capture-recapture, ARMA(1,1), and the Survey population mixture. Each model loads its data from the `data/` subdirectory.
 The collection README records the original Stan sources and prior conventions.
 The targets retain their original posterior laws. Constant priors on fixed
 finite intervals use `Uniform`; only Kidscore's unbounded coefficients use
 improper `Flat` priors.
 
-All ten pass density, full-gradient, batching and coordinate-transform checks
+All sixteen pass density, full-gradient, batching and coordinate-transform checks
 on Apple silicon CPU, A100 and GH200 in float32 and float64. Frozen reference
-points come from the original Stan models. Each device/precision pair also runs
-two BlackJAX NUTS chains with 500 warmup steps and 1,000 retained draws per chain,
-at target acceptance 0.8. All 60 runs produce finite draws.
+points come from the original Stan models.
+
+The original ten models also ran BlackJAX on each device/precision pair.
+The six additions ran on CPU and A100. Each run uses two NUTS chains,
+500 warmup steps and 1,000 retained draws per chain, at target acceptance 0.8.
+For the additions, posterior means match separate four-chain Stan runs within
+2.3 combined Monte Carlo standard errors. Survey has five divergent float32 draws on CPU and one on A100, each
+among 2,000 draws. Its float64 runs have none. The other new CPU/A100
+runs have none. Use float64 for Survey when checking NUTS diagnostics.
 
 These are capability checks. Centred Eight Schools still has 44–85 divergences
 per run, and the Poisson mixed model needs longer runs for useful diagnostics.
@@ -24,8 +31,13 @@ Finite draws alone do not establish convergence.
 
 The models and data are also inspectable in the
 [playground](https://live.flatppl.org/#model=posteriordb%2FREADME.md).
-Density-based MCMC supports Kidscore's improper priors. The other nine models
+Density-based MCMC supports Kidscore's improper priors. The other fifteen models
 have sampleable joint priors, as required by IS, AMIS and SMC.
+The playground lists fourteen models with at most ten parameters.
+The full repository retains the larger GLMM and Mh models. All new models
+also sample through JS AMIS. Prefer AMIS over RAM for the Gaussian mixture,
+where RAM can remain in a secondary mode.
+
 See the [transform reference](transforms.md) and
 [BlackJAX tutorial](examples/formula.rst) for the Python workflow.
 

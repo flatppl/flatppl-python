@@ -62,6 +62,12 @@ tagged release.
 
 ### Changed
 
+- Bundled Rust compiler update: composed mixture densities, matrix broadcasts,
+  dynamic tensor selectors and scans inside callable broadcasts support six
+  more posteriorDB models. Fixed Binomial coefficients avoid float32
+  cancellation. Values, gradients, batching and coordinate transforms pass
+  on CPU, A100 and GH200.
+
 - Bundled Rust compiler update: `Uniform(unitinterval)` lowers for density
   evaluation and sampling. Corpus and formula guidance use proper Uniform
   priors on fixed finite intervals.

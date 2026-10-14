@@ -62,6 +62,12 @@ tagged release.
 
 ### Changed
 
+- Enzyme alpha 7 preserves shared scan expressions during reshape propagation
+  and postpones scan fission until after differentiation. Batched float64 ARMA
+  gradients improve on CPU. Values, JVPs and gradients pass in both precisions
+  on M4, A100, GH200 and GB10.
+- The Enzyme update retains static padding in batched integration gradients,
+  avoiding an unsupported dynamic-padding operation after upstream changes.
 - The bundled compiler reduces fixed Normal, Gamma, Beta, Poisson, Binomial and
   Exponential likelihoods to scalar statistics while preserving their full
   density constants and runtime input overrides.

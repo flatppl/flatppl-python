@@ -62,6 +62,11 @@ tagged release.
 
 ### Changed
 
+- The bundled compiler reduces fixed Normal, Gamma, Beta, Poisson, Binomial and
+  Exponential likelihoods to scalar statistics while preserving their full
+  density constants and runtime input overrides.
+- Batched scan queries with normalized Cauchy priors retain one time loop across
+  parameter points instead of a separate loop over points.
 - The bundled compiler folds fixed indexing before StableHLO emission, avoiding
   repeated data preparation in posterior scores and their transformed targets.
 - Bundled Rust compiler update: composed mixture densities, matrix broadcasts,

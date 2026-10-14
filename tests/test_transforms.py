@@ -115,6 +115,32 @@ def test_nested_records_keep_outputs_and_add_density_correction_once() -> None:
         np.testing.assert_allclose(found, wanted, rtol=2e-6, atol=1e-7)
 
 
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_fixed_likelihood_keeps_transformed_values_and_batched_gradients(
+    dtype: str,
+) -> None:
+    with jax.enable_x64(dtype == "float64"):
+        target = flatppl("""
+        p = elementof(cartprod(reals, posreals))
+        inputs = p
+        outputs = logdensityof(iid(Normal(p[1], p[2]), 4), [0.17, 0.31, 1.19, 2.73])
+        """).compile_transformed(logdensity=True, dtype=dtype)
+        observations = jnp.array([0.17, 0.31, 1.19, 2.73], dtype=dtype)
+
+        def reference(u: jax.Array) -> jax.Array:
+            scale = jnp.exp(u[1])
+            residual = (observations - u[0]) / scale
+            scores = -0.5 * residual**2 - u[1] - 0.5 * jnp.log(2 * jnp.pi)
+            return jnp.sum(scores) + u[1]
+
+        points = jnp.array([[0.7, 0.3], [-0.4, -0.2], [1.2, 0.8]], dtype=dtype)
+        actual = jax.jit(jax.vmap(jax.value_and_grad(target.unconstrained)))(points)
+        expected = jax.jit(jax.vmap(jax.value_and_grad(reference)))(points)
+        tolerance = 3e-6 if dtype == "float32" else 2e-12
+        for found, wanted in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(found, wanted, rtol=tolerance, atol=tolerance)
+
+
 def test_vector_products_keep_separate_constrained_and_free_offsets() -> None:
     target = flatppl("""
     p = elementof(cartprod(zerosum(3), ordered(2)))

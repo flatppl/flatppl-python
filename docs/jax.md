@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.5` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.7` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -19,7 +19,7 @@ The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
 | `jax.pmap` | Compatible; prefer `shard_map` for new code |
 | Second derivatives | Tested for a pure scalar program through the fork's joint derivative path |
 | Gradients through multiple outputs | Tested for pure static tensor programs |
-| GPU execution | Tested on NVIDIA A100 with CUDA 12 and GH200 with CUDA 13 |
+| GPU execution | Tested on NVIDIA A100 with CUDA 12, and GH200 and GB10 with CUDA 13 |
 
 Support also depends on the operations in the query. The default
 `compile(autodiff=True)` selects the Rust emitter's Enzyme compatibility mode.
@@ -142,6 +142,11 @@ The Enzyme fork tensorizes supported imported StableHLO derivative programs.
 Both derivative orders above retain tensor batching. Values and pullbacks share
 forward residuals, so a mapped value-and-gradient scan has one forward time loop
 and one reverse time loop.
+
+The fork preserves shared scan expressions during reshape propagation and
+postpones loop fission until after differentiation. This avoids duplicate
+gradient accumulators and unnecessary buffers across time steps. It improves
+batched scan gradients on CPU; GPU gains depend on the recurrence and device.
 
 Padding and closed scatter-update regions also batch, including gather pullbacks
 with repeated indices. The fork optimizes loop-free tensor graphs after batching

@@ -62,6 +62,8 @@ tagged release.
 
 ### Changed
 
+- The bundled compiler folds fixed indexing before StableHLO emission, avoiding
+  repeated data preparation in posterior scores and their transformed targets.
 - Bundled Rust compiler update: composed mixture densities, matrix broadcasts,
   dynamic tensor selectors and scans inside callable broadcasts support six
   more posteriorDB models. Fixed Binomial coefficients avoid float32

@@ -7,6 +7,8 @@ tagged release.
 
 ### Added
 
+- The bundled compiler supports positional record joints, including explicit
+  reference priors joined to proper `lawof` records.
 - The bundled compiler accepts `(a = x)` record literals and bare boundaries
   such as `kernelof(y, a, b)` and `functionof(expr, a, b)`.
 - `Module.compile_transformed` exposes the constrained query, a target in free

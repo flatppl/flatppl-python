@@ -36,9 +36,9 @@ def make_query(n: int, p: int):
         y_data = external(cartpow(reals, n))
         beta ~ iid(Normal(0.0, 2.0), p)
         y ~ Normal.(X * beta, 0.5)
-        prior = lawof(record(beta = beta))
-        forward_kernel = kernelof(record(y = y), beta = beta)
-        L = likelihoodof(forward_kernel, record(y = y_data))
+        prior = lawof((beta = beta))
+        forward_kernel = kernelof((y = y), beta)
+        L = likelihoodof(forward_kernel, (y = y_data))
         posterior = bayesupdate(L, prior)
         """,
         context=context,

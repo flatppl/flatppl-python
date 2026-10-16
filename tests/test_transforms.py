@@ -199,3 +199,34 @@ def test_record_products_concatenate_fields_without_flattening_nested_records() 
         strict=True,
     ):
         np.testing.assert_allclose(found, wanted, atol=1e-7)
+
+
+def test_explicit_improper_prior_keeps_transformed_posterior_gradients() -> None:
+    target = flatppl("""
+    beta = elementof(cartpow(reals, 2))
+    sigma ~ Exponential(1)
+    proper = lawof((sigma = sigma))
+    prior = joint(Lebesgue(cartprod(beta = cartpow(reals, 2))), proper)
+    y ~ Normal.(beta, sigma)
+    K = kernelof(y, beta, sigma)
+    posterior = bayesupdate(likelihoodof(K, [1, 3]), prior)
+    p = elementof(cartprod(beta = cartpow(reals, 2), sigma = posreals))
+    inputs = p
+    outputs = logdensityof(posterior, p)
+    """).compile_transformed(logdensity=True)
+
+    def reference(u: dict[str, jax.Array]) -> jax.Array:
+        scale = jnp.exp(u["sigma"])
+        residual = (jnp.array([1, 3]) - u["beta"]) / scale
+        return -scale - u["sigma"] - jnp.log(2 * jnp.pi) - 0.5 * jnp.sum(residual**2)
+
+    points = {
+        "beta": jnp.array([[0.5, 2.0], [-0.3, 1.0]]),
+        "sigma": jnp.array([0.2, -0.4]),
+    }
+    actual = jax.jit(jax.vmap(jax.value_and_grad(target.unconstrained)))(points)
+    expected = jax.jit(jax.vmap(jax.value_and_grad(reference)))(points)
+    for found, wanted in zip(
+        jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True
+    ):
+        np.testing.assert_allclose(found, wanted, rtol=3e-6, atol=3e-6)

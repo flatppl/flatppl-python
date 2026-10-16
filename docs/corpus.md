@@ -52,7 +52,7 @@ matches independent matrix/reduction values on both devices.
 Each sampling smoke run uses float32, two chains, 64 warmup steps and 64 retained
 draws per chain. Seeds are 827 and 828. The tested stack is JAX/jaxlib 0.11.2,
 released Enzyme 0.0.15 and BlackJAX 1.7.1. The A100 uses CUDA 12.
-The package now pins our Enzyme fork's `0.0.15+flatppl.8` alpha wheels.
+The package now pins our Enzyme fork's `0.0.15+flatppl.9` alpha wheels.
 These runs check compilation, first derivatives and sampler execution.
 They do not establish mixing or posterior convergence.
 
@@ -74,6 +74,15 @@ check values and gradients against independent JAX expressions and inspect the
 compiled program for unwanted loops over batch lanes. The published Belle II
 combined likelihood also passes local float64 comparisons against pyhf for
 batched densities and all 232 gradient components.
+
+## Enzyme alpha 9 correctness checks
+
+The 2026-10-16 checks cover constant slice and update indices, including signed
+negative indices and unsigned high bits. Sixteen cases check default and optimized
+imports, with values and weighted gradients against direct array results on
+M4 CPU, A100 and GH200.
+All XLA passes remain enabled. The existing 13 scan and differentiation checks
+also pass on each device. All nine Python/platform wheel ABIs load successfully.
 
 ## Enzyme alpha 8 release checks
 

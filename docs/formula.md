@@ -81,9 +81,11 @@ this metadata when constructing a query for a different model.
 
 Each `info["parameters"]` entry has a `role`: `sampled`, `fixed` or `derived`.
 Its `index` or `indices`, when present, are one-based FlatPPL coordinates.
-`prior_factors` maps actual draw bindings to their inferred mass class and
-`contains_flat` flag. `prior_sampling` is `unavailable` for a Flat source;
+`prior_factors` maps inference coordinates to their prior mass class.
+`prior_sampling` is `unavailable` when a prior factor is not normalized;
 otherwise it is `not_checked`, which does not promise a sampler lowering.
+`model.Pi_post.domain` gives the ordered record fields for a density query.
+Conditional priors can place parent parameters before their dependent coefficients.
 
 ```{testcode} formula
 density_only = from_formula(
@@ -110,7 +112,7 @@ as tuples and preserves numeric labels.
 
 ## Evaluate the posterior
 
-The generated parameters are draws. Query their joint law explicitly, as in
+The generated parameters below have proper priors. Query their joint law explicitly, as in
 the [tutorial](examples/formula.rst); the
 [general query helper](modules.md#query-from-python) applies to free parameters
 declared with `elementof`. The [coordinate-transform reference](transforms.md)
@@ -208,7 +210,7 @@ levels. Training drops unused levels. A no-intercept formula such as `y ~ 0 + f`
 uses full cell coding.
 
 Use `y ~ 0 + Intercept + x` for an ordinary, uncentred intercept coefficient.
-Select its prior with `class="b", coef="Intercept"`; it defaults to `Flat()`.
+Select its prior with `class="b", coef="Intercept"`; it defaults to `Lebesgue(reals)`.
 Rust supplies the column of ones for training and prediction. Any supplied
 `Intercept` column must contain only ones. Factor predictors retain contrast
 coding in this form.
@@ -376,9 +378,9 @@ Prior text is a FlatPPL measure expression. Both native names such as
 `Normal(0, 2)` and brms aliases such as `normal(0, 2)` work. The aliases include
 `student_t`, `cauchy`, `exponential`, `gamma`, `inv_gamma`, `beta`, `lognormal`,
 `logistic`, `weibull`, `double_exponential`, `chi_square` and `uniform`.
-`Flat()` names the density-only prior from the `regression` standard module.
-Use `Uniform(interval(a, b))` for a constant prior on a fixed finite interval.
-Reserve `Flat` for improper priors on supports of infinite volume.
+Use `Lebesgue(reals)` for an improper constant prior. The converter emits an
+explicit measure factor and joins it with the proper prior law.
+Use `Uniform(interval(a, b))` for a proper constant prior on a fixed finite interval.
 
 Use `class="b"` for population coefficients, `Intercept` for the centred
 intercept, `sd` for group scales, `sds` for smooth scales, and `sigma`, `nu`,
@@ -407,19 +409,19 @@ priors = [
 Coefficient overrides inherit class bounds; put `lb` and `ub` on the class
 entry. Bounds can be numbers or scalar FlatPPL expressions referring to
 generated parameters. Proper restricted priors include the normalization
-constant and its parameter dependence. Flat restrictions keep unit density
+constant and its parameter dependence. Lebesgue restrictions keep unit density
 on their support, even for a finite interval. `constant(c)` accepts a finite
 numeric literal and removes that coefficient from the sampled coordinates;
 its bounds, if supplied, must be fixed. At least one sampled parameter must
 remain in the model.
 
-Defaults follow brms: improper Flat population coefficients, a centred
+Defaults follow brms: improper Lebesgue population coefficients, a centred
 Student-t intercept and half-Student-t scales. Student `nu` has a Gamma(2, 0.1)
 prior normalized above 1; Gamma and Weibull `shape` and beta `phi` have
 Gamma(0.01, 0.01), while negative-binomial `shape` has inverse-Gamma(0.4, 0.3).
 von Mises `kappa` has Gamma(2, 0.01), and zero-inflation `zi` has Beta(1, 1).
-Use explicit proper priors when appropriate, as in the example. Flat cannot be
-sampled as a prior source.
+Use explicit proper priors when appropriate, as in the example. An improper prior cannot be
+sampled as a prior source. The posterior can still be proper.
 
 ## Current limits
 
@@ -429,7 +431,7 @@ additions other than `trials`, `weights` and `se` are not implemented.
 intercept, or keep the default centred intercept. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.
 
-Some intersections of an explicit open Flat support and an additional bound
+Some intersections of an explicit open support and an additional bound
 are not yet supported. Use `Uniform(interval(...))` for a proper prior on a
 fixed finite interval. Proper prior normalizers must have a supported
 lowering; accepting a formula is not a

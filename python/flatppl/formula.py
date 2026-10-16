@@ -49,7 +49,7 @@ def from_formula(
         family: The observation family. Rust selects its default link.
         priors: Prior entries, for example
             ``[{"class": "b", "prior": "Normal(0, 2)"}]``. Omitted entries use
-            the frontend's brms defaults, including improper Flat priors for
+            the frontend's brms defaults, including improper Lebesgue priors for
             ordinary regression coefficients.
         link: Override the family's default link.
         dpars: Formulas for family parameters, for example

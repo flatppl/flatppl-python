@@ -11,7 +11,7 @@ M0 and Mb capture-recapture, ARMA(1,1), and the Survey population mixture. Each 
 The collection README records the original Stan sources and prior conventions.
 The targets retain their original posterior laws. Constant priors on fixed
 finite intervals use `Uniform`; only Kidscore's unbounded coefficients use
-improper `Flat` priors.
+explicit Lebesgue priors joined with the proper scale law.
 
 All sixteen pass density, full-gradient, batching and coordinate-transform checks
 on Apple silicon CPU, A100 and GH200 in float32 and float64. Frozen reference

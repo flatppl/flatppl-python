@@ -36,7 +36,7 @@ from flatppl import flatppl, from_formula
 #
 # The explicit priors below regularize the intercept, slope, site variation
 # and observation noise. FlatPPL's brms-compatible default slope prior is
-# improper ``Flat()``; choosing a proper Normal also makes this joint prior
+# improper ``Lebesgue(reals)``; choosing a proper Normal also makes this joint prior
 # sampleable. Positive scale domains turn the two ``normal(0, 1)`` scale priors
 # into normalized half-Normals.
 data = pl.DataFrame(

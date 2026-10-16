@@ -5,6 +5,12 @@ tagged release.
 
 ## Unreleased
 
+### Changed
+
+- Formula defaults use explicit Lebesgue priors joined to proper laws. Conditional
+  prior bounds preserve density constants and parameter dependence.
+- The bundled compiler removes `regression.Flat` and rejects empty calls.
+
 ### Added
 
 - The bundled compiler supports positional record joints, including explicit

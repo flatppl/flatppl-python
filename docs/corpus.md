@@ -52,7 +52,7 @@ matches independent matrix/reduction values on both devices.
 Each sampling smoke run uses float32, two chains, 64 warmup steps and 64 retained
 draws per chain. Seeds are 827 and 828. The tested stack is JAX/jaxlib 0.11.2,
 released Enzyme 0.0.15 and BlackJAX 1.7.1. The A100 uses CUDA 12.
-The package now pins our Enzyme fork's `0.0.15+flatppl.7` alpha wheels.
+The package now pins our Enzyme fork's `0.0.15+flatppl.8` alpha wheels.
 These runs check compilation, first derivatives and sampler execution.
 They do not establish mixing or posterior convergence.
 
@@ -74,6 +74,18 @@ check values and gradients against independent JAX expressions and inspect the
 compiled program for unwanted loops over batch lanes. The published Belle II
 combined likelihood also passes local float64 comparisons against pyhf for
 batched densities and all 232 gradient components.
+
+## Enzyme alpha 8 release checks
+
+The 2026-10-16 checks cover ARMA(1,1), its log-scale target, a nonlinear
+recurrence and a variance recurrence. Values, JVPs and gradients match native
+JAX in float32 and float64, for scalar calls and batches of four, on M4 CPU,
+A100, GH200 and GB10. Zero-step, one-step and nested scans also pass gradient
+and Hessian-vector checks. Masked log, reciprocal and exponential operations
+retain finite inactive first and second derivatives.
+
+These checks qualify the imported-program derivative path. The corpus sampling
+results above retain their stated dates and dependency versions.
 
 ## Compiler coverage
 

@@ -40,9 +40,9 @@ def make_logdensity():
         flatppl_compat = "0.1"
         theta ~ Normal(mu = 0.0, sigma = 1.0)
         y ~ Normal(mu = theta, sigma = 1.0)
-        prior = lawof(record(theta = theta))
-        forward_kernel = kernelof(record(y = y), theta = theta)
-        L = likelihoodof(forward_kernel, record(y = 1.0))
+        prior = lawof((theta = theta))
+        forward_kernel = kernelof((y = y), theta)
+        L = likelihoodof(forward_kernel, (y = 1.0))
         steve = bayesupdate(L, prior)
     """,
         context=context,

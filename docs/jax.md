@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.7` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.8` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -17,7 +17,7 @@ The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
 | `jax.vmap` | Nested maps, shared inputs, nonleading axes, structured outputs, and first derivatives |
 | `jax.shard_map` and sharded `jax.jit` | Values and gradients, including shared-parameter reductions |
 | `jax.pmap` | Compatible; prefer `shard_map` for new code |
-| Second derivatives | Tested for a pure scalar program through the fork's joint derivative path |
+| Second derivatives | Tested for scalar programs and nested scans through the fork's joint derivative path |
 | Gradients through multiple outputs | Tested for pure static tensor programs |
 | GPU execution | Tested on NVIDIA A100 with CUDA 12, and GH200 and GB10 with CUDA 13 |
 

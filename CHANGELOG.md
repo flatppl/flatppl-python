@@ -62,6 +62,11 @@ tagged release.
 
 ### Changed
 
+- Enzyme alpha 8 includes current upstream compiler fixes and reuses saved
+  states in reverse scans. Reduction reuse preserves element types, comparison
+  attributes and distinct axes. Masked arithmetic retains finite inactive
+  gradients, including second derivatives.
+
 - Enzyme alpha 7 preserves shared scan expressions during reshape propagation
   and postpones scan fission until after differentiation. Batched float64 ARMA
   gradients improve on CPU. Values, JVPs and gradients pass in both precisions

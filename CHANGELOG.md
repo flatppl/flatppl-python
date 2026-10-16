@@ -64,6 +64,9 @@ tagged release.
 
 ### Changed
 
+- Enzyme alpha 9 prevents unsafe floating-point and integer conversion folds.
+  Constant slice indices clamp per axis before GPU lowering, avoiding wrong-cell
+  reads and writes without disabling XLA passes.
 - Enzyme alpha 8 includes current upstream compiler fixes and reuses saved
   states in reverse scans. Reduction reuse preserves element types, comparison
   attributes and distinct axes. Masked arithmetic retains finite inactive

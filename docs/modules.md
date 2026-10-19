@@ -164,16 +164,55 @@ An inline import that matches different registry and file definitions fails as a
 data as a standard ZIP. This also works for modules composed through the
 context registry. Bound constants and slices retain their effective definitions.
 
-```python
+This example bundles an imported Normal prior, two observations, and a query
+for their joint log density. It writes `observations.json` and `normal.flatppl.zip`
+in the current directory.
+
+```{testsetup} zip-bundles
+import os
 from pathlib import Path
-from flatppl import Context
+from tempfile import TemporaryDirectory
+
+previous_directory = Path.cwd()
+temporary_directory = TemporaryDirectory()
+os.chdir(temporary_directory.name)
+```
+
+```{testcode} zip-bundles
+from pathlib import Path
+from flatppl import Context, flatppl
+
+Path("observations.json").write_text("[1.0, 2.0]")
+ctx = Context()
+prior = flatppl("Pi = Normal(0.0, 1.0)", context=ctx)
+ctx.register("prior.flatppl", prior)
+
+query = flatppl(r"""
+    prior = load_module("prior.flatppl")
+    y = load_data("observations.json", cartpow(reals, 2))
+    mu = elementof(reals)
+    inputs = mu
+    outputs = logdensityof(prior.Pi, mu) + sum(logdensityof.(Normal(mu, 1.0), y))
+""", context=ctx, source_path=Path.cwd() / "query.flatppl")
 
 archive = query.pack()
-Path("model.flatppl.zip").write_bytes(archive)
+Path("normal.flatppl.zip").write_bytes(archive)
 
-restored = Context().load("model.flatppl.zip")
-from_bytes = Context().load_bundle("model.flatppl.zip", archive)
+restored = Context().load("normal.flatppl.zip")
 logdensity = restored.compile()
+print(round(float(logdensity(mu=0.0)), 5))
+```
+
+```{testoutput} zip-bundles
+-5.25682
+```
+
+The new context loads both the prior and observations from the ZIP. To load
+archive bytes directly, use `Context().load_bundle("normal.flatppl.zip", archive)`.
+
+```{testcleanup} zip-bundles
+os.chdir(previous_directory)
+temporary_directory.cleanup()
 ```
 
 Opening a bundle extracts nothing. Its entry is `main.flatppl`; imports and

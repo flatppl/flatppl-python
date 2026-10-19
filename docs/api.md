@@ -12,6 +12,8 @@ whose names start with an underscore, is private.
 ```{eval-rst}
 .. autofunction:: flatppl.flatppl
 
+.. autofunction:: flatppl.load
+
 .. autofunction:: flatppl.from_pyhf
 
 .. autofunction:: flatppl.from_formula

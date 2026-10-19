@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, NotImplementedType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
@@ -326,6 +326,12 @@ class Context:
 
     Modules that import each other by name share one context. A new context
     starts empty. Names cannot be replaced once registered.
+
+    Equality compares registered names and their source, imports and data using
+    cached content hashes. File caches and compiled functions are excluded.
+    The first comparison reads any data not yet loaded and may raise
+    :class:`CompilationError` if a dependency is missing. Contexts are mutable
+    and cannot be dictionary keys.
     """
 
     def __init__(self) -> None:
@@ -335,9 +341,19 @@ class Context:
     def _register_query_model(self, module: Module) -> str:
         # The registry is append-only, so each query takes a fresh name.
         name = f"flatppl-query/model-{self._queries}.flatppl"
+        while self._native.contains(name):
+            self._queries += 1
+            name = f"flatppl-query/model-{self._queries}.flatppl"
         self._queries += 1
         self.register(name, module)
         return name
+
+    def __eq__(self, other: object) -> bool | NotImplementedType:
+        if not isinstance(other, Context):
+            return NotImplemented
+        return self is other or native_call(self._native.fingerprint) == native_call(
+            other._native.fingerprint
+        )
 
     def load(self, path: str | os.PathLike[str]) -> Module:
         """Load a file, directory, ZIP bundle or cached HTTP source.
@@ -404,6 +420,11 @@ class Module:
 
     Attribute access such as ``module.theta`` returns the binding ``theta``
     unless a Python attribute has that name. Use :attr:`bindings` for those.
+
+    Equality and hashing compare source, imports and data content. File paths,
+    ZIP encoding and Python compile options are excluded. This is content
+    identity, not mathematical equivalence. The first comparison or hash reads
+    any data not yet loaded and may raise :class:`CompilationError`.
     """
 
     def __init__(
@@ -456,7 +477,17 @@ class Module:
         """The label that diagnostics use for this module's source."""
         return self._native.source_name
 
-    def pack(self) -> bytes:
+    def __eq__(self, other: object) -> bool | NotImplementedType:
+        if not isinstance(other, Module):
+            return NotImplemented
+        return self is other or native_call(self._native.fingerprint) == native_call(
+            other._native.fingerprint
+        )
+
+    def __hash__(self) -> int:
+        return hash(native_call(self._native.fingerprint))
+
+    def pack(self, *, include_context: bool = False) -> bytes:
         """Export this module and its dependencies as a portable ZIP archive.
 
         The archive contains ``main.flatppl`` and every referenced module and
@@ -464,15 +495,24 @@ class Module:
         Bound or sliced modules export their effective definitions.
         Use :meth:`save` to write the archive directly to a path.
 
+        Args:
+            include_context: Also include every registered module in this
+                module's context. Loading the archive restores those names.
+                The default includes only this module and its dependencies.
+
         Returns:
             ZIP bytes, using standard Deflate compression.
 
         Raises:
             CompilationError: A dependency is missing or its path is not fixed.
         """
+        if include_context:
+            return native_call(self._context._native.pack, self._native)  # pyright: ignore[reportPrivateUsage]
         return native_call(self._native.pack)
 
-    def save(self, path: str | os.PathLike[str]) -> None:
+    def save(
+        self, path: str | os.PathLike[str], *, include_context: bool = False
+    ) -> None:
         """Save this module, its imports and data as a portable ZIP bundle.
 
         Use :func:`load` to reopen it. The archive is built before the file is
@@ -481,12 +521,14 @@ class Module:
         Args:
             path: The destination ZIP path, usually ending in ``.flatppl.zip``.
                 An existing file is replaced.
+            include_context: Include all modules registered in this module's
+                context, as in :meth:`pack`.
 
         Raises:
             CompilationError: A dependency is missing or its path is not fixed.
             OSError: The destination cannot be written.
         """
-        Path(path).write_bytes(self.pack())
+        Path(path).write_bytes(self.pack(include_context=include_context))
 
     @property
     def bindings(self) -> Mapping[str, Binding]:

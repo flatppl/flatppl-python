@@ -1,7 +1,7 @@
 import io
 import math
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 import jax
 import jax.numpy as jnp
@@ -66,8 +66,11 @@ def test_pack_retains_bound_priors_cached_data_and_binary_bytes(tmp_path: Path) 
     path = tmp_path / "export.flatppl.zip"
     query.save(path)
     saved = load(str(path))
+    assert query == restored == saved
+    assert hash(query) == hash(restored)
     sliced = query.slice(["inputs", "outputs"])
     reopened_slice = Context().load_bundle("slice.zip", sliced.pack())
+    assert sliced == reopened_slice
     for candidate in (restored, saved, reopened_slice):
         value, gradient = jax.jit(jax.value_and_grad(candidate.compile()))(
             jnp.float32(0.25)
@@ -86,3 +89,66 @@ def test_failed_save_preserves_existing_file(tmp_path: Path) -> None:
     with pytest.raises(CompilationError):
         module.save(path)
     assert path.read_bytes() == b"existing file"
+
+
+def test_context_export_restores_names_and_allows_new_queries(tmp_path: Path) -> None:
+    context = Context()
+    model = flatppl("x = elementof(reals)\ny = x + 1", context=context)
+    query = model.query("y")
+    extra = flatppl("value = 7", context=context)
+    context.register("extra.flatppl", extra)
+    path = tmp_path / "query.flatppl.zip"
+    query.save(path)
+    restored = load(path)
+    assert restored == query
+    assert restored.context != context
+
+    query.save(path, include_context=True)
+    restored = load(path)
+    assert restored == query
+    assert restored.context == context
+    assert load(path, context=restored.context) == query
+    buffer = io.BytesIO()
+    with ZipFile(path) as original, ZipFile(buffer, "w") as linked:
+        for name in original.namelist():
+            target = "query.flatppl" if name == "main.flatppl" else name
+            linked.writestr(target, original.read(name))
+        entry = ZipInfo("main.flatppl")
+        entry.create_system = 3
+        entry.external_attr = 0o120777 << 16
+        linked.writestr(entry, "query.flatppl")
+    linked_query = Context().load_bundle("linked.zip", buffer.getvalue())
+    assert linked_query == query
+    assert linked_query.context == context
+    reimported = flatppl(
+        'm = load_module("extra.flatppl")\noutputs = m.value',
+        context=restored.context,
+    )
+    assert reimported.compile()() == extra.constant("value")
+    fresh = flatppl(model.source, context=restored.context).query("y")
+    assert fresh == query
+    assert fresh.compile()({"x": 2.0}) == query.compile()({"x": 2.0})
+    assert restored.context != context
+
+
+def test_content_hash_tracks_data_snapshots_and_ignores_zip_encoding(
+    tmp_path: Path,
+) -> None:
+    source = 'outputs = load_data("value.json", reals)'
+    module = flatppl(source, source_path=tmp_path / "model.flatppl")
+    with pytest.raises(CompilationError):
+        hash(module)
+    data = tmp_path / "value.json"
+    data.write_text("1.0")
+    original_hash = hash(module)
+    buffer = io.BytesIO()
+    with ZipFile(io.BytesIO(module.pack())) as original, ZipFile(buffer, "w") as stored:
+        for name in reversed(original.namelist()):
+            stored.writestr(name, original.read(name))
+    restored = Context().load_bundle("different.zip", buffer.getvalue())
+    assert restored == module
+    assert hash(restored) == original_hash
+    data.write_text("2.0")
+    changed = flatppl(source, source_path=tmp_path / "model.flatppl")
+    assert changed != module
+    assert hash(module) == original_hash

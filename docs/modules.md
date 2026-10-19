@@ -57,7 +57,7 @@ Use `module.bindings["compile"]` when a FlatPPL name collides with a Python
 attribute. The mapping contains every public binding exposed by the compiler.
 These names are Python attributes of a module, so attribute access never
 returns a binding with one of them: `bindings`, `compile`, `constant`,
-`context`, `downstream`, `graph`, `math`, `parameters`, `pyhf`, `query`,
+`context`, `downstream`, `graph`, `math`, `pack`, `parameters`, `pyhf`, `query`,
 `set`, `slice`, `source`, `source_name` and `upstream`. Later releases add
 names to this list, so prefer `module.bindings[name]` in library code.
 `dir(module)` lists the bindings that attribute access reaches.
@@ -131,7 +131,8 @@ cannot be an output, because a loaded module hides stochastic bindings. The
 ## Load files
 
 Use `ctx.load("model.flatppl")` to load a file. Loading a directory selects its
-`main.flatppl`. Paths inside a file module resolve relative to that file.
+`main.flatppl`. A ZIP archive works the same way: `ctx.load("model.flatppl.zip")`.
+Paths inside a file module resolve relative to that file.
 
 For inline code in a Python script, supply the script's path:
 
@@ -157,6 +158,30 @@ definition registered as `"models/model.flatppl"`.
 Registering an alias does not change the definition's original import paths.
 An inline import that matches different registry and file definitions fails as ambiguous.
 
+## Portable ZIP bundles
+
+`module.pack()` captures the module's source, imported modules, and referenced
+data as a standard ZIP. This also works for modules composed through the
+context registry. Bound constants and slices retain their effective definitions.
+
+```python
+from pathlib import Path
+from flatppl import Context
+
+archive = query.pack()
+Path("model.flatppl.zip").write_bytes(archive)
+
+restored = Context().load("model.flatppl.zip")
+from_bytes = Context().load_bundle("model.flatppl.zip", archive)
+logdensity = restored.compile()
+```
+
+Opening a bundle extracts nothing. Its entry is `main.flatppl`; imports and
+data stay inside the archive, including nested bundles. Export retains source
+text except rewritten paths, and preserves data bytes. Missing dependencies
+stop export rather than producing an incomplete archive. A bundle does not
+include JAX, an environment, or the values of unbound inputs.
+
 ## Change data or definitions
 
 Pass changing data through declared inputs to reuse a compiled query.
@@ -178,6 +203,5 @@ This follows the language's
 
 ## Import limits
 
-Directory bundles must keep imports inside their root. ZIP bundles are not
-supported by the Python host yet. HTTP imports read the existing FlatPPL cache
-and do not fetch missing sources.
+Directory and ZIP bundles must keep imports and data inside their root.
+HTTP imports read the existing FlatPPL cache and do not fetch missing sources.

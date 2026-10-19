@@ -339,13 +339,14 @@ class Context:
         return name
 
     def load(self, path: str | os.PathLike[str]) -> Module:
-        """Load a module from a file, a directory bundle or a cached HTTP source.
+        """Load a file, directory, ZIP bundle or cached HTTP source.
 
-        A directory loads its ``main.flatppl``. The first load of a file takes a
-        snapshot, and later loads in this context reuse it.
+        A directory or ZIP loads its ``main.flatppl``. Loading a ZIP extracts
+        no files. The first load takes a snapshot; later loads in this context
+        reuse it.
 
         Args:
-            path: The file or directory to load.
+            path: The file, directory or ZIP archive to load.
 
         Returns:
             The loaded module.
@@ -354,6 +355,24 @@ class Context:
             CompilationError: The source does not load, parse or infer.
         """
         return Module(native_call(self._native.load, os.fspath(path)), self)
+
+    def load_bundle(self, name: str, data: bytes) -> Module:
+        """Load a ZIP snapshot from bytes without extracting files.
+
+        Imports and data resolve inside the archive. Each call creates an
+        independent snapshot; ``name`` labels it and does not register it.
+
+        Args:
+            name: A diagnostic label, such as ``"model.flatppl.zip"``.
+            data: The complete ZIP archive bytes.
+
+        Returns:
+            The module loaded from the archive's ``main.flatppl``.
+
+        Raises:
+            CompilationError: The archive or its model is invalid.
+        """
+        return Module(native_call(self._native.load_bundle, name, data), self)
 
     def register(self, name: str, module: Module) -> None:
         """Register a module under a name that other modules import.
@@ -435,6 +454,22 @@ class Module:
     def source_name(self) -> str:
         """The label that diagnostics use for this module's source."""
         return self._native.source_name
+
+    def pack(self) -> bytes:
+        """Export this module and its dependencies as a portable ZIP archive.
+
+        The archive contains ``main.flatppl`` and every referenced module and
+        data file. Source text is retained except for paths that must change.
+        Bound or sliced modules export their effective definitions.
+        No files are written; save the returned bytes where you choose.
+
+        Returns:
+            ZIP bytes, using standard Deflate compression.
+
+        Raises:
+            CompilationError: A dependency is missing or its path is not fixed.
+        """
+        return native_call(self._native.pack)
 
     @property
     def bindings(self) -> Mapping[str, Binding]:

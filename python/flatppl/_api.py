@@ -6,6 +6,7 @@ import json
 import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
@@ -396,8 +397,8 @@ class Context:
 class Module:
     """An immutable FlatPPL definition with a fixed dependency closure.
 
-    Get modules from :func:`flatppl`, :func:`from_pyhf`, :func:`from_formula`
-    or :meth:`Context.load`.
+    Get modules from :func:`flatppl`, :func:`load`, :func:`from_pyhf`,
+    :func:`from_formula` or :meth:`Context.load`.
     A module that declares ``inputs`` and ``outputs`` is a query, and
     :meth:`compile` turns it into a JAX function.
 
@@ -461,7 +462,7 @@ class Module:
         The archive contains ``main.flatppl`` and every referenced module and
         data file. Source text is retained except for paths that must change.
         Bound or sliced modules export their effective definitions.
-        No files are written; save the returned bytes where you choose.
+        Use :meth:`save` to write the archive directly to a path.
 
         Returns:
             ZIP bytes, using standard Deflate compression.
@@ -470,6 +471,22 @@ class Module:
             CompilationError: A dependency is missing or its path is not fixed.
         """
         return native_call(self._native.pack)
+
+    def save(self, path: str | os.PathLike[str]) -> None:
+        """Save this module, its imports and data as a portable ZIP bundle.
+
+        Use :func:`load` to reopen it. The archive is built before the file is
+        opened, so a missing dependency leaves an existing file unchanged.
+
+        Args:
+            path: The destination ZIP path, usually ending in ``.flatppl.zip``.
+                An existing file is replaced.
+
+        Raises:
+            CompilationError: A dependency is missing or its path is not fixed.
+            OSError: The destination cannot be written.
+        """
+        Path(path).write_bytes(self.pack())
 
     @property
     def bindings(self) -> Mapping[str, Binding]:
@@ -952,6 +969,28 @@ class Module:
         return TransformedFunction(
             compile_module(self), unconstrained, constrain, unconstrain
         )
+
+
+def load(path: str | os.PathLike[str], *, context: Context | None = None) -> Module:
+    """Load a FlatPPL file, directory, ZIP bundle or cached HTTP source.
+
+    This is :meth:`Context.load` with an optional context. Imports and data
+    resolve relative to the loaded source. ZIP bundles extract no files.
+
+    Args:
+        path: The file, directory, ZIP archive or HTTP URL to load.
+        context: The owning context. The default creates a new one.
+            Pass an existing context to share its source snapshots and registry.
+
+    Returns:
+        The loaded module. Call :meth:`Module.compile` to compile a query.
+
+    Raises:
+        CompilationError: The source does not load, parse or infer.
+    """
+    if context is None:
+        context = Context()
+    return context.load(path)
 
 
 def flatppl(

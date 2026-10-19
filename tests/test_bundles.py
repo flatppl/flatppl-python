@@ -6,8 +6,9 @@ from zipfile import ZipFile
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
-from flatppl import Context, flatppl
+from flatppl import CompilationError, Context, flatppl, load
 
 
 def test_zip_paths_bytes_and_registered_slices_preserve_density(tmp_path: Path) -> None:
@@ -15,7 +16,7 @@ def test_zip_paths_bytes_and_registered_slices_preserve_density(tmp_path: Path) 
     path = tmp_path / "model.flatppl.zip"
     path.write_bytes(archive)
     context = Context()
-    model = context.load(path)
+    model = load(path, context=context)
     memory = context.load_bundle("memory.zip", archive)
     context.register("model.flatppl", model)
     query = flatppl(
@@ -62,11 +63,26 @@ def test_pack_retains_bound_priors_cached_data_and_binary_bytes(tmp_path: Path) 
         assert files.read("data/raw.bin") == b"\x00\xff\x80\x01"
         assert files.read("main.flatppl").startswith(b"% Keep the model description.")
     restored = Context().load_bundle("export.zip", archive)
+    path = tmp_path / "export.flatppl.zip"
+    query.save(path)
+    saved = load(str(path))
     sliced = query.slice(["inputs", "outputs"])
     reopened_slice = Context().load_bundle("slice.zip", sliced.pack())
-    for candidate in (restored, reopened_slice):
+    for candidate in (restored, saved, reopened_slice):
         value, gradient = jax.jit(jax.value_and_grad(candidate.compile()))(
             jnp.float32(0.25)
         )
         np.testing.assert_allclose(value, expected, atol=2e-6)
         np.testing.assert_allclose(gradient, 2 - 0.25, atol=2e-6)
+
+
+def test_failed_save_preserves_existing_file(tmp_path: Path) -> None:
+    module = flatppl(
+        'data = load_data("missing.json", reals)\noutputs = data',
+        source_path=tmp_path / "model.flatppl",
+    )
+    path = tmp_path / "model.flatppl.zip"
+    path.write_bytes(b"existing file")
+    with pytest.raises(CompilationError):
+        module.save(path)
+    assert path.read_bytes() == b"existing file"

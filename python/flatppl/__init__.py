@@ -16,6 +16,7 @@ from ._api import (
     Parameter,
     Parameters,
     flatppl,
+    load,
 )
 from ._constants import Fixed, Reference
 from ._graph import Graph
@@ -43,6 +44,7 @@ __all__ = [
     "flatppl",
     "from_formula",
     "from_pyhf",
+    "load",
 ]
 
 

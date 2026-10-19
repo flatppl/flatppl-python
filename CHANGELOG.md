@@ -15,6 +15,7 @@ tagged release.
 
 - `Context.load` accepts ZIP bundles. `Context.load_bundle` loads archive bytes,
   and `Module.pack` exports source, imports and data as a portable ZIP.
+  `flatppl.load(path)` and `module.save(path)` provide direct path I/O.
 - The bundled compiler supports positional record joints, including explicit
   reference priors joined to proper `lawof` records.
 - The bundled compiler accepts `(a = x)` record literals and bare boundaries

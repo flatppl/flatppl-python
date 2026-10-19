@@ -58,7 +58,7 @@ attribute. The mapping contains every public binding exposed by the compiler.
 These names are Python attributes of a module, so attribute access never
 returns a binding with one of them: `bindings`, `compile`, `constant`,
 `context`, `downstream`, `graph`, `math`, `pack`, `parameters`, `pyhf`, `query`,
-`set`, `slice`, `source`, `source_name` and `upstream`. Later releases add
+`save`, `set`, `slice`, `source`, `source_name` and `upstream`. Later releases add
 names to this list, so prefer `module.bindings[name]` in library code.
 `dir(module)` lists the bindings that attribute access reaches.
 
@@ -130,9 +130,18 @@ cannot be an output, because a loaded module hides stochastic bindings. The
 
 ## Load files
 
-Use `ctx.load("model.flatppl")` to load a file. Loading a directory selects its
-`main.flatppl`. A ZIP archive works the same way: `ctx.load("model.flatppl.zip")`.
-Paths inside a file module resolve relative to that file.
+Load a file or ZIP directly:
+
+```python
+from flatppl import load
+
+model = load("model.flatppl")
+# Or: model = load("model.flatppl.zip")
+```
+
+`load` creates a fresh context. Pass `context=ctx` or use `ctx.load(path)` to
+share an existing context. Loading a directory selects its `main.flatppl`.
+Both strings and `Path` objects work. Imports resolve relative to the loaded file.
 
 For inline code in a Python script, supply the script's path:
 
@@ -160,9 +169,11 @@ An inline import that matches different registry and file definitions fails as a
 
 ## Portable ZIP bundles
 
-`module.pack()` captures the module's source, imported modules, and referenced
-data as a standard ZIP. This also works for modules composed through the
-context registry. Bound constants and slices retain their effective definitions.
+`module.save(path)` writes the module's source, imported modules, and referenced
+data as a standard ZIP. `load(path)` reopens it in a fresh context. Both accept
+strings and `Path` objects. Saving replaces an existing file.
+This also works for modules composed through the context registry. Bound
+constants and slices retain their effective definitions.
 
 This example bundles an imported Normal prior, two observations, and a query
 for their joint log density. It writes `observations.json` and `normal.flatppl.zip`
@@ -180,7 +191,7 @@ os.chdir(temporary_directory.name)
 
 ```{testcode} zip-bundles
 from pathlib import Path
-from flatppl import Context, flatppl
+from flatppl import Context, flatppl, load
 
 Path("observations.json").write_text("[1.0, 2.0]")
 ctx = Context()
@@ -195,10 +206,9 @@ query = flatppl(r"""
     outputs = logdensityof(prior.Pi, mu) + sum(logdensityof.(Normal(mu, 1.0), y))
 """, context=ctx, source_path=Path.cwd() / "query.flatppl")
 
-archive = query.pack()
-Path("normal.flatppl.zip").write_bytes(archive)
+query.save("normal.flatppl.zip")
 
-restored = Context().load("normal.flatppl.zip")
+restored = load("normal.flatppl.zip")
 logdensity = restored.compile()
 print(round(float(logdensity(mu=0.0)), 5))
 ```
@@ -207,8 +217,9 @@ print(round(float(logdensity(mu=0.0)), 5))
 -5.25682
 ```
 
-The new context loads both the prior and observations from the ZIP. To load
-archive bytes directly, use `Context().load_bundle("normal.flatppl.zip", archive)`.
+The new context loads both the prior and observations from the ZIP. For bytes
+instead of a file, use `archive = query.pack()` and
+`Context().load_bundle("normal.flatppl.zip", archive)`.
 
 ```{testcleanup} zip-bundles
 os.chdir(previous_directory)

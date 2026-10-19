@@ -8,6 +8,7 @@ Python script or Jupyter notebook from the bottom of the page.
 * **New to inference?** Start with the Normal model and its known posterior.
 * **Have a dataframe?** Fit a mixed model with automatic coordinate transforms.
 * **Have arrays?** Pass runtime data to the Gaussian regression.
+* **Want a portable analysis?** Save a regression to ZIP, reload it, and fit MAP.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

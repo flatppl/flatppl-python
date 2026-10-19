@@ -76,6 +76,7 @@ sphinx_gallery_conf = {
             "nuts.py",
             "formula.py",
             "regression.py",
+            "zip_map.py",
             "query.py",
             "inspection.py",
             "corpus.py",

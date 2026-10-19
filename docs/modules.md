@@ -175,9 +175,9 @@ strings and `Path` objects. Saving replaces an existing file.
 This also works for modules composed through the context registry. Bound
 constants and slices retain their effective definitions.
 
-This example bundles an imported Normal prior, two observations, and a query
-for their joint log density. It writes `observations.json` and `normal.flatppl.zip`
-in the current directory.
+Create a Python data dictionary, write it as JSON, and load it from a model.
+Then create a query, save the bundle, and check the restored content.
+This example writes its files in the current directory.
 
 ```{testsetup} zip-bundles
 import os
@@ -191,35 +191,44 @@ os.chdir(temporary_directory.name)
 
 ```{testcode} zip-bundles
 from pathlib import Path
-from flatppl import Context, flatppl, load
+import json
+import flatppl as fp
 
-Path("observations.json").write_text("[1.0, 2.0]")
-ctx = Context()
-prior = flatppl("Pi = Normal(0.0, 1.0)", context=ctx)
-ctx.register("prior.flatppl", prior)
+data = {"y": [1.0, 2.0]}
+Path("data.json").write_text(json.dumps(data))
 
-query = flatppl(r"""
-    prior = load_module("prior.flatppl")
-    y = load_data("observations.json", cartpow(reals, 2))
+Path("model.flatppl").write_text('''
+    flatppl_compat = "0.1"
+    data = load_data("data.json", cartprod(y = cartpow(reals, 2)))
     mu = elementof(reals)
-    inputs = mu
-    outputs = logdensityof(prior.Pi, mu) + sum(logdensityof.(Normal(mu, 1.0), y))
-""", context=ctx, source_path=Path.cwd() / "query.flatppl")
+    logprior = logdensityof(Normal(0, 1), mu)
+    loglikelihood = sum(logdensityof.(Normal(mu, 1), data.y))
+    logdensity = logprior + loglikelihood
+''')
 
-query.save("normal.flatppl.zip")
+model = fp.load("model.flatppl")
+query = model.query("logdensity")
+query.save("analysis.flatppl.zip", include_context=True)
 
-restored = load("normal.flatppl.zip")
-logdensity = restored.compile()
-print(round(float(logdensity(mu=0.0)), 5))
+restored = fp.load("analysis.flatppl.zip")
+assert restored == query
+assert restored.context == model.context
 ```
 
-```{testoutput} zip-bundles
--5.25682
-```
+`include_context=True` also saves every registered module in this query's own
+context and restores those names on load. The default, `query.save(path)`, saves
+only the query and its dependencies. Both produce the standard FlatPPL ZIP with
+the query as `main.flatppl`. Context exports add an optional JSON registry map;
+other engines can ignore it and load the query normally.
 
-The new context loads both the prior and observations from the ZIP. For bytes
-instead of a file, use `archive = query.pack()` and
-`Context().load_bundle("normal.flatppl.zip", archive)`.
+Equality uses cached hashes of source, imports and data. File locations and ZIP
+compression do not affect it. Context equality compares registered names and
+their content, excluding anonymous modules and caches. The first comparison
+reads any data not yet loaded. It checks content identity, not mathematical
+equivalence or Python compile options.
+
+For bytes instead of a file, use `archive = query.pack(include_context=True)`
+and `fp.Context().load_bundle("analysis.flatppl.zip", archive)`.
 
 ```{testcleanup} zip-bundles
 os.chdir(previous_directory)

@@ -275,7 +275,7 @@ def test_import_diagnostic_and_corrected_context(tmp_path: Path) -> None:
     )
 
 
-def test_import_instances_preserve_independent_and_shared_laws() -> None:
+def test_imported_law_products_are_independent_and_record_law_is_shared() -> None:
     context = Context()
     context.register(
         "leaf.flatppl",
@@ -286,11 +286,12 @@ def test_import_instances_preserve_independent_and_shared_laws() -> None:
         b ~ Normal(z, 1.0)
         left = lawof(a)
         right = lawof(b)
+        together = lawof(record(a=a, b=b))
     """,
             context=context,
         ),
     )
-    shared = flatppl(
+    same_module = flatppl(
         r"""
         m = load_module("leaf.flatppl")
         left = m.left
@@ -299,7 +300,7 @@ def test_import_instances_preserve_independent_and_shared_laws() -> None:
     """,
         context=context,
     ).compile()
-    independent = flatppl(
+    different_modules = flatppl(
         r"""
         m = load_module("leaf.flatppl")
         n = load_module("leaf.flatppl")
@@ -309,11 +310,18 @@ def test_import_instances_preserve_independent_and_shared_laws() -> None:
     """,
         context=context,
     ).compile()
+    record_law = flatppl(
+        r"""
+        m = load_module("leaf.flatppl")
+        outputs = logdensityof(m.together, record(a = 0.0, b = 1.0))
+    """,
+        context=context,
+    ).compile()
+    independent_score = -math.log(2 * math.pi) - math.log(2) - 1 / 4
+    np.testing.assert_allclose(same_module(), independent_score)
+    np.testing.assert_allclose(different_modules(), independent_score)
     np.testing.assert_allclose(
-        shared(), -math.log(2 * math.pi) - math.log(3) / 2 - 1 / 3
-    )
-    np.testing.assert_allclose(
-        independent(), -math.log(2 * math.pi) - math.log(2) - 1 / 4
+        record_law(), -math.log(2 * math.pi) - math.log(3) / 2 - 1 / 3
     )
 
 

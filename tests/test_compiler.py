@@ -86,13 +86,12 @@ def test_dirac_iid_vector_events_and_smooth_gradient() -> None:
     )
 
 
-def test_dotted_affine_eight_schools_scores_and_gradients() -> None:
+def test_locscale_eight_schools_scores_and_gradients() -> None:
     function = flatppl("""
         J = 8
         mu ~ Normal(0, 5)
         tau ~ normalize(truncate(Cauchy(0, 5), interval(0, inf)))
-        ls = x -> (x .* tau) .+ mu
-        theta ~ pushfwd(ls, iid(Normal(0, 1), J))
+        theta ~ iid(locscale(Normal(0, 1), mu, tau), J)
         prior = lawof(record(mu=mu, tau=tau, theta=theta))
         y ~ Normal.(theta, [15, 10, 16, 11, 9, 11, 10, 18])
         K = kernelof(record(y=y), mu=mu, tau=tau, theta=theta)

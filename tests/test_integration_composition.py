@@ -153,14 +153,14 @@ def test_scored_derived_latent_keeps_its_declared_law() -> None:
         )
 
 
-def test_function_kernel_keeps_its_captured_draw() -> None:
+def test_function_kernel_keeps_its_fixed_offset() -> None:
     query = flatppl("""
-        a = elementof(reals)
+        offset = 0.4
         b ~ Uniform(interval(0.0, 1.0))
-        k = functionof(Normal(a+b, 1.0), a=a)
+        k(a) = Normal(a+offset, 1.0)
         outputs = (
             logdensityof(kchain(Uniform(interval(0.0, 1.0)), k), 0.2),
-            logdensityof(lawof(b), 0.4))
+            logdensityof(lawof(b), offset))
     """).compile(integration=Integration())
     expected = jnp.log(jax.scipy.special.ndtr(-0.2) - jax.scipy.special.ndtr(-1.2))
     np.testing.assert_allclose(
@@ -187,15 +187,15 @@ def test_partly_shared_record_keeps_independent_field() -> None:
     np.testing.assert_allclose(function(point), expected, rtol=3e-5, atol=3e-6)
 
 
-def test_captured_draw_prior_does_not_follow_kernel_argument() -> None:
+def test_explicit_draw_boundary_does_not_rebind_the_prior() -> None:
     model = """
         a = elementof(reals)
         b ~ Normal(a, 1.0)
-        k = functionof(Normal(b, 1.0), a=a)
+        k = functionof(Normal(b, 1.0), b=b)
         inputs = a
     """
     queries = [
-        "logdensityof(kchain(Uniform(interval(0.0, 1.0)), k), 0.2)",
+        "logdensityof(kchain(Dirac(a+0.4), k), 0.2)",
         "logdensityof(lawof(b), a+0.4)",
     ]
     expected = [

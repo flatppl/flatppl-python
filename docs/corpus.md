@@ -131,7 +131,7 @@ in float32 and float64. These checks have the [integration derivative limits](in
 
 Shared-latent record tests compare the correlated joint density and its
 derivatives with closed forms. They cover explicit `kchain`, live prior bounds,
-query order, captured draws, Gamma–Poisson count masses and transformed observations.
+query order, explicit kernel inputs, Gamma–Poisson count masses and transformed observations.
 Finite-latent checks cover Bernoulli, Categorical, Categorical0, Binomial and
 scalar Dirac. They compare shared records, live weights and interior gradients
 with analytic mixtures. Boundary tests also check deterministic Bernoulli and

@@ -5,8 +5,9 @@ import math
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
-from flatppl import flatppl
+from flatppl import CompilationError, flatppl
 
 
 def test_uniform_unitinterval_scores_boundaries_and_batches() -> None:
@@ -86,13 +87,12 @@ def test_dirac_iid_vector_events_and_smooth_gradient() -> None:
     )
 
 
-def test_dotted_affine_eight_schools_scores_and_gradients() -> None:
+def test_locscale_eight_schools_scores_and_gradients() -> None:
     function = flatppl("""
         J = 8
         mu ~ Normal(0, 5)
         tau ~ normalize(truncate(Cauchy(0, 5), interval(0, inf)))
-        ls = x -> (x .* tau) .+ mu
-        theta ~ pushfwd(ls, iid(Normal(0, 1), J))
+        theta ~ iid(locscale(Normal(0, 1), mu, tau), J)
         prior = lawof(record(mu=mu, tau=tau, theta=theta))
         y ~ Normal.(theta, [15, 10, 16, 11, 9, 11, 10, 18])
         K = kernelof(record(y=y), mu=mu, tau=tau, theta=theta)
@@ -142,6 +142,58 @@ def test_dotted_affine_eight_schools_scores_and_gradients() -> None:
             np.testing.assert_allclose(actual[1][index], expected, rtol=3e-6, atol=2e-6)
 
 
+def test_dotted_affine_pushfwd_scores_and_gradients() -> None:
+    for scale, shift in ((2.0, 0.5), (0.4, -1.25)):
+        function = flatppl(f"""
+            J = 3
+            ls = x -> (x .* {scale}) .+ {shift}
+            point = elementof(cartpow(reals, J))
+            inputs = point
+            outputs = logdensityof(pushfwd(ls, iid(Normal(0, 1), J)), point)
+        """).compile()
+        for point in ([0.3, -0.7, 2.5], [-2.0, 1.1, 3.4]):
+            x = jnp.array(point)
+            np.testing.assert_allclose(
+                jax.jit(function)(x),
+                jax.scipy.stats.norm.logpdf(x, shift, scale).sum(),
+                rtol=2e-6,
+            )
+            np.testing.assert_allclose(
+                jax.jit(jax.grad(function))(x),
+                -(np.asarray(point) - shift) / scale**2,
+                rtol=3e-6,
+                atol=2e-6,
+            )
+
+
+def test_lambda_capturing_a_draw_is_refused() -> None:
+    with pytest.raises(CompilationError, match="cannot capture draw `tau`"):
+        flatppl("""
+            J = 8
+            mu ~ Normal(0, 5)
+            tau ~ normalize(truncate(Cauchy(0, 5), interval(0, inf)))
+            ls = x -> (x .* tau) .+ mu
+            theta ~ pushfwd(ls, iid(Normal(0, 1), J))
+            point = elementof(cartpow(reals, J))
+            inputs = point
+            outputs = logdensityof(lawof(theta), point)
+        """).compile()
+
+
+def test_boundary_leaving_a_free_elementof_is_refused() -> None:
+    with pytest.raises(
+        CompilationError, match="must cover every remaining `elementof`"
+    ):
+        flatppl("""
+            z = elementof(reals)
+            w = elementof(reals)
+            a = z + 10.0*w
+            h = functionof(a, w=w)
+            inputs = (z, w)
+            outputs = h(2.0)
+        """).compile()
+
+
 def test_zero_axis_locscale_broadcast_scores_and_gradients() -> None:
     function = flatppl("""
         mu = elementof(reals)
@@ -172,8 +224,8 @@ def test_reified_functions_follow_derived_bindings_and_preserve_scope() -> None:
         z = elementof(reals)
         w = elementof(reals)
         a = z + 10.0*w
-        h = functionof(a, w=w)
-        b = a + h(2.0)
+        h = functionof(a, z=z, w=w)
+        b = a + h(z, 2.0)
         f = functionof(b, z=z, w=w)
         twice = functionof(2.0*a, z=z, a=a)
         inputs = (z, w)
@@ -187,9 +239,9 @@ def test_record_scan_values_and_gradient_match_jax() -> None:
     function = flatppl("""
         alpha = 0.5
         xs = external(cartpow(reals, 3))
-        update(state, x) = record(total=alpha*state.total+x, square=state.square+x^2)
+        update(state, x, alpha) = record(total=alpha*state.total+x, square=state.square+x^2)
         init = record(total=0, square=0)
-        states = scan(update, init, xs)
+        states = scan(update, init, xs, alpha)
         total(state) = state.total
         inputs = (alpha, xs)
         outputs = total.(states)
@@ -253,9 +305,9 @@ def test_scan_extent_keeps_one_step_body() -> None:
         function = flatppl(f"""
             alpha = elementof(reals)
             xs = external(cartpow(reals, {size}))
-            update(state, x) = alpha*state+x
+            update(state, x, alpha) = alpha*state+x
             inputs = (alpha, xs)
-            outputs = scan(update, 0, xs)
+            outputs = scan(update, 0, xs, alpha)
         """).compile()
         xs = jnp.linspace(-0.5, 0.5, size)
 

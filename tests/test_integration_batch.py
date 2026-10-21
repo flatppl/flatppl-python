@@ -48,7 +48,7 @@ def test_varying_integrals_keep_live_bounds_and_named_bindings(
         lo = elementof(reals)
         hi = elementof(reals)
         point = elementof(reals)
-        measure = normalize(logweighted(t -> a*t, Lebesgue(interval(lo, hi))))
+        measure = normalize(logweighted((t, a) -> a*t, Lebesgue(interval(lo, hi)), a))
         {alias}
         score = functionof({body}, a=a, lo=lo, hi=hi, point=point)
         rates = [0.7, 2.0, 5.0]
@@ -69,8 +69,8 @@ def test_varying_integrals_keep_live_bounds_and_named_bindings(
 def test_table_parameters_keep_each_record_lane() -> None:
     function = flatppl("""
         params = elementof(cartprod(a=reals, lo=reals, hi=reals, point=reals))
-        measure = normalize(logweighted(t -> params.a*t,
-                                        Lebesgue(interval(params.lo, params.hi))))
+        measure = normalize(logweighted((t, p) -> p.a*t,
+                                        Lebesgue(interval(params.lo, params.hi)), params))
         score_value = logdensityof(measure, params.point)
         score = functionof(score_value, params=params)
         rows = table(a=[0.7, 2.0, 5.0], lo=[-0.2, 0.0, 0.5],
@@ -91,7 +91,7 @@ def test_matrix_batch_with_singleton_bound_axis() -> None:
     function = flatppl("""
         a = elementof(reals)
         hi = elementof(posreals)
-        measure = normalize(logweighted(t -> a*t, Lebesgue(interval(0.0, hi))))
+        measure = normalize(logweighted((t, a) -> a*t, Lebesgue(interval(0.0, hi)), a))
         score = functionof(logdensityof(measure, 0.25), a=a, hi=hi)
         rates = rowstack([[0.7, 1.0, 2.0], [3.0, 4.0, 5.0]])
         highs = rowstack([[0.8, 1.0, 1.2]])
@@ -107,7 +107,7 @@ def test_matrix_batch_with_singleton_bound_axis() -> None:
 def test_failed_lane_does_not_change_another_lanes_value_or_gradient() -> None:
     function = flatppl("""
         a = elementof(reals)
-        measure = normalize(logweighted(t -> a*t, Lebesgue(interval(0.0, 1.0))))
+        measure = normalize(logweighted((t, a) -> a*t, Lebesgue(interval(0.0, 1.0)), a))
         score = functionof(logdensityof(measure, 0.25), a=a)
         rates = [0.5, 100.0]
         inputs = rates
@@ -126,7 +126,7 @@ def test_nested_batches_keep_vector_parameter_cells() -> None:
     function = flatppl("""
         params = elementof(cartpow(reals, 2))
         rate = params[1] + 2*params[2]
-        measure = normalize(logweighted(t -> rate*t, Lebesgue(interval(0.0, 1.0))))
+        measure = normalize(logweighted((t, rate) -> rate*t, Lebesgue(interval(0.0, 1.0)), rate))
         score = functionof(logdensityof(measure, 0.25), params=params)
         row = elementof(cartpow(cartpow(reals, 2), 2))
         row_score = functionof(broadcast(score, row), row=row)
@@ -145,8 +145,8 @@ def test_nested_batches_keep_vector_parameter_cells() -> None:
 def test_moving_cuts_keep_each_lanes_boundary_gradient() -> None:
     function = flatppl("""
         cut = elementof(unitinterval)
-        measure = normalize(weighted(t -> ifelse(t < cut, 1.0, 2.0),
-                                     Lebesgue(interval(0.0, 1.0))))
+        measure = normalize(weighted((t, cut) -> ifelse(t < cut, 1.0, 2.0),
+                                     Lebesgue(interval(0.0, 1.0)), cut))
         score = functionof(logdensityof(measure, 0.9), cut=cut)
         cuts = [0.2, 0.4, 0.7]
         inputs = cuts

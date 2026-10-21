@@ -10,8 +10,8 @@ from flatppl import Integration, flatppl
 query = flatppl("""
     rate = 2.0
     point = 0.25
-    weight(x) = rate*x
-    measure = normalize(logweighted(weight, Lebesgue(interval(0.0, 1.0))))
+    weight(x, rate) = rate*x
+    measure = normalize(logweighted(weight, Lebesgue(interval(0.0, 1.0)), rate))
     inputs = (rate, point)
     outputs = logdensityof(measure, point)
 """)
@@ -63,10 +63,10 @@ import jax
 
 piecewise = flatppl("""
     cut = 0.3
-    weight(x) = ifelse(x < cut, 1.0, 2.0)
+    weight(x, cut) = ifelse(x < cut, 1.0, 2.0)
     inputs = cut
     outputs = logdensityof(normalize(weighted(weight,
-        Lebesgue(interval(0.0, 1.0)))), 0.8)
+        Lebesgue(interval(0.0, 1.0)), cut)), 0.8)
 """).compile(integration=Integration())
 np.testing.assert_allclose(jax.grad(piecewise)(0.3), 1/1.7, rtol=2e-5)
 ```
@@ -163,7 +163,7 @@ parameters and need no `Integration()` setting:
 ```{testcode}
 tilted = flatppl("""
     theta = 1.3
-    prior = normalize(logweighted(z -> theta*z, Bernoulli(0.25)))
+    prior = normalize(logweighted((z, theta) -> theta*z, Bernoulli(0.25), theta))
     inputs = theta
     outputs = logdensityof(prior, 1)
 """).compile()
@@ -181,7 +181,7 @@ shifted = flatppl("""
     theta = 0.3
     point = 0.4
     B = Normal(0, 1)
-    M = logweighted(fn(theta * _), Lebesgue(reals))
+    M = logweighted((x, theta) -> theta*x, Lebesgue(reals), theta)
     inputs = (theta, point)
     outputs = logdensityof(tilt(M, B), point)
 """).compile()
@@ -190,7 +190,8 @@ np.testing.assert_allclose(shifted(0.3, 0.4), expected, rtol=2e-5)
 ```
 
 This law is `Normal(theta, 1)`. For `MvNormal`, use
-`fn(sum(theta .* _))`; the mean becomes `mu + cov * theta`.
+`(x, theta) -> sum(theta .* x)` with `theta` as the final parameter;
+the mean becomes `mu + cov * theta`.
 The source reference must have unit density over the base support for this
 rewrite. Restricted references retain their support and may need integration.
 Gamma and Exponential require `theta < rate`, ChiSquared requires
@@ -235,7 +236,7 @@ An observation-independent normalizer also supports `iid` densities:
 iid_density = flatppl("""
     rate = 2.0
     points = [0.1, 0.2, 0.4]
-    measure = normalize(logweighted(x -> rate*x, Lebesgue(interval(0.0, 1.0))))
+    measure = normalize(logweighted((x, rate) -> rate*x, Lebesgue(interval(0.0, 1.0)), rate))
     inputs = (rate, points)
     outputs = logdensityof(iid(measure, 3), points)
 """).compile(integration=Integration())
@@ -250,7 +251,7 @@ parameters, live bounds, breakpoints, adaptive mesh and convergence check:
 batched = flatppl("""
     rate = elementof(reals)
     high = elementof(posreals)
-    measure = normalize(logweighted(t -> rate*t, Lebesgue(interval(0.0, high))))
+    measure = normalize(logweighted((t, rate) -> rate*t, Lebesgue(interval(0.0, high)), rate))
     score = functionof(logdensityof(measure, 0.25), rate=rate, high=high)
     rates = [0.7, 2.0, 5.0]
     highs = [0.8, 1.0, 1.2]

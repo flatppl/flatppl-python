@@ -14,8 +14,8 @@ MODEL = """
     lo = -0.5
     hi = 1.0
     points = [0.1, 0.2, 0.4]
-    weight(x) = a*x
-    measure = normalize(logweighted(weight, Lebesgue(interval(lo, hi))))
+    weight(x, a) = a*x
+    measure = normalize(logweighted(weight, Lebesgue(interval(lo, hi)), a))
     inputs = (a, lo, hi, points)
 """
 
@@ -59,8 +59,8 @@ def test_independent_nested_normalizer_preserves_its_parameter_gradient() -> Non
         a = 2.0
         point = 0.25
         reference = Lebesgue(interval(0.0, 1.0))
-        inner = normalize(logweighted(t -> a*t, reference))
-        outer = normalize(weighted(x -> 1.0 + exp(logdensityof(inner, x)), reference))
+        inner = normalize(logweighted((t, a) -> a*t, reference, a))
+        outer = normalize(weighted((x, m) -> 1.0 + exp(logdensityof(m, x)), reference, inner))
         inputs = (a, point)
         outputs = logdensityof(outer, point)
     """).compile(integration=Integration())
@@ -113,7 +113,7 @@ def test_failed_hoisted_normalizer_preserves_convergence_signal() -> None:
     function = flatppl("""
         a = 2.0
         points = [0.1, 0.2, 0.4]
-        measure = normalize(logweighted(x -> -a*x^2, Lebesgue(reals)))
+        measure = normalize(logweighted((x, a) -> -a*x^2, Lebesgue(reals), a))
         inputs = a
         outputs = logdensityof(iid(measure, 3), points)
     """).compile(integration=Integration(max_intervals=2, rtol=1e-7))
@@ -122,14 +122,14 @@ def test_failed_hoisted_normalizer_preserves_convergence_signal() -> None:
 
 def test_reified_score_lifts_only_observation_independent_normalizers() -> None:
     function = flatppl("""
-        a = 2.0
+        a = elementof(reals)
         points = [0.1, 0.2, 0.4]
         point = elementof(reals)
-        measure = normalize(logweighted(t -> a*t, Lebesgue(interval(0.0, 1.0))))
+        measure = normalize(logweighted((t, a) -> a*t, Lebesgue(interval(0.0, 1.0)), a))
         score_value = logdensityof(measure, point)
-        score = functionof(score_value, point=point)
+        score = functionof(score_value, point=point, a=a)
         inputs = (a, points)
-        outputs = sum(broadcast(score, points))
+        outputs = sum(broadcast(score, points, a))
     """).compile(integration=Integration())
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
     expected = jax.value_and_grad(

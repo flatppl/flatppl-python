@@ -42,7 +42,7 @@ def make_logdensity():
         y ~ Normal(mu = theta, sigma = 1.0)
         prior = lawof((theta = theta))
         forward_kernel = kernelof((y = y), theta)
-        L = likelihoodof(forward_kernel, (y = 1.0))
+        L = likelihoodof(pars -> forward_kernel(theta = pars.theta), (y = 1.0))
         steve = bayesupdate(L, prior)
     """,
         context=context,

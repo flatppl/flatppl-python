@@ -94,7 +94,7 @@ def test_record_marginal_preserves_one_shared_finite_latent() -> None:
     [
         ("Categorical(p)", 1),
         ("Categorical0(p=p)", 0),
-        ("Categorical(record(p=p))", 1),
+        ("Categorical(p=p)", 1),
     ],
 )
 def test_categorical_marginal_keeps_runtime_weights(
@@ -174,7 +174,7 @@ def test_dirac_marginal_evaluates_at_its_live_atom() -> None:
     function = flatppl("""
         location = 0.25
         point = 0.5
-        z ~ Dirac(record(value=location))
+        z ~ Dirac(value=location)
         y ~ Normal(2*z, 1.0)
         inputs = (location, point)
         outputs = logdensityof(lawof(y), point)
@@ -221,7 +221,7 @@ def test_singleton_prior_record_uses_the_public_kernel_input(prior: str) -> None
         y ~ Normal(2*z, 1.0)
         k = kernelof(y, theta=z)
         inputs = (p, point)
-        outputs = logdensityof(kchain(lawof(record(theta=z)), k), point)
+        outputs = logdensityof(kchain(lawof(record(theta=z)), pars -> k(theta=pars.theta)), point)
     """).compile(integration=Integration())
     if prior.startswith("Bernoulli"):
         oracle = bernoulli_mixture

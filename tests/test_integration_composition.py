@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from flatppl import Integration, flatppl
+from flatppl import CompilationError, Integration, flatppl
 
 MODEL = """
     lo = 0.0
@@ -166,6 +166,16 @@ def test_function_kernel_keeps_its_fixed_offset() -> None:
     np.testing.assert_allclose(
         query(), np.asarray([expected, 0.0]), rtol=3e-5, atol=3e-6
     )
+
+
+def test_function_kernel_capturing_a_draw_is_refused() -> None:
+    with pytest.raises(CompilationError, match="cannot capture draw `b`"):
+        flatppl("""
+            a = elementof(reals)
+            b ~ Uniform(interval(0.0, 1.0))
+            k = functionof(Normal(a+b, 1.0), a=a)
+            outputs = logdensityof(kchain(Uniform(interval(0.0, 1.0)), k), 0.2)
+        """).compile(integration=Integration())
 
 
 def test_partly_shared_record_keeps_independent_field() -> None:

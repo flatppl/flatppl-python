@@ -5,8 +5,9 @@ import math
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
-from flatppl import flatppl
+from flatppl import CompilationError, flatppl
 
 
 def test_uniform_unitinterval_scores_boundaries_and_batches() -> None:
@@ -139,6 +140,58 @@ def test_locscale_eight_schools_scores_and_gradients() -> None:
             if index == 2:
                 expected = expected + residual / sigma**2
             np.testing.assert_allclose(actual[1][index], expected, rtol=3e-6, atol=2e-6)
+
+
+def test_dotted_affine_pushfwd_scores_and_gradients() -> None:
+    for scale, shift in ((2.0, 0.5), (0.4, -1.25)):
+        function = flatppl(f"""
+            J = 3
+            ls = x -> (x .* {scale}) .+ {shift}
+            point = elementof(cartpow(reals, J))
+            inputs = point
+            outputs = logdensityof(pushfwd(ls, iid(Normal(0, 1), J)), point)
+        """).compile()
+        for point in ([0.3, -0.7, 2.5], [-2.0, 1.1, 3.4]):
+            x = jnp.array(point)
+            np.testing.assert_allclose(
+                jax.jit(function)(x),
+                jax.scipy.stats.norm.logpdf(x, shift, scale).sum(),
+                rtol=2e-6,
+            )
+            np.testing.assert_allclose(
+                jax.jit(jax.grad(function))(x),
+                -(np.asarray(point) - shift) / scale**2,
+                rtol=3e-6,
+                atol=2e-6,
+            )
+
+
+def test_lambda_capturing_a_draw_is_refused() -> None:
+    with pytest.raises(CompilationError, match="cannot capture draw `tau`"):
+        flatppl("""
+            J = 8
+            mu ~ Normal(0, 5)
+            tau ~ normalize(truncate(Cauchy(0, 5), interval(0, inf)))
+            ls = x -> (x .* tau) .+ mu
+            theta ~ pushfwd(ls, iid(Normal(0, 1), J))
+            point = elementof(cartpow(reals, J))
+            inputs = point
+            outputs = logdensityof(lawof(theta), point)
+        """).compile()
+
+
+def test_boundary_leaving_a_free_elementof_is_refused() -> None:
+    with pytest.raises(
+        CompilationError, match="must cover every remaining `elementof`"
+    ):
+        flatppl("""
+            z = elementof(reals)
+            w = elementof(reals)
+            a = z + 10.0*w
+            h = functionof(a, w=w)
+            inputs = (z, w)
+            outputs = h(2.0)
+        """).compile()
 
 
 def test_zero_axis_locscale_broadcast_scores_and_gradients() -> None:

@@ -57,8 +57,8 @@ def test_normalizer_preserves_moving_bounds_and_log_scale() -> None:
         hi = 1.0
         shift = 0.0
         point = 0.25
-        weight(x) = a*x + shift
-        measure = normalize(logweighted(weight, Lebesgue(interval(lo, hi))))
+        weight(x, p) = p.a*x + p.shift
+        measure = normalize(logweighted(weight, Lebesgue(interval(lo, hi)), record(a=a, shift=shift)))
         inputs = (a, lo, hi, shift, point)
         outputs = logdensityof(measure, point)
     """).compile(integration=Integration())
@@ -93,8 +93,8 @@ def test_infinite_interval_maps(support: str, weight: str, point: float) -> None
     function = flatppl(f"""
         a = 2.0
         point = {point}
-        weight(x) = {weight}
-        measure = normalize(logweighted(weight, Lebesgue({support})))
+        weight(x, a) = {weight}
+        measure = normalize(logweighted(weight, Lebesgue({support}), a))
         inputs = a
         outputs = logdensityof(measure, point)
     """).compile(integration=Integration())
@@ -110,9 +110,9 @@ def test_infinite_interval_maps(support: str, weight: str, point: float) -> None
 def test_failed_quadrature_does_not_return_a_normalized_density() -> None:
     query = flatppl("""
         a = 2.0
-        weight(x) = -a*x^2
+        weight(x, a) = -a*x^2
         inputs = a
-        outputs = logdensityof(normalize(logweighted(weight, Lebesgue(reals))), 0.0)
+        outputs = logdensityof(normalize(logweighted(weight, Lebesgue(reals), a)), 0.0)
     """)
     limited = query.compile(integration=Integration(max_intervals=2, rtol=1e-7))
     assert np.isnan(limited(2.0))
@@ -125,10 +125,10 @@ def test_internal_breakpoints_preserve_mass_and_boundary_gradients(dtype: str) -
             a = 0.3
             b = 0.6
             point = 0.8
-            weight(x) = 1.0 + ifelse(x < a, 1.0, 0.0) + ifelse(x < b, 2.0, 0.0)
+            weight(x, p) = 1.0 + ifelse(x < p.a, 1.0, 0.0) + ifelse(x < p.b, 2.0, 0.0)
             inputs = (a, b)
             outputs = logdensityof(normalize(weighted(weight,
-                Lebesgue(interval(0.0, 1.0)))), point)
+                Lebesgue(interval(0.0, 1.0)), record(a=a, b=b))), point)
         """)
         function = query.compile(dtype=dtype, integration=Integration())
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
@@ -158,10 +158,10 @@ def test_narrow_interval_with_background_is_not_missed() -> None:
         lo = 0.26
         hi = 0.27
         point = 0.8
-        weight(x) = 1.0 + 100.0*ifelse(in(x, interval(lo, hi)), 1.0, 0.0)
+        weight(x, p) = 1.0 + 100.0*ifelse(in(x, interval(p.lo, p.hi)), 1.0, 0.0)
         inputs = (lo, hi)
         outputs = logdensityof(normalize(weighted(weight,
-            Lebesgue(interval(0.0, 1.0)))), point)
+            Lebesgue(interval(0.0, 1.0)), record(lo=lo, hi=hi))), point)
     """).compile(integration=Integration())
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
     for lo, hi in ((0.26, 0.27), (0.5, 0.5001)):
@@ -175,10 +175,10 @@ def test_narrow_interval_with_background_is_not_missed() -> None:
 def test_physical_cut_rounding_requires_more_precision() -> None:
     query = flatppl("""
         cut = 1.000000238418579
-        weight(x) = ifelse(x < cut, 1.0, 2.0)
+        weight(x, cut) = ifelse(x < cut, 1.0, 2.0)
         inputs = cut
         outputs = logdensityof(normalize(weighted(weight,
-            Lebesgue(interval(1.0, 1.0000004768371582)))), 1.0000001192092896)
+            Lebesgue(interval(1.0, 1.0000004768371582)), cut)), 1.0000001192092896)
     """)
     single = query.compile(integration=Integration())
     assert np.isnan(single(1 + 2 * 2**-23))
@@ -195,10 +195,10 @@ def test_clipped_breakpoints_preserve_log_scale_and_outer_bounds() -> None:
         cut = -0.2
         lo = 0.0
         hi = 1.0
-        weight(x) = shift + ifelse(x < cut, 0.0, 1.0)
+        weight(x, p) = p.shift + ifelse(x < p.cut, 0.0, 1.0)
         inputs = (shift, cut, lo, hi)
         outputs = logdensityof(normalize(logweighted(weight,
-            Lebesgue(interval(lo, hi)))), 0.8)
+            Lebesgue(interval(lo, hi)), record(shift=shift, cut=cut))), 0.8)
     """).compile(integration=Integration())
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2, 3)))
     for shift, cut in ((1000.0, -0.2), (-1000.0, -0.2), (1000.0, 1.2)):
@@ -210,9 +210,9 @@ def test_clipped_breakpoints_preserve_log_scale_and_outer_bounds() -> None:
 def test_breakpoint_with_a_live_infinite_tail() -> None:
     function = flatppl("""
         cut = 0.3
-        weight(x) = ifelse(x < cut, 0.0, log(2.0)) - x
+        weight(x, cut) = ifelse(x < cut, 0.0, log(2.0)) - x
         inputs = cut
-        outputs = logdensityof(normalize(logweighted(weight, Lebesgue(posreals))), 1.0)
+        outputs = logdensityof(normalize(logweighted(weight, Lebesgue(posreals), cut)), 1.0)
     """).compile(integration=Integration())
     actual = jax.jit(jax.value_and_grad(function))
     for cut in (0.3, 0.7):
@@ -247,8 +247,8 @@ def test_vonmises_normalizer_uses_one_angular_period() -> None:
         k = 1.0
         point = 0.7
         inputs = (a, k, point)
-        outputs = logdensityof(normalize(logweighted(x -> a*cos(x),
-            VonMises(0.0, k))), point)
+        outputs = logdensityof(normalize(logweighted((x, a) -> a*cos(x),
+            VonMises(0.0, k), a)), point)
     """).compile(integration=Integration())
     actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
     for a, k in ((0.5, 1.0), (1.5, 2.0)):

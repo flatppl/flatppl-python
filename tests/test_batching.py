@@ -163,8 +163,8 @@ def test_scan_in_callable_broadcast_keeps_state_and_host_gradients() -> None:
     function = flatppl("""
         q = external(reals)
         a = elementof(reals)
-        step(s, x) = a*s + x
-        states = scan(step, 0.0, [1.0, 2.0, 3.0])
+        step(s, x, a) = a*s + x
+        states = scan(step, 0.0, [1.0, 2.0, 3.0], a)
         trajectory = functionof(states, a = a)
         inputs = q
         outputs = sum(sum.(trajectory.([q, q+1.0])))
@@ -255,8 +255,8 @@ def test_scan_map_matches_independent_recurrences() -> None:
     function = flatppl("""
         alpha = 0.5
         xs = external(cartpow(reals, 3))
-        update(state, x) = tanh(alpha*state + x)
-        states = scan(update, 0.2, xs)
+        update(state, x, alpha) = tanh(alpha*state + x)
+        states = scan(update, 0.2, xs, alpha)
         inputs = (alpha, xs)
         outputs = sum(states)
     """).compile(optimize_forward=True)
@@ -293,8 +293,8 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(
         alpha = 0.5
         n = external(integers)
         xs = external(cartpow(reals, n))
-        step(s, x) = record(total=tanh(alpha*s.total+x), square=s.square+x^2)
-        states = scan(step, record(total=0.0, square=0.0), xs)
+        step(s, x, alpha) = record(total=tanh(alpha*s.total+x), square=s.square+x^2)
+        states = scan(step, record(total=0.0, square=0.0), xs, alpha)
         inputs = (alpha, xs)
         outputs = sum(states.total) + sum(states.square)
     """)
@@ -336,8 +336,8 @@ def test_nested_record_scans_keep_time_separate_from_batch_axes(
 def test_mapped_integration_matches_exponential_normalizer() -> None:
     function = flatppl("""
         a = 2.0
-        weight(x) = a*x
-        measure = normalize(logweighted(weight, Lebesgue(interval(0.0, 1.0))))
+        weight(x, a) = a*x
+        measure = normalize(logweighted(weight, Lebesgue(interval(0.0, 1.0)), a))
         inputs = a
         outputs = logdensityof(measure, 0.25)
     """).compile(integration=Integration(), optimize_forward=True)

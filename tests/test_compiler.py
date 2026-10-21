@@ -171,8 +171,8 @@ def test_reified_functions_follow_derived_bindings_and_preserve_scope() -> None:
         z = elementof(reals)
         w = elementof(reals)
         a = z + 10.0*w
-        h = functionof(a, w=w)
-        b = a + h(2.0)
+        h = functionof(a, z=z, w=w)
+        b = a + h(z, 2.0)
         f = functionof(b, z=z, w=w)
         twice = functionof(2.0*a, z=z, a=a)
         inputs = (z, w)
@@ -186,9 +186,9 @@ def test_record_scan_values_and_gradient_match_jax() -> None:
     function = flatppl("""
         alpha = 0.5
         xs = external(cartpow(reals, 3))
-        update(state, x) = record(total=alpha*state.total+x, square=state.square+x^2)
+        update(state, x, alpha) = record(total=alpha*state.total+x, square=state.square+x^2)
         init = record(total=0, square=0)
-        states = scan(update, init, xs)
+        states = scan(update, init, xs, alpha)
         total(state) = state.total
         inputs = (alpha, xs)
         outputs = total.(states)
@@ -252,9 +252,9 @@ def test_scan_extent_keeps_one_step_body() -> None:
         function = flatppl(f"""
             alpha = elementof(reals)
             xs = external(cartpow(reals, {size}))
-            update(state, x) = alpha*state+x
+            update(state, x, alpha) = alpha*state+x
             inputs = (alpha, xs)
-            outputs = scan(update, 0, xs)
+            outputs = scan(update, 0, xs, alpha)
         """).compile()
         xs = jnp.linspace(-0.5, 0.5, size)
 

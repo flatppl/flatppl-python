@@ -100,14 +100,14 @@ def test_shared_mixed_latent_preserves_the_joint_record_density() -> None:
 
 
 @pytest.mark.parametrize(
-    "weight", ["weighted(z -> 1+tilt*z", "logweighted(z -> tilt*z"]
+    "weight", ["weighted((z, tilt) -> 1+tilt*z", "logweighted((z, tilt) -> tilt*z"]
 )
 def test_finite_reweighting_normalizes_without_quadrature(weight: str) -> None:
     function = flatppl(f"""
         p = 0.25
         tilt = 1.3
         point = 0.5
-        prior = normalize({weight}, Bernoulli(p)))
+        prior = normalize({weight}, Bernoulli(p), tilt))
         z ~ prior
         y ~ Normal(2*z, 1.0)
         inputs = (p, tilt, point)

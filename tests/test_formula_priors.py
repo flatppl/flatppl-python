@@ -123,7 +123,7 @@ def test_bounded_weighted_reference_keeps_scale_and_live_width() -> None:
 def test_proper_law_depends_on_explicit_reference_coordinate() -> None:
     target = _target(
         [
-            {"class": "Intercept", "prior": "Lebesgue(record(support=reals))"},
+            {"class": "Intercept", "prior": "Lebesgue(support=reals)"},
             {"class": "b", "prior": "normal(temp_Intercept, 1)"},
             {"class": "sigma", "prior": "constant(1)"},
         ],

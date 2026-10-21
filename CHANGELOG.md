@@ -7,6 +7,9 @@ tagged release.
 
 ### Changed
 
+- A callable that admits one positional input receives a sole record or table
+  whole. Other callables bind its fields by name. Unary likelihood adapters
+  preserve the existing tutorial and converter models.
 - Enzyme alpha 10 fixes broadcast and padding rewrites that could reject or
   miscompute pyhf gradients, including the Belle II model.
 - Formula defaults use explicit Lebesgue priors joined to proper laws. Conditional

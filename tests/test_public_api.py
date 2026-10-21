@@ -32,14 +32,14 @@ def test_bindings_report_inferred_type_phase_and_source_span() -> None:
         )
         for name, binding in module.bindings.items()
     }
-    assert described["x"] == ("real", "parameterized", "elementof(reals)")
+    assert described["x"] == ("real", "parametric", "elementof(reals)")
     assert described["n"] == ("integer", "fixed", "external(posintegers)")
     assert described["v"] == (
         "real[3]",
-        "parameterized",
+        "parametric",
         "elementof(cartpow(reals, 3))",
     )
-    assert described["y"] == ("real", "parameterized", "2.0 * x")
+    assert described["y"] == ("real", "parametric", "2.0 * x")
     assert module.y is module.bindings["y"]
     assert module.y.module is module
     with pytest.raises(AttributeError):

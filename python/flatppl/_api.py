@@ -122,7 +122,7 @@ class Binding:
             :meth:`Module.set`.
         value_type: The inferred type as text, such as ``"real[3]"``, or ``None``.
         phase: The inferred phase as text, such as ``"fixed"`` or
-            ``"parameterized"``, or ``None``.
+            ``"parametric"``, or ``None``.
         domain: The inferred value set as a read-only tree, or ``None``. Each
             node has a ``"set"`` key: a named set such as ``"reals"`` or
             ``"posintegers"``, ``"interval"`` with ``"lo"`` and ``"hi"``

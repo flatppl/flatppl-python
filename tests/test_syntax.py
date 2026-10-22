@@ -14,7 +14,7 @@ def test_record_literals_and_bare_boundaries_compile() -> None:
         b = elementof(reals)
         f = functionof(a + 2*b, a, b)
         y ~ Normal(a + 2*b, 2)
-        K = kernelof((y = y), a = a, b)
+        K = kernelof((y = y), a, b)
         L = likelihoodof(K, (y = 15))
         inputs = (a, b)
         outputs = (value = f(a, b), score = logdensityof(L, (a = a, b = b)))

@@ -213,7 +213,7 @@ def test_atomic_and_zero_inflated_mixtures_keep_their_mass() -> None:
 
 
 @pytest.mark.parametrize("prior", ["Bernoulli(p)", "Uniform(interval(0.0, 1.0))"])
-def test_singleton_prior_record_uses_the_public_kernel_input(prior: str) -> None:
+def test_scalar_prior_uses_the_public_kernel_input(prior: str) -> None:
     function = flatppl(f"""
         p = 0.25
         point = 0.5
@@ -221,7 +221,7 @@ def test_singleton_prior_record_uses_the_public_kernel_input(prior: str) -> None
         y ~ Normal(2*z, 1.0)
         k = kernelof(y, theta=z)
         inputs = (p, point)
-        outputs = logdensityof(kchain(lawof(record(theta=z)), pars -> k(theta=pars.theta)), point)
+        outputs = logdensityof(kchain(lawof(z), k), point)
     """).compile(integration=Integration())
     if prior.startswith("Bernoulli"):
         oracle = bernoulli_mixture

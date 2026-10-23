@@ -38,7 +38,7 @@ def make_query(n: int, p: int):
         y ~ Normal.(X * beta, 0.5)
         prior = lawof((beta = beta))
         forward_kernel = kernelof((y = y), beta)
-        L = likelihoodof(pars -> forward_kernel(beta = pars.beta), (y = y_data))
+        L = likelihoodof(forward_kernel, (y = y_data))
         posterior = bayesupdate(L, prior)
         """,
         context=context,

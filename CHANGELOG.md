@@ -7,6 +7,9 @@ tagged release.
 
 ### Changed
 
+- The bundled compiler reports a measure binding's support as its domain:
+  record priors, posteriors, `joint`, `jointchain`, `markovchain`, `superpose`,
+  `ksuperpose` and interval truncations carry their components' supports.
 - A callable that admits one positional input receives a sole record or table
   whole. Other callables bind its fields by name. Unary likelihood adapters
   preserve the existing tutorial and converter models.

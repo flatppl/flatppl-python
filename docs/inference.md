@@ -5,8 +5,10 @@ position, a starting position, and a way between constrained and unconstrained
 coordinates. `module.logdensity(...)` returns all three as a
 {class}`~flatppl.inference.LogDensity`, with the names, shapes and bounds that
 diagnostics and optimisers read. The package ships no adapter
-for any inference package. The [example gallery](examples/index.rst) shows each
-package on these fields.
+for any inference package. The gallery shows each package on these fields:
+[BlackJAX NUTS and variational inference](examples/blackjax_nuts_vi.rst),
+[NumPyro](examples/numpyro_nuts.rst), [Optax](examples/optax_fit.rst) and
+[ArviZ](examples/arviz_diagnostics.rst).
 
 ## From a measure
 

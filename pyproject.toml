@@ -50,7 +50,8 @@ testpaths = ["tests"]
 [tool.pyright]
 include = ["python", "tests", "examples"]
 extraPaths = ["python"]
-# Stubs declare the untyped imports as Any: enzyme_ad, blackjax, pyhf, pyarrow, networkx.
+# Stubs declare the untyped imports as Any: enzyme_ad, blackjax, pyhf, pyarrow,
+# networkx, and the gallery's optax, numpyro and arviz.
 stubPath = "typings"
 typeCheckingMode = "strict"
 pythonVersion = "3.12"

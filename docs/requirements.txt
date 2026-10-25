@@ -6,3 +6,10 @@ sphinx-gallery>=0.22
 blackjax==1.7.1
 # The formula gallery starts from a Polars dataframe, as the package tests do.
 polars>=2
+# The inference package pages. Lower bounds name the feature each page uses.
+# lbfgs, value_and_grad_from_state and projections.projection_box.
+optax>=0.2.3
+# Earlier releases import jax's removed xla_pmap_p and fail with JAX 0.11.
+numpyro>=0.21
+# from_dict with named groups and summary(ci_prob=) on the DataTree API.
+arviz>=1.0

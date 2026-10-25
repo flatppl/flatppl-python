@@ -59,8 +59,9 @@ print(
 # ``model.pyhf`` lays the module out as pyhf does, so its compiled functions
 # take pyhf's flat parameter vector. A batch of points varies the signal
 # strength, a histogram nuisance and a per-bin nuisance around the suggested
-# initial values. Float64 is used for the comparison of absolute log
-# likelihoods; ``jax.enable_x64`` scopes it.
+# initial values. Float64 is used because the comparisons and fits below need
+# absolute log likelihoods to 1e-8; FlatPPL itself does not require it.
+# ``jax.enable_x64`` scopes it to each computation.
 model = from_pyhf(json.dumps(specification))
 view = model.pyhf
 poi = view.poi_index

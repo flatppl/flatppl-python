@@ -83,9 +83,26 @@ print(float(residual(table.to_arrow())))
 Conversion borrows host buffers when possible. Combining chunks, unpacking
 Boolean columns, changing precision, or transferring to a GPU can require copies.
 
-JAX transformations accept JAX pytrees. Pass dictionaries of JAX column arrays
-inside `jax.jit` or `jax.grad`. A DataFrame works when calling the compiled
-function directly, where the wrapper converts its columns before the internal JIT.
+### Frames work at the host boundary only
+
+A DataFrame or Arrow table is a host object. The compiled function converts it
+when you call the function directly, outside any JAX transformation. Inside
+`jax.jit`, `jax.grad` or `jax.vmap`, arguments must be JAX pytrees. Convert the
+frame once to a dictionary of JAX column arrays and pass that dictionary
+instead:
+
+```{testcode}
+columns = {name: jnp.asarray(table[name].to_numpy()) for name in table.columns}
+shifted = jax.jit(lambda data, shift: residual(data) + shift)
+print(float(shifted(columns, 1.0)))
+```
+
+```{testoutput}
+10.0
+```
+
+The dictionary lives on the device and is reused by every later call, so
+conversion runs once rather than per call.
 
 ## Bind sizes before compilation
 

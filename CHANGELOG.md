@@ -7,6 +7,9 @@ tagged release.
 
 ### Changed
 
+- The bundled compiler reports a measure binding's support as its domain:
+  record priors, posteriors, `joint`, `jointchain`, `markovchain`, `superpose`,
+  `ksuperpose` and interval truncations carry their components' supports.
 - A callable that admits one positional input receives a sole record or table
   whole. Other callables bind its fields by name. Unary likelihood adapters
   preserve the existing tutorial and converter models.
@@ -21,8 +24,12 @@ tagged release.
 
 ### Added
 
+- `Binding.inputs` gives a kernel's or likelihood's interface inputs, each with
+  the support of the value its boundary binds.
 - `Module.logdensity` returns a `flatppl.inference.LogDensity` for samplers and
-  optimisers from a scalar log-density query: the density, its gradient and
+  optimisers from a measure binding, such as a draw-style posterior over its
+  support, from a likelihood over its inputs with converter initial values, fit
+  bounds and fixed components, or from a scalar log-density query: the density, its gradient and
   negation, a starting point, the coordinate maps, parameter names, shapes and
   bounds, and a flat-vector view.
 - `Context.load` accepts ZIP bundles. `Context.load_bundle` loads archive bytes,

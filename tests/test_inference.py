@@ -1,4 +1,5 @@
 import json
+from math import lgamma
 from typing import Any
 
 import jax
@@ -271,3 +272,207 @@ def test_a_query_without_a_scalar_output_is_refused() -> None:
     )
     with pytest.raises(CompilationError):
         query.logdensity()
+
+
+DRAWS = """
+theta ~ Normal(mu = 0.0, sigma = 1.0)
+s ~ Exponential(rate = 1.0)
+y ~ Normal(mu = theta, sigma = s)
+scale = lawof(s)
+prior = lawof(record(theta = theta, s = s))
+L = likelihoodof(kernelof(record(y = y), theta = theta, s = s), record(y = 1.0))
+posterior = bayesupdate(L, prior)
+"""
+
+
+def normal(x: Any, mu: Any, sigma: Any) -> Any:
+    return -0.5 * ((x - mu) / sigma) ** 2 - np.log(sigma * np.sqrt(2 * np.pi))
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_draw_style_posterior_takes_its_record_support() -> None:
+    density = flatppl(DRAWS).logdensity("posterior", dtype="float64")
+    assert density.names == ("theta", "s")
+    lower, upper = density.bounds
+    assert (float(lower["s"]), float(upper["s"])) == (0.0, np.inf)
+    assert float(lower["theta"]) == -np.inf
+    start = density.constrain(density.init)
+    assert (float(start["theta"]), float(start["s"])) == (0.0, 1.0)
+    for theta, u in [(0.3, -0.4), (-1.2, 0.5)]:
+        s = np.exp(u)
+        # Closed form: Normal prior, Exponential(1) prior, Normal observation
+        # of y = 1, and log|ds/du| = u.
+        expected = normal(theta, 0, 1) - s + normal(1.0, theta, s) + u
+        point = {"theta": jnp.float64(theta), "s": jnp.float64(u)}
+        assert float(density(point)) == pytest.approx(expected, rel=1e-12)
+    model = flatppl(DRAWS).logdensity("posterior", unconstrained=False, dtype="float64")
+    point = {"theta": jnp.float64(0.3), "s": jnp.float64(0.7)}
+    expected = normal(0.3, 0, 1) - 0.7 + normal(1.0, 0.3, 0.7)
+    assert float(model(point)) == pytest.approx(expected, rel=1e-12)
+
+
+def test_the_law_of_a_draw_has_a_scalar_position() -> None:
+    density = flatppl(DRAWS).logdensity("scale")
+    assert density.names == ("point",)
+    u = jnp.asarray([-1.0, 0.0, 0.5], dtype=jnp.float32)
+    # Exponential(1) in log coordinates: -exp(u) + u.
+    np.testing.assert_allclose(jax.vmap(density)(u), u - jnp.exp(u), rtol=1e-6)
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_conjugate_posterior_integrates_to_the_evidence() -> None:
+    density = flatppl(
+        """
+        lam ~ Gamma(shape = 2.0, rate = 1.0)
+        y ~ iid(Poisson(rate = lam), 3)
+        L = likelihoodof(kernelof(record(y = y), lam = lam), record(y = [3, 1, 4]))
+        posterior = bayesupdate(L, lawof(record(lam = lam)))
+        """
+    ).logdensity("posterior", dtype="float64")
+    grid = jnp.linspace(-6.0, 5.0, 20001, dtype=jnp.float64)
+    values = jax.vmap(lambda u: density({"lam": u}))(grid)
+    total = np.trapezoid(np.exp(np.asarray(values)), np.asarray(grid))
+    # Closed-form Gamma-Poisson evidence: prod 1/y! * b^a/Gamma(a) *
+    # Gamma(a + sum y) / (b + n)^(a + sum y) with a = 2, b = 1, n = 3, sum y = 8.
+    evidence = np.exp(
+        -np.log(6.0 * 1.0 * 24.0) + lgamma(10.0) - lgamma(2.0) - 10.0 * np.log(4.0)
+    )
+    assert total == pytest.approx(evidence, rel=1e-6)
+    # The posterior is Gamma(10, 4); its mean is 2.5.
+    mean = np.trapezoid(np.exp(np.asarray(values) + np.asarray(grid)), np.asarray(grid))
+    assert mean / total == pytest.approx(2.5, rel=1e-6)
+
+
+def test_non_measures_and_unknown_names_are_refused() -> None:
+    model = flatppl(DRAWS)
+    with pytest.raises(ValueError, match="no public binding named `absent`"):
+        model.logdensity("absent")
+    with pytest.raises(
+        ValueError, match="`theta` is real, not a measure or a likelihood"
+    ):
+        model.logdensity("theta")
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_draw_style_likelihood_takes_its_inputs_supports() -> None:
+    density = flatppl(DRAWS).logdensity("L", dtype="float64")
+    assert density.names == ("theta", "s")
+    assert dict(density.fixed) == {"theta": False, "s": False}
+    for theta, u in [(0.3, -0.4), (-1.2, 0.5)]:
+        s = np.exp(u)
+        # Closed form: the Normal likelihood of y = 1, and log|ds/du| = u.
+        point = {"theta": jnp.float64(theta), "s": jnp.float64(u)}
+        expected = normal(1.0, theta, s) + u
+        assert float(density(point)) == pytest.approx(expected, rel=1e-12)
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_renamed_kernel_input_keeps_its_interface_name() -> None:
+    model = flatppl(
+        """
+        s ~ Exponential(rate = 1.0)
+        y ~ Normal(mu = 0.0, sigma = s)
+        L = likelihoodof(kernelof(record(y = y), scale = s), record(y = 0.5))
+        """
+    )
+    assert dict(model.L.inputs or {}) == {"scale": {"set": "nonnegreals"}}
+    density = model.logdensity("L", unconstrained=False, dtype="float64")
+    assert density.names == ("scale",)
+    assert float(density({"scale": jnp.float64(2.0)})) == pytest.approx(
+        normal(0.5, 0.0, 2.0), rel=1e-12
+    )
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_likelihood_takes_converter_inits_bounds_and_fixed_components() -> None:
+    model, data = pyhf_reference()
+    # pyhf fixes lumi by the measurement and the zero-uncertainty gamma bin.
+    assert model.config.par_order == ["lumi", "mu", "gamma"]
+    assert model.config.suggested_fixed() == [True, False, False, True]
+    module = from_pyhf(json.dumps(SPEC))
+    density = module.logdensity("likelihood", unconstrained=False, dtype="float64")
+    assert set(density.names) == {"mu", "gamma"}
+    assert dict(density.shapes)["gamma"] == (1,)
+    assert density.fixed["lumi"] is True and density.fixed["mu"] is False
+    assert np.asarray(density.fixed["gamma"]).tolist() == [False, True]
+    assert float(density.init["mu"]) == 1.0
+    assert np.asarray(density.init["gamma"]).tolist() == [1.0]
+    lower, upper = density.bounds
+    assert (float(lower["mu"]), float(upper["mu"])) == (0.0, 10.0)
+    assert (float(lower["gamma"][0]), float(upper["gamma"][0])) == (1e-10, 10.0)
+    # pyhf 0.7.6 is the oracle; the fixed components keep pyhf's init values.
+    for mu, gamma in [(1.0, 1.0), (0.4, 1.05), (2.5, 0.9)]:
+        expected = model.logpdf(np.array([1.1, mu, gamma, 1.0]), data)[0]
+        point = {"mu": jnp.float64(mu), "gamma": jnp.asarray([gamma])}
+        assert float(density(point)) == pytest.approx(expected, rel=1e-12)
+
+    # In free coordinates the fit bounds select the scaled logistic chart.
+    free = module.logdensity("likelihood", dtype="float64")
+    start = free.constrain(free.init)
+    assert (float(start["mu"]), float(start["gamma"][0])) == pytest.approx((1.0, 1.0))
+    # Without bounds mu keeps its declared reals and gamma its posreals.
+    unbounded = module.logdensity("likelihood", bounds=False, dtype="float64")
+    x = unbounded.constrain({"mu": jnp.float64(0.3), "gamma": jnp.asarray([-0.2])})
+    assert float(x["mu"]) == pytest.approx(0.3)
+    assert float(x["gamma"][0]) == pytest.approx(np.exp(-0.2))
+    assert float(unbounded.bounds[1]["mu"]) == np.inf
+
+
+def test_unbound_externals_all_fixed_inputs_and_boundary_inits_are_refused() -> None:
+    model = flatppl(
+        """
+        mu = elementof(reals)
+        n = external(posintegers)
+        y = external(cartpow(reals, n))
+        L = likelihoodof(functionof(iid(Normal(mu = mu, sigma = 1.0), n)), y)
+        """
+    )
+    with pytest.raises(
+        ValueError, match=r"external `n`, `y`; bind it with Module\.set"
+    ):
+        model.logdensity("L")
+
+    spec = json.loads(json.dumps(SPEC))
+    parameters = spec["measurements"][0]["config"]["parameters"]
+    parameters.append({"name": "mu", "fixed": True})
+    parameters.append({"name": "gamma", "fixed": True})
+    with pytest.raises(ValueError, match="every input of `likelihood` is fixed"):
+        from_pyhf(json.dumps(spec)).logdensity("likelihood")
+
+    spec = json.loads(json.dumps(SPEC))
+    spec["measurements"][0]["config"]["parameters"].append(
+        {"name": "mu", "inits": [0.0], "bounds": [[0.0, 10.0]]}
+    )
+    with pytest.raises(ValueError, match="domain boundary"):
+        from_pyhf(json.dumps(spec)).logdensity("likelihood")
+
+
+@pytest.mark.usefixtures("x64")
+@pytest.mark.parametrize(
+    ("bound", "lower", "upper", "chart"),
+    [
+        ("lo = 0.0", 0.0, np.inf, np.exp),
+        ("hi = 2.0", -np.inf, 2.0, lambda u: 2.0 - np.exp(u)),
+    ],
+)
+def test_a_single_fit_bound_narrows_its_side_alone(
+    bound: str, lower: float, upper: float, chart: Any
+) -> None:
+    model = flatppl(
+        f"""
+        mu = elementof(reals)
+        L = likelihoodof(functionof(Normal(mu = mu, sigma = 1.0)), 0.5)
+        pyhf_measurement_m = record(name = "m", selected = true, parameters = record(mu = record(pyhf = "mu", {bound})))
+        """
+    )
+    density = model.logdensity("L", dtype="float64")
+    assert (float(density.bounds[0]["mu"]), float(density.bounds[1]["mu"])) == (
+        lower,
+        upper,
+    )
+    u = 0.3
+    mu = chart(u)
+    assert float(density.constrain({"mu": jnp.float64(u)})["mu"]) == pytest.approx(mu)
+    # Closed form: the Normal likelihood of 0.5 plus log|dmu/du| = u.
+    expected = normal(0.5, mu, 1.0) + u
+    assert float(density({"mu": jnp.float64(u)})) == pytest.approx(expected, rel=1e-12)

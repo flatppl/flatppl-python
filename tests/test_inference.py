@@ -347,7 +347,101 @@ def test_non_measures_and_unknown_names_are_refused() -> None:
     model = flatppl(DRAWS)
     with pytest.raises(ValueError, match="no public binding named `absent`"):
         model.logdensity("absent")
-    with pytest.raises(ValueError, match="`L` is likelihood"):
-        model.logdensity("L")
-    with pytest.raises(ValueError, match="`theta` is real, not a measure"):
+    with pytest.raises(
+        ValueError, match="`theta` is real, not a measure or a likelihood"
+    ):
         model.logdensity("theta")
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_draw_style_likelihood_takes_its_inputs_supports() -> None:
+    density = flatppl(DRAWS).logdensity("L", dtype="float64")
+    assert density.names == ("theta", "s")
+    assert dict(density.fixed) == {"theta": False, "s": False}
+    for theta, u in [(0.3, -0.4), (-1.2, 0.5)]:
+        s = np.exp(u)
+        # Closed form: the Normal likelihood of y = 1, and log|ds/du| = u.
+        point = {"theta": jnp.float64(theta), "s": jnp.float64(u)}
+        expected = normal(1.0, theta, s) + u
+        assert float(density(point)) == pytest.approx(expected, rel=1e-12)
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_renamed_kernel_input_keeps_its_interface_name() -> None:
+    model = flatppl(
+        """
+        s ~ Exponential(rate = 1.0)
+        y ~ Normal(mu = 0.0, sigma = s)
+        L = likelihoodof(kernelof(record(y = y), scale = s), record(y = 0.5))
+        """
+    )
+    assert dict(model.L.inputs or {}) == {"scale": {"set": "nonnegreals"}}
+    density = model.logdensity("L", unconstrained=False, dtype="float64")
+    assert density.names == ("scale",)
+    assert float(density({"scale": jnp.float64(2.0)})) == pytest.approx(
+        normal(0.5, 0.0, 2.0), rel=1e-12
+    )
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_likelihood_takes_converter_inits_bounds_and_fixed_components() -> None:
+    model, data = pyhf_reference()
+    # pyhf fixes lumi by the measurement and the zero-uncertainty gamma bin.
+    assert model.config.par_order == ["lumi", "mu", "gamma"]
+    assert model.config.suggested_fixed() == [True, False, False, True]
+    module = from_pyhf(json.dumps(SPEC))
+    density = module.logdensity("likelihood", unconstrained=False, dtype="float64")
+    assert set(density.names) == {"mu", "gamma"}
+    assert dict(density.shapes)["gamma"] == (1,)
+    assert density.fixed["lumi"] is True and density.fixed["mu"] is False
+    assert np.asarray(density.fixed["gamma"]).tolist() == [False, True]
+    assert float(density.init["mu"]) == 1.0
+    assert np.asarray(density.init["gamma"]).tolist() == [1.0]
+    lower, upper = density.bounds
+    assert (float(lower["mu"]), float(upper["mu"])) == (0.0, 10.0)
+    assert (float(lower["gamma"][0]), float(upper["gamma"][0])) == (1e-10, 10.0)
+    # pyhf 0.7.6 is the oracle; the fixed components keep pyhf's init values.
+    for mu, gamma in [(1.0, 1.0), (0.4, 1.05), (2.5, 0.9)]:
+        expected = model.logpdf(np.array([1.1, mu, gamma, 1.0]), data)[0]
+        point = {"mu": jnp.float64(mu), "gamma": jnp.asarray([gamma])}
+        assert float(density(point)) == pytest.approx(expected, rel=1e-12)
+
+    # In free coordinates the fit bounds select the scaled logistic chart.
+    free = module.logdensity("likelihood", dtype="float64")
+    start = free.constrain(free.init)
+    assert (float(start["mu"]), float(start["gamma"][0])) == pytest.approx((1.0, 1.0))
+    # Without bounds mu keeps its declared reals and gamma its posreals.
+    unbounded = module.logdensity("likelihood", bounds=False, dtype="float64")
+    x = unbounded.constrain({"mu": jnp.float64(0.3), "gamma": jnp.asarray([-0.2])})
+    assert float(x["mu"]) == pytest.approx(0.3)
+    assert float(x["gamma"][0]) == pytest.approx(np.exp(-0.2))
+    assert float(unbounded.bounds[1]["mu"]) == np.inf
+
+
+def test_unbound_externals_all_fixed_inputs_and_boundary_inits_are_refused() -> None:
+    model = flatppl(
+        """
+        mu = elementof(reals)
+        n = external(posintegers)
+        y = external(cartpow(reals, n))
+        L = likelihoodof(functionof(iid(Normal(mu = mu, sigma = 1.0), n)), y)
+        """
+    )
+    with pytest.raises(
+        ValueError, match=r"external `n`, `y`; bind it with Module\.set"
+    ):
+        model.logdensity("L")
+
+    spec = json.loads(json.dumps(SPEC))
+    parameters = spec["measurements"][0]["config"]["parameters"]
+    parameters.append({"name": "mu", "fixed": True})
+    parameters.append({"name": "gamma", "fixed": True})
+    with pytest.raises(ValueError, match="every input of `likelihood` is fixed"):
+        from_pyhf(json.dumps(spec)).logdensity("likelihood")
+
+    spec = json.loads(json.dumps(SPEC))
+    spec["measurements"][0]["config"]["parameters"].append(
+        {"name": "mu", "inits": [0.0], "bounds": [[0.0, 10.0]]}
+    )
+    with pytest.raises(ValueError, match="domain boundary"):
+        from_pyhf(json.dumps(spec)).logdensity("likelihood")

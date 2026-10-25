@@ -145,6 +145,9 @@ class Binding:
         location: Where the right-hand side starts, or ``None``.
         dependencies: The public bindings that this one references directly,
             in source order. References through private bindings count.
+        inputs: For a kernel or a likelihood, each interface input's domain
+            tree by input name, in interface order: the support of the value
+            its boundary binds. ``None`` for other bindings.
 
     Example:
         >>> from flatppl import flatppl
@@ -170,6 +173,7 @@ class Binding:
     source: str | None
     location: Location | None
     dependencies: tuple[str, ...]
+    inputs: Mapping[str, Mapping[str, Any]] | None = None
 
     def __repr__(self) -> str:
         where = f", line {self.location.line}" if self.location else ""
@@ -463,6 +467,11 @@ class Module:
                         else Location(label, item["line"], item["column"])
                     ),
                     dependencies=tuple(item["dependencies"]),
+                    inputs=None
+                    if item["inputs"] is None
+                    else MappingProxyType(
+                        {i["name"]: freeze(i["domain"]) for i in item["inputs"]}
+                    ),
                 )
                 for item in items
             }
@@ -1024,6 +1033,7 @@ class Module:
         *,
         unconstrained: bool = True,
         jacobian: bool = True,
+        bounds: bool = True,
         dtype: DTypeLike = "float32",
         target: Literal["cpu", "gpu"] | None = None,
         integration: Integration | None = None,
@@ -1031,16 +1041,24 @@ class Module:
     ) -> LogDensity:
         """Prepare a log density for a sampler or an optimiser.
 
-        With ``measure``, the density is that measure's, such as a prior or a
-        posterior, and the position is its variate on its support: a dict for
-        a measure on a record, such as ``lawof(record(theta = theta, s = s))``
-        or a posterior of it. Without ``measure`` this module is a query with
-        one continuous ``elementof`` input and a scalar log-density output, as
-        for :meth:`compile_transformed`, and the position is that input.
+        ``measure`` names a binding of this module:
+
+        - A measure, such as a prior or a posterior: the position is its
+          variate on its support, a dict for a measure on a record such as
+          ``lawof(record(theta = theta, s = s))`` or a posterior of it.
+        - A likelihood: the position is a record of every ``elementof``
+          parameter it depends on. A converter's settings record, such as a
+          pyhf measurement, supplies initial values, fit bounds and fixed
+          components. Fixed components leave the position and keep their
+          initial values.
+
+        Without ``measure`` this module is a query with one continuous
+        ``elementof`` input and a scalar log-density output, as for
+        :meth:`compile_transformed`, and the position is that input.
 
         Args:
-            measure: A measure binding of this module, or ``None`` when this
-                module is the query.
+            measure: A measure or likelihood binding of this module, or
+                ``None`` when this module is the query.
             unconstrained: Take positions in unconstrained coordinates, where
                 every real vector is valid. ``False`` takes model parameters.
             jacobian: Add the log-Jacobian of the coordinate map, so the
@@ -1048,6 +1066,9 @@ class Module:
                 for sampling and ``False`` for maximum likelihood or maximum a
                 posteriori fits in unconstrained coordinates. It has no effect
                 when ``unconstrained`` is ``False``.
+            bounds: For a likelihood, narrow each real parameter's set to its
+                converter fit bounds, intersected with its declared set. The
+                density then has the bounds as its support.
             dtype: Floating-point precision, as in :meth:`compile`.
             target: Lowering profile, as in :meth:`compile`.
             integration: Numerical integration settings, as in :meth:`compile`.
@@ -1060,9 +1081,12 @@ class Module:
         Raises:
             CompilationError: The support has no supported continuous chart,
                 or the query has several inputs or a non-scalar output.
-            ValueError: ``measure`` is not a measure binding, its support is
-                unknown or has an extent not bound yet, or the query requests
-                a gradient instead of a scalar value.
+            ValueError: ``measure`` is not a measure or a likelihood, its
+                support is unknown or has an extent not bound yet, a
+                likelihood depends on an unbound external, on no parameter or
+                only on fixed ones, the initial point lies on a domain
+                boundary, or the query requests a gradient instead of a
+                scalar value.
 
         Example:
             >>> from flatppl import flatppl
@@ -1082,6 +1106,7 @@ class Module:
             measure,
             unconstrained=unconstrained,
             jacobian=jacobian,
+            bounds=bounds,
             dtype=dtype,
             target=target,
             integration=integration,

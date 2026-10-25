@@ -59,6 +59,13 @@ class Export(TypedDict):
     batch_shape: NotRequired[list[int]]
 
 
+class InputInfo(TypedDict):
+    """One input of a kernel or likelihood interface."""
+
+    name: str
+    domain: dict[str, Any]
+
+
 class BindingInfo(TypedDict):
     """Inferred metadata for one public binding."""
 
@@ -74,6 +81,7 @@ class BindingInfo(TypedDict):
     line: int | None
     column: int | None
     dependencies: list[str]
+    inputs: list[InputInfo] | None
 
 
 class Diagnostic(TypedDict):

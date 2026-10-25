@@ -2,8 +2,8 @@
 
 :meth:`flatppl.Module.logdensity` returns a :class:`LogDensity`: the log
 density on a position pytree, a starting point in the same coordinates, the
-coordinate maps, and the names, shapes and bounds that samplers, optimisers and
-diagnostics read. Every map is compiled StableHLO from
+coordinate maps, and the names, shapes, bounds and fixed components that
+samplers, optimisers and diagnostics read. Every map is compiled StableHLO from
 :meth:`flatppl.Module.compile_transformed`.
 
 The package ships no adapter for any inference package. The
@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import jax
+import numpy as np
+import numpy.typing as npt
 
 # Autodoc reads `TransformedFunction` as its alias `flatppl.TransformedFunction`
 # and evaluates that in this module.
@@ -69,9 +71,10 @@ class LogDensity:
         grad: The gradient of :attr:`fn`, jitted.
         potential: The negated log density, jitted. Optimisers and NumPyro
             minimise this sign.
-        init: A starting position in the coordinates of :attr:`fn`: the
-            point at zero unconstrained coordinates, such as 1 for
-            ``posreals`` and the midpoint of a finite interval.
+        init: A starting position in the coordinates of :attr:`fn`: a
+            converter's initial values for a likelihood that has them,
+            otherwise the point at zero unconstrained coordinates, such as 1
+            for ``posreals`` and the midpoint of a finite interval.
         constrain: Map unconstrained coordinates to model parameters.
         unconstrain: Map interior model parameters to unconstrained
             coordinates.
@@ -81,6 +84,9 @@ class LogDensity:
         bounds: ``(lower, upper)``, two pytrees shaped like a position in
             model coordinates, with each element's bounds and infinities
             where a set has none.
+        fixed: For a likelihood, each parameter's fixed components, as a bool
+            or a bool array. The position omits them and the density holds
+            them at their initial values. Empty for a measure or a query.
         unconstrained: Whether :attr:`fn` takes unconstrained coordinates.
         jacobian: Whether :attr:`fn` includes the log-Jacobian.
         flat: The same density over one flat vector.
@@ -97,6 +103,7 @@ class LogDensity:
     shapes: Mapping[str, tuple[int, ...]]
     dtype: str
     bounds: tuple[Any, Any] = field(repr=False)
+    fixed: Mapping[str, bool | npt.NDArray[np.bool]] = field(repr=False)
     unconstrained: bool
     jacobian: bool
     flat: FlatLogDensity = field(repr=False)

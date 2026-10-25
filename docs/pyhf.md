@@ -7,9 +7,11 @@ model, and `model.logdensity("likelihood")` prepares it for fits and samplers.
 
 ## Start in float64
 
-A pyhf likelihood sums many Poisson and constraint terms, so float32 loses
-absolute precision through cancellation. Enable JAX x64 before compiling, pass
-`dtype="float64"`, and select pyhf's 64-bit backend when you compare with it:
+A pyhf likelihood sums many Poisson and constraint terms. A comparison of
+absolute log likelihoods with pyhf therefore uses float64, where float32 rounding
+would hide the agreement; FlatPPL itself runs in either precision. Pass
+`dtype="float64"`, compile and call inside `jax.enable_x64(True)`, and select
+pyhf's 64-bit backend:
 
 ```{testcode} view
 import json
@@ -18,7 +20,6 @@ import numpy as np
 import pyhf
 from flatppl import from_pyhf
 
-jax.config.update("jax_enable_x64", True)
 pyhf.set_backend("numpy", precision="64b")
 
 spec = pyhf.simplemodels.uncorrelated_background(
@@ -35,12 +36,14 @@ reference = pyhf.Workspace(workspace).model()
 data = pyhf.Workspace(workspace).data(reference)
 
 view = model.pyhf
-logpdf = view.logpdf(dtype="float64")
-expected = view.expected_data(dtype="float64")
 pars = np.array(view.suggested_init())
-np.testing.assert_allclose(logpdf(pars), reference.logpdf(pars, data)[0], rtol=1e-12)
-np.testing.assert_allclose(expected(pars), reference.expected_actualdata(pars), rtol=1e-12)
-print(round(float(logpdf(pars)), 6), np.asarray(expected(pars)))
+with jax.enable_x64(True):
+    logpdf = view.logpdf(dtype="float64")
+    expected = view.expected_data(dtype="float64")
+    value, counts = float(logpdf(pars)), np.asarray(expected(pars))
+np.testing.assert_allclose(value, reference.logpdf(pars, data)[0], rtol=1e-12)
+np.testing.assert_allclose(counts, reference.expected_actualdata(pars), rtol=1e-12)
+print(round(value, 6), counts)
 ```
 
 ```{testoutput} view
@@ -91,10 +94,12 @@ bounds and the fixed components, so the density starts at pyhf's
 to its fit bounds:
 
 ```{testcode} view
-fit = model.logdensity("likelihood", unconstrained=False, dtype="float64")
+with jax.enable_x64(True):
+    fit = model.logdensity("likelihood", unconstrained=False, dtype="float64")
+    at_init = float(fit(fit.init))
 lower, upper = fit.bounds
 print(sorted(fit.names), float(fit.init["mu"]), float(upper["mu"]))
-np.testing.assert_allclose(fit(fit.init), logpdf(pars), rtol=1e-12)
+np.testing.assert_allclose(at_init, value, rtol=1e-12)
 ```
 
 ```{testoutput} view
@@ -125,11 +130,9 @@ main counts in channel order, then the auxiliary data in `view.auxdata_order`.
 external = from_pyhf(
     json.dumps(workspace), observations="external", auxiliary="external"
 )
-np.testing.assert_allclose(
-    external.pyhf.logpdf(dtype="float64")(pars, data),
-    reference.logpdf(pars, data)[0],
-    rtol=1e-12,
-)
+with jax.enable_x64(True):
+    external_value = float(external.pyhf.logpdf(dtype="float64")(pars, data))
+np.testing.assert_allclose(external_value, reference.logpdf(pars, data)[0], rtol=1e-12)
 ```
 
 To bind the inputs before compiling instead, call `Module.set`. The nominal
@@ -140,10 +143,9 @@ centres = {
     p.name: p.centre for p in external.parameters.values() if p.centre is not None
 }
 bound = external.set(singlechannel_observed=[52.0, 63.0], pyhf_auxdata=centres)
-np.testing.assert_allclose(
-    bound.pyhf.logpdf(dtype="float64")(pars), logpdf(pars), rtol=1e-12
-)
-jax.config.update("jax_enable_x64", False)
+with jax.enable_x64(True):
+    bound_value = float(bound.pyhf.logpdf(dtype="float64")(pars))
+np.testing.assert_allclose(bound_value, value, rtol=1e-12)
 ```
 
 ## Names

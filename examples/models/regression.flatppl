@@ -1,0 +1,15 @@
+flatppl_compat = "0.1"
+n = external(posintegers)
+noise_sd = external(posreals)
+prior_sd = external(posreals)
+data = external(cartpow(cartprod(x = reals, y = reals), n))
+
+alpha ~ Normal(0.0, prior_sd)
+beta ~ Normal(0.0, prior_sd)
+means = alpha .+ beta .* data.x
+y ~ Normal.(means, noise_sd)
+
+prior = lawof(record(alpha = alpha, beta = beta))
+forward = kernelof(record(y = y), alpha = alpha, beta = beta)
+likelihood = likelihoodof(forward, record(y = data.y))
+posterior = bayesupdate(likelihood, prior)

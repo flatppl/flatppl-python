@@ -20,3 +20,5 @@ optimistix>=0.0.10
 iminuit>=2
 # The first release that accepts ArviZ 1.
 nutpie>=0.16.9
+# The Belle II workload compares with pyhf's 64-bit backend and fits.
+pyhf>=0.7

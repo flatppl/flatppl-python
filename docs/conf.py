@@ -83,6 +83,8 @@ sphinx_gallery_conf = {
             "optimistix_fit.py",
             "iminuit_errors.py",
             "formula.py",
+            "regression_workflow.py",
+            "belle2.py",
             "regression.py",
             "zip_map.py",
             "query.py",

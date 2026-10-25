@@ -14,6 +14,9 @@ Python script or Jupyter notebook from the bottom of the page.
   ``module.logdensity(...)``.
 * **Fitting or sampling outside JAX?** Read Hesse and Minos errors with
   iminuit, minimize with optimistix, or sample with nutpie.
+* **Want the whole workflow?** Go from a model file and a dataframe to checked
+  posterior draws, or import the published Belle II likelihood, fit, profile and
+  sample it.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

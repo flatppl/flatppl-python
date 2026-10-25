@@ -25,6 +25,10 @@ tagged release.
 
 ### Added
 
+- Two complete workloads join the gallery and run in CI: a regression from a
+  model file and a Polars table to NUTS draws checked against the exact
+  posterior, and the published Belle II likelihood checked against pyhf through
+  fits, a profile and posterior draws. They replace the separate notebooks.
 - Gallery pages for BlackJAX NUTS, mean-field VI and pathfinder, NumPyro NUTS,
   Optax MAP, maximum likelihood and profile fits, and ArviZ diagnostics. Each
   checks its result against the closed-form Normal-Gamma posterior and its

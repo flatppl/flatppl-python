@@ -14,6 +14,12 @@ Python script or Jupyter notebook from the bottom of the page.
   ``module.logdensity(...)``.
 * **Fitting or sampling outside JAX?** Read Hesse and Minos errors with
   iminuit, minimize with optimistix, or sample with nutpie.
+* **Starting from ROOT files?** Read histograms with uproot and hist, or build
+  a workspace with cabinetry and run a discovery fit on the FlatPPL likelihood.
+* **Shipping a model?** Export the compiled density with ``jax.export`` and run
+  it without FlatPPL.
+* **Running toys?** Batch pseudo-experiments with ``jax.vmap`` and switch the
+  lowering target between CPU and GPU.
 * **Want the whole workflow?** Go from a model file and a dataframe to checked
   posterior draws, or import the published Belle II likelihood, fit, profile and
   sample it.

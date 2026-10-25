@@ -20,5 +20,13 @@ optimistix>=0.0.10
 iminuit>=2
 # The first release that accepts ArviZ 1.
 nutpie>=0.16.9
+# The interaction pages. Lower bounds name what each page needs.
+# Writing hist objects to ROOT files and to_hist() on reading.
+uproot>=5
+hist>=2
+# The tutorial inputs the cabinetry page fetches are written for cabinetry 0.6.
+cabinetry>=0.6
+# jax.export serialization.
+flatbuffers
 # The Belle II workload compares with pyhf's 64-bit backend and fits.
 pyhf>=0.7

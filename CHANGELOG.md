@@ -7,6 +7,10 @@ tagged release.
 
 ### Changed
 
+- The pyhf guide starts in float64, compares with pyhf to 1e-12, and fits
+  through `model.logdensity("likelihood")`. The values guide shows the one
+  conversion a DataFrame needs before `jax.jit`. Inline examples omit
+  `flatppl_compat`; saved model files declare it.
 - The bundled compiler reports a measure binding's support as its domain:
   record priors, posteriors, `joint`, `jointchain`, `markovchain`, `superpose`,
   `ksuperpose` and interval truncations carry their components' supports.
@@ -29,6 +33,11 @@ tagged release.
   model file and a Polars table to NUTS draws checked against the exact
   posterior, and the published Belle II likelihood checked against pyhf through
   fits, a profile and posterior draws. They replace the separate notebooks.
+- Gallery pages for reading ROOT histograms with uproot and hist, a cabinetry
+  discovery fit with its significance, profile likelihood and CLs checked
+  against cabinetry and pyhf, a `jax.export` round trip that runs without
+  FlatPPL, and batched toys with the CPU and GPU lowering targets and a timing
+  table.
 - Gallery pages for BlackJAX NUTS, mean-field VI and pathfinder, NumPyro NUTS,
   Optax MAP, maximum likelihood and profile fits, and ArviZ diagnostics. Each
   checks its result against the closed-form Normal-Gamma posterior and its

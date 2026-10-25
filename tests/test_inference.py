@@ -445,3 +445,34 @@ def test_unbound_externals_all_fixed_inputs_and_boundary_inits_are_refused() -> 
     )
     with pytest.raises(ValueError, match="domain boundary"):
         from_pyhf(json.dumps(spec)).logdensity("likelihood")
+
+
+@pytest.mark.usefixtures("x64")
+@pytest.mark.parametrize(
+    ("bound", "lower", "upper", "chart"),
+    [
+        ("lo = 0.0", 0.0, np.inf, np.exp),
+        ("hi = 2.0", -np.inf, 2.0, lambda u: 2.0 - np.exp(u)),
+    ],
+)
+def test_a_single_fit_bound_narrows_its_side_alone(
+    bound: str, lower: float, upper: float, chart: Any
+) -> None:
+    model = flatppl(
+        f"""
+        mu = elementof(reals)
+        L = likelihoodof(functionof(Normal(mu = mu, sigma = 1.0)), 0.5)
+        pyhf_measurement_m = record(name = "m", selected = true, parameters = record(mu = record(pyhf = "mu", {bound})))
+        """
+    )
+    density = model.logdensity("L", dtype="float64")
+    assert (float(density.bounds[0]["mu"]), float(density.bounds[1]["mu"])) == (
+        lower,
+        upper,
+    )
+    u = 0.3
+    mu = chart(u)
+    assert float(density.constrain({"mu": jnp.float64(u)})["mu"]) == pytest.approx(mu)
+    # Closed form: the Normal likelihood of 0.5 plus log|dmu/du| = u.
+    expected = normal(0.5, mu, 1.0) + u
+    assert float(density({"mu": jnp.float64(u)})) == pytest.approx(expected, rel=1e-12)

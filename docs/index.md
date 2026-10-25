@@ -57,6 +57,7 @@ pyhf
 :caption: Reference
 
 transforms
+inference
 modules
 values
 formula

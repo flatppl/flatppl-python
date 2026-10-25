@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from ._schema import BindingInfo, Export, MathRow
     from ._transforms import TransformedFunction
     from .formula import FormulaView
+    from .inference import LogDensity
     from .pyhf import PyhfView
 
 
@@ -1015,6 +1016,66 @@ class Module:
         )
         return TransformedFunction(
             compile_module(self), unconstrained, constrain, unconstrain
+        )
+
+    def logdensity(
+        self,
+        *,
+        unconstrained: bool = True,
+        jacobian: bool = True,
+        dtype: DTypeLike = "float32",
+        target: Literal["cpu", "gpu"] | None = None,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+    ) -> LogDensity:
+        """Prepare this query's log density for a sampler or an optimiser.
+
+        The query has one continuous ``elementof`` input and a scalar
+        log-density output, as for :meth:`compile_transformed`. The position
+        is that input, a dict for a record.
+
+        Args:
+            unconstrained: Take positions in unconstrained coordinates, where
+                every real vector is valid. ``False`` takes model parameters.
+            jacobian: Add the log-Jacobian of the coordinate map, so the
+                density is that of the unconstrained coordinates. Use ``True``
+                for sampling and ``False`` for maximum likelihood or maximum a
+                posteriori fits in unconstrained coordinates. It has no effect
+                when ``unconstrained`` is ``False``.
+            dtype: Floating-point precision, as in :meth:`compile`.
+            target: Lowering profile, as in :meth:`compile`.
+            integration: Numerical integration settings, as in :meth:`compile`.
+            optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
+
+        Returns:
+            The log density, its gradient, starting point, coordinate maps and
+            parameter metadata. See :class:`flatppl.inference.LogDensity`.
+
+        Raises:
+            CompilationError: The query has no supported continuous chart,
+                several inputs, or a non-scalar output.
+            ValueError: The query requests a gradient instead of a scalar value.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> density = flatppl('''
+            ... rate = elementof(posreals)
+            ... inputs = rate
+            ... outputs = logdensityof(Gamma(2, 1), rate)
+            ... ''').logdensity()
+            >>> float(density.constrain(density.init)), float(density.grad(density.init))
+            (1.0, 1.0)
+        """
+        from ._inference import build
+
+        return build(
+            self,
+            unconstrained=unconstrained,
+            jacobian=jacobian,
+            dtype=dtype,
+            target=target,
+            integration=integration,
+            optimize_forward=optimize_forward,
         )
 
 

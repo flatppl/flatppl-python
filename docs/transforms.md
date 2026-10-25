@@ -15,6 +15,8 @@ BlackJAX receives `target.unconstrained`. Convert an initial point with
 `target.unconstrain`, then convert retained draws with `target.constrain`.
 The [mixed-model tutorial](examples/formula.rst) runs this
 workflow with four NUTS chains and reports diagnostics.
+[`Module.logdensity`](inference.md) wraps the same functions with a starting
+point, parameter names, bounds and a flat-vector view.
 
 ## A positive parameter
 

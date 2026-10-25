@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 import flatppl as package
-from flatppl import CompilationError, CompiledFunction, Context, flatppl
+from flatppl import CompilationError, CompiledFunction, Context, flatppl, inference
 
 SOURCE = """x = elementof(reals)
 n = external(posintegers)
@@ -134,7 +134,9 @@ def test_compiled_function_is_exported_without_importing_jax() -> None:
 
 
 @pytest.mark.parametrize(
-    "module", [package, package.pyhf, package.formula], ids=lambda m: m.__name__
+    "module",
+    [package, package.pyhf, package.formula, inference],
+    ids=lambda m: m.__name__,
 )
 def test_public_symbols_have_docstrings_and_reference_entries(module: Any) -> None:
     # Autodoc drops an undocumented member without a warning.

@@ -28,3 +28,5 @@ hist>=2
 cabinetry>=0.6
 # jax.export serialization.
 flatbuffers
+# The Belle II workload compares with pyhf's 64-bit backend and fits.
+pyhf>=0.7

@@ -29,6 +29,10 @@ tagged release.
 
 ### Added
 
+- Two complete workloads join the gallery and run in CI: a regression from a
+  model file and a Polars table to NUTS draws checked against the exact
+  posterior, and the published Belle II likelihood checked against pyhf through
+  fits, a profile and posterior draws. They replace the separate notebooks.
 - Gallery pages for reading ROOT histograms with uproot and hist, a cabinetry
   discovery fit with its significance, profile likelihood and CLs checked
   against cabinetry and pyhf, a `jax.export` round trip that runs without

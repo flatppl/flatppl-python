@@ -20,6 +20,9 @@ Python script or Jupyter notebook from the bottom of the page.
   it without FlatPPL.
 * **Running toys?** Batch pseudo-experiments with ``jax.vmap`` and switch the
   lowering target between CPU and GPU.
+* **Want the whole workflow?** Go from a model file and a dataframe to checked
+  posterior draws, or import the published Belle II likelihood, fit, profile and
+  sample it.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

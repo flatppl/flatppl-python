@@ -1,42 +1,17 @@
 # Import a pyhf model
 
 `from_pyhf` converts a pyhf model or workspace into an ordinary FlatPPL module.
-The bundled Rust converter performs the conversion. Python handles input IO.
-The importer does not require the Python `pyhf` package.
+The bundled Rust converter performs the conversion and does not need the Python
+`pyhf` package. `model.pyhf` then lays the module out the way pyhf lays out its
+model, and `model.logdensity("likelihood")` prepares it for fits and samplers.
 
-```python
-from pathlib import Path
-from flatppl import Context, flatppl, from_pyhf
+## Start in float64
 
-context = Context()
-model = from_pyhf(Path("workspace.json"), context=context)
-context.register("model.flatppl", model)
-print(model.source)  # Inspect the generated FlatPPL and its binding names.
-```
-
-JSON strings and open files work too:
-
-```python
-model = from_pyhf(Path("workspace.json").read_text())
-with open("workspace.json", "rb") as stream:
-    model = from_pyhf(stream)
-```
-
-Pass `json.dumps(pyhf_model.spec)` to import a model already held by pyhf.
-Model-only documents declare each channel's observations as an `external` input.
-Workspaces retain their observed counts. Both forms retain auxiliary constraints.
-For workspaces with several measurements, the converter uses the first
-measurement's parameter configuration, as pyhf does. Pass `measurement="name"`
-to select another one.
-
-## Read pyhf's layout
-
-Every converted module carries each measurement's fit settings and channel
-layout as a literal record. `model.pyhf` reads the selected one as a
-{class}`~flatppl.pyhf.PyhfView`, and `model.parameters` adds the same settings
-to each {class}`~flatppl.Parameter`. Neither needs the `pyhf` package. The view
-follows pyhf's conventions: its parameter order, flat parameter vector,
-auxiliary data and channel order are those of `pyhf.Model.config`.
+A pyhf likelihood sums many Poisson and constraint terms. A comparison of
+absolute log likelihoods with pyhf therefore uses float64, where float32 rounding
+would hide the agreement; FlatPPL itself runs in either precision. Pass
+`dtype="float64"`, compile and call inside `jax.enable_x64(True)`, and select
+pyhf's 64-bit backend:
 
 ```{testcode} view
 import json
@@ -44,6 +19,8 @@ import jax
 import numpy as np
 import pyhf
 from flatppl import from_pyhf
+
+pyhf.set_backend("numpy", precision="64b")
 
 spec = pyhf.simplemodels.uncorrelated_background(
     signal=[5, 10], bkg=[50, 60], bkg_uncertainty=[5, 12]
@@ -55,29 +32,91 @@ workspace = {
     "version": "1.0.0",
 }
 model = from_pyhf(json.dumps(workspace))
-view = model.pyhf
-print(view.par_order, view.poi_index, view.suggested_bounds())
-print(model.parameters["uncorr_bkguncrt"].centre)
+reference = pyhf.Workspace(workspace).model()
+data = pyhf.Workspace(workspace).data(reference)
 
-logpdf = view.logpdf()
-expected = view.expected_data()
+view = model.pyhf
 pars = np.array(view.suggested_init())
-print(np.asarray(expected(pars)), round(float(jax.grad(logpdf)(pars)[0]), 4))
+with jax.enable_x64(True):
+    logpdf = view.logpdf(dtype="float64")
+    expected = view.expected_data(dtype="float64")
+    value, counts = float(logpdf(pars)), np.asarray(expected(pars))
+np.testing.assert_allclose(value, reference.logpdf(pars, data)[0], rtol=1e-12)
+np.testing.assert_allclose(counts, reference.expected_actualdata(pars), rtol=1e-12)
+print(round(value, 6), counts)
+```
+
+```{testoutput} view
+-12.087693 [55. 70.]
+```
+
+Both functions agree with pyhf's `Model.logpdf` and `Model.expected_actualdata`
+to 1e-12. They are ordinary JAX functions of pyhf's flat parameter vector and
+work under `jax.jit`, `jax.grad` and `jax.vmap`. Compilation defaults to
+float32, which suits sampling but not absolute comparisons with pyhf.
+
+`from_pyhf` also accepts a path or an open file. Pass `json.dumps(pyhf_model.spec)`
+to import a model already held by pyhf. Model-only documents declare each
+channel's observations as an `external` input. Workspaces retain their observed
+counts. For workspaces with several measurements, the converter uses the first
+measurement's configuration, as pyhf does; pass `measurement="name"` to select
+another.
+
+## Read pyhf's layout
+
+Every converted module carries each measurement's fit settings and channel
+layout as a literal record. `model.pyhf` reads the selected one as a
+{class}`~flatppl.pyhf.PyhfView`, and `model.parameters` adds the same settings
+to each {class}`~flatppl.Parameter`. Neither reads the `pyhf` package. The
+view's parameter order, flat vector, auxiliary data and channel order are those
+of `pyhf.Model.config`:
+
+```{testcode} view
+print(view.par_order, view.poi_index, view.suggested_bounds())
+print(model.parameters["uncorr_bkguncrt"].centre, view.par_map["mu"].type)
 ```
 
 ```{testoutput} view
 ('mu', 'uncorr_bkguncrt') 0 [(0.0, 10.0), (1e-10, 10.0), (1e-10, 10.0)]
-[100.  25.]
-[55. 70.] -1.2727
+[100.  25.] normfactor
 ```
 
-`view.logpdf()` compiles the full likelihood as a function of pyhf's flat
-parameter vector, and `view.expected_data()` the expected main counts, with
-the expected auxiliary data appended under `include_auxdata=True`. Both are
-ordinary JAX functions and match pyhf's `Model.logpdf` and
-`Model.expected_data`. `view.par_map[name].type` is each parameter's pyhf
-modifier type, and each `Parameter` carries its constraint family, width and
-centre.
+`view.expected_data(include_auxdata=True)` appends the expected auxiliary data,
+as pyhf's `Model.expected_data` does. Each `Parameter` carries its constraint
+family, width and centre.
+
+## Fit and sample
+
+`model.logdensity("likelihood")` takes the likelihood over its inputs, the
+parameters, as a record. The measurement's settings supply the start, the fit
+bounds and the fixed components, so the density starts at pyhf's
+`suggested_init`. With the default `bounds=True`, each parameter's set narrows
+to its fit bounds:
+
+```{testcode} view
+with jax.enable_x64(True):
+    fit = model.logdensity("likelihood", unconstrained=False, dtype="float64")
+    at_init = float(fit(fit.init))
+lower, upper = fit.bounds
+print(sorted(fit.names), float(fit.init["mu"]), float(upper["mu"]))
+np.testing.assert_allclose(at_init, value, rtol=1e-12)
+```
+
+```{testoutput} view
+['mu', 'uncorr_bkguncrt'] 1.0 10.0
+```
+
+`fit.potential` is the negated log likelihood that Optax and iminuit minimize,
+and `fit.flat` lays it out on one vector. In unconstrained coordinates the fit
+bounds select a scaled logistic chart. Use `jacobian=False` there for maximum
+likelihood, and keep the default for sampling. The [Optax](examples/optax_fit.rst)
+and [iminuit](examples/iminuit_errors.rst) pages show both.
+
+The likelihood includes the observation and auxiliary constraint terms with
+their normalization constants. It matches pyhf's full `Model.logpdf`, not a
+likelihood ratio. Measurement bounds and initial values are fit configuration;
+they are not Bayesian priors. Write a prior explicitly before sampling a
+posterior.
 
 ## External observations and auxiliary data
 
@@ -88,16 +127,12 @@ centre.
 main counts in channel order, then the auxiliary data in `view.auxdata_order`.
 
 ```{testcode} view
-reference = pyhf.Workspace(workspace)
-data = reference.data(reference.model())
 external = from_pyhf(
     json.dumps(workspace), observations="external", auxiliary="external"
 )
-np.testing.assert_allclose(
-    external.pyhf.logpdf()(pars, data),
-    reference.model().logpdf(pars, data)[0],
-    rtol=1e-5,
-)
+with jax.enable_x64(True):
+    external_value = float(external.pyhf.logpdf(dtype="float64")(pars, data))
+np.testing.assert_allclose(external_value, reference.logpdf(pars, data)[0], rtol=1e-12)
 ```
 
 To bind the inputs before compiling instead, call `Module.set`. The nominal
@@ -108,30 +143,21 @@ centres = {
     p.name: p.centre for p in external.parameters.values() if p.centre is not None
 }
 bound = external.set(singlechannel_observed=[52.0, 63.0], pyhf_auxdata=centres)
-np.testing.assert_allclose(bound.pyhf.logpdf()(pars), logpdf(pars), rtol=1e-5)
+with jax.enable_x64(True):
+    bound_value = float(bound.pyhf.logpdf(dtype="float64")(pars))
+np.testing.assert_allclose(bound_value, value, rtol=1e-12)
 ```
 
-## Names, precision, and statistical meaning
+## Names
 
-Inspect `model.source` and `model.bindings` for the generated names.
-Channel names determine expected-count and observation bindings. Parameter names
+Inspect `model.source` and `model.bindings` for the generated names. Channel
+names determine expected-count and observation bindings. Parameter names
 outside FlatPPL's binding grammar receive unique valid names, with a
-`pyhf_parameter_names` record mapping them to their original strings. Generated
-metadata and helper names also avoid collisions.
+`pyhf_parameter_names` record mapping them to their original strings.
+`model.pyhf.par_map` relates pyhf's flat parameter vector to the imported scalar
+and vector parameters, by pyhf name. Do not assume that binding order equals
+pyhf parameter order.
 
-`model.pyhf.par_map` relates pyhf's flat parameter vector to the imported
-scalar and vector parameters, by pyhf name. Do not assume that binding order
-equals pyhf parameter order.
-
-The imported likelihood includes observation and auxiliary constraint terms,
-including normalization constants. It matches pyhf's full `Model.logpdf`,
-not just a likelihood ratio. Measurement bounds and initial values describe
-fit configuration; they do not create Bayesian priors. Define priors explicitly
-before using an inference library to sample a posterior.
-
-Compilation defaults to float32. Large count models can lose absolute-density
-precision through cancellation. For precise comparisons, enable JAX x64 and
-call `query.compile(dtype="float64")`, and select pyhf's 64-bit backend precision.
 Unsupported pyhf constructs raise a conversion diagnostic instead of being
 silently omitted. See the [Rust converter documentation](https://github.com/flatppl/flatppl-rust/tree/main/crates/hs3)
 for its supported import profile.

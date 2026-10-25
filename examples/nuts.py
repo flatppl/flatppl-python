@@ -37,7 +37,6 @@ def make_logdensity():
     context = Context()
     model = flatppl(
         r"""
-        flatppl_compat = "0.1"
         theta ~ Normal(mu = 0.0, sigma = 1.0)
         y ~ Normal(mu = theta, sigma = 1.0)
         prior = lawof((theta = theta))
@@ -50,7 +49,6 @@ def make_logdensity():
     context.register("model.flatppl", model)
     query = flatppl(
         r"""
-        flatppl_compat = "0.1"
         m = load_module("model.flatppl")
         point = elementof(cartprod(theta = reals))
         inputs = point

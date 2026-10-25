@@ -202,6 +202,16 @@ text except rewritten paths, and preserves data bytes. Missing dependencies
 stop export rather than producing an incomplete archive. A bundle does not
 include JAX, an environment, or the values of unbound inputs.
 
+## Declare version compatibility
+
+A module may declare the FlatPPL versions it is written for with
+`flatppl_compat = "0.1"` (§04 "FlatPPL version compatibility"). These docs and
+the gallery follow one rule. Inline models and queries in Python omit it,
+because the package's own version bound already pins the language they use.
+Model files that are saved, bundled or published declare it, as the
+[ZIP example](examples/zip_map.rst) does. A query built by `Module.query` or
+`Module.logdensity` repeats the declaration of the module it loads.
+
 ## Change data or definitions
 
 Pass changing data through declared inputs to reuse a compiled query.

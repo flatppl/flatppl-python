@@ -7,6 +7,10 @@ tagged release.
 
 ### Changed
 
+- The pyhf guide starts in float64, compares with pyhf to 1e-12, and fits
+  through `model.logdensity("likelihood")`. The values guide shows the one
+  conversion a DataFrame needs before `jax.jit`. Inline examples omit
+  `flatppl_compat`; saved model files declare it.
 - The bundled compiler reports a measure binding's support as its domain:
   record priors, posteriors, `joint`, `jointchain`, `markovchain`, `superpose`,
   `ksuperpose` and interval truncations carry their components' supports.

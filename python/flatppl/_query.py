@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
+from ._api import _VECTOR_SETS  # pyright: ignore[reportPrivateUsage]
 from ._graph import closure
 
 if TYPE_CHECKING:
@@ -51,7 +52,7 @@ def _contains(
 
 
 def _dynamic(domain: Mapping[str, Any]) -> bool:
-    if domain["set"] == "stdsimplex":
+    if domain["set"] in _VECTOR_SETS:
         return domain["n"] is None
     return domain["set"] == "cartpow" and None in domain["shape"]
 
@@ -66,7 +67,7 @@ def _flat_component(binding: Binding, start: int) -> tuple[str, str, int]:
             "hold it; use layout='record'"
         )
     leaf = domain["of"] if domain["set"] == "cartpow" else domain
-    if leaf["set"] not in _FLAT_SETS and domain["set"] != "stdsimplex":
+    if leaf["set"] not in _FLAT_SETS and domain["set"] not in _VECTOR_SETS:
         raise ValueError(
             f"`{binding.name}` has non-real elements, so the flat layout cannot hold "
             "it; use layout='record'"

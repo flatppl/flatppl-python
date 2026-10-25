@@ -12,6 +12,8 @@ Python script or Jupyter notebook from the bottom of the page.
 * **Using an inference package?** Sample and approximate with BlackJAX, sample
   with NumPyro, fit with Optax, and diagnose with ArviZ, all from
   ``module.logdensity(...)``.
+* **Fitting or sampling outside JAX?** Read Hesse and Minos errors with
+  iminuit, minimize with optimistix, or sample with nutpie.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

@@ -25,6 +25,10 @@ tagged release.
 
 ### Added
 
+- Gallery pages for reading ROOT histograms with uproot and hist, a cabinetry
+  discovery fit with its significance, profile likelihood and CLs checked
+  against cabinetry and pyhf, and a `jax.export` round trip that runs without
+  FlatPPL.
 - Gallery pages for BlackJAX NUTS, mean-field VI and pathfinder, NumPyro NUTS,
   Optax MAP, maximum likelihood and profile fits, and ArviZ diagnostics. Each
   checks its result against the closed-form Normal-Gamma posterior and its

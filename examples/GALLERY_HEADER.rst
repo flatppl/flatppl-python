@@ -12,6 +12,10 @@ Python script or Jupyter notebook from the bottom of the page.
 * **Using an inference package?** Sample and approximate with BlackJAX, sample
   with NumPyro, fit with Optax, and diagnose with ArviZ, all from
   ``module.logdensity(...)``.
+* **Starting from ROOT files?** Read histograms with uproot and hist, or build
+  a workspace with cabinetry and run a discovery fit on the FlatPPL likelihood.
+* **Shipping a model?** Export the compiled density with ``jax.export`` and run
+  it without FlatPPL.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

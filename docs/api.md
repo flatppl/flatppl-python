@@ -111,6 +111,18 @@ whose names start with an underscore, is private.
 .. autoclass:: flatppl.TransformedFunction
 ```
 
+## Inference
+
+```{eval-rst}
+.. automodule:: flatppl.inference
+   :no-members:
+
+.. autoclass:: flatppl.inference.LogDensity
+   :special-members: __call__
+
+.. autoclass:: flatppl.inference.FlatLogDensity
+```
+
 ## Integration
 
 ```{eval-rst}

@@ -21,6 +21,11 @@ tagged release.
 
 ### Added
 
+- `Module.logdensity` returns a `flatppl.inference.LogDensity` for samplers and
+  optimisers: the density, its gradient and negation, a starting point, the
+  coordinate maps, parameter names, shapes, bounds and fixed components, and a
+  flat-vector view. From a model's likelihood or measure it reads converter
+  initial values, fit bounds and fixed components.
 - `Context.load` accepts ZIP bundles. `Context.load_bundle` loads archive bytes,
   and `Module.pack` exports source, imports and data as a portable ZIP.
   `flatppl.load(path)` and `module.save(path)` provide direct path I/O.

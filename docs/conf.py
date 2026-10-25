@@ -52,6 +52,7 @@ autodoc_type_aliases = {
     "TransformedFunction": "flatppl.TransformedFunction",
     "DTypeLike": "jax.typing.DTypeLike",
     "FormulaView": "flatppl.formula.FormulaView",
+    "LogDensity": "flatppl.inference.LogDensity",
 }
 napoleon_numpy_docstring = False
 intersphinx_mapping = {
@@ -96,6 +97,8 @@ _NO_SIGNATURE = {
     "flatppl.pyhf.ParameterSlice",
     "flatppl.pyhf.PyhfView",
     "flatppl.formula.FormulaView",
+    "flatppl.inference.LogDensity",
+    "flatppl.inference.FlatLogDensity",
 }
 
 

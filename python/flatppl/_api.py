@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from ._schema import BindingInfo, Export, MathRow
     from ._transforms import TransformedFunction
     from .formula import FormulaView
+    from .inference import LogDensity
     from .pyhf import PyhfView
 
 
@@ -1015,6 +1016,83 @@ class Module:
         )
         return TransformedFunction(
             compile_module(self), unconstrained, constrain, unconstrain
+        )
+
+    def logdensity(
+        self,
+        measure: str | None = None,
+        *,
+        unconstrained: bool = True,
+        jacobian: bool = True,
+        bounds: bool = True,
+        dtype: DTypeLike = "float32",
+        target: Literal["cpu", "gpu"] | None = None,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+    ) -> LogDensity:
+        """Prepare a scalar log density for a sampler or an optimiser.
+
+        Without ``measure`` this module is a query with one continuous
+        ``elementof`` input and a scalar log-density output, as for
+        :meth:`compile_transformed`. With ``measure`` this module is a model:
+        the log density of that binding, a likelihood or a measure on a record
+        of the model's parameters, is taken over every ``elementof``
+        parameter it depends on, as a record. A converter's settings record,
+        such as a pyhf measurement, then supplies initial values, fit bounds
+        and fixed components. Fixed components leave the position and keep
+        their initial values.
+
+        Args:
+            measure: A likelihood or measure binding of this model, or
+                ``None`` when this module is the query.
+            unconstrained: Take positions in unconstrained coordinates, where
+                every real vector is valid. ``False`` takes model parameters.
+            jacobian: Add the log-Jacobian of the coordinate map, so the
+                density is that of the unconstrained coordinates. Use ``True``
+                for sampling and ``False`` for maximum likelihood or maximum a
+                posteriori fits in unconstrained coordinates. It has no effect
+                when ``unconstrained`` is ``False``.
+            bounds: With ``measure``, narrow each real parameter's set to its
+                converter fit bounds, intersected with its declared set. The
+                density then has the bounds as its support.
+            dtype: Floating-point precision, as in :meth:`compile`.
+            target: Lowering profile, as in :meth:`compile`.
+            integration: Numerical integration settings, as in :meth:`compile`.
+            optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
+
+        Returns:
+            The log density, its gradient, starting point, coordinate maps and
+            parameter metadata. See :class:`flatppl.inference.LogDensity`.
+
+        Raises:
+            ValueError: ``measure`` is not a binding, depends on an unbound
+                external or on no parameter, every parameter is fixed, or the
+                initial point lies on a domain boundary.
+            CompilationError: The query has no supported continuous chart or a
+                non-scalar output.
+
+        Example:
+            >>> from flatppl import flatppl
+            >>> density = flatppl('''
+            ... rate = elementof(posreals)
+            ... inputs = rate
+            ... outputs = logdensityof(Gamma(2, 1), rate)
+            ... ''').logdensity()
+            >>> float(density.constrain(density.init)), float(density.grad(density.init))
+            (1.0, 1.0)
+        """
+        from ._inference import build
+
+        return build(
+            self,
+            measure,
+            unconstrained=unconstrained,
+            jacobian=jacobian,
+            bounds=bounds,
+            dtype=dtype,
+            target=target,
+            integration=integration,
+            optimize_forward=optimize_forward,
         )
 
 

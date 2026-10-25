@@ -25,9 +25,12 @@ tagged release.
 
 ### Added
 
+- Gallery pages for BlackJAX NUTS, mean-field VI and pathfinder, NumPyro NUTS,
+  Optax MAP, maximum likelihood and profile fits, and ArviZ diagnostics. Each
+  checks its result against the closed-form Normal-Gamma posterior and its
+  evidence.
 - Gallery pages for iminuit Hesse and Minos errors, optimistix BFGS and
-  Levenberg-Marquardt fits, and nutpie NUTS. Each checks its result against
-  closed forms and the posterior's evidence.
+  Levenberg-Marquardt fits, and nutpie NUTS, with the same closed-form checks.
 - `Binding.inputs` gives a kernel's or likelihood's interface inputs, each with
   the support of the value its boundary binds.
 - `Module.logdensity` returns a `flatppl.inference.LogDensity` for samplers and

@@ -6,12 +6,17 @@ sphinx-gallery>=0.22
 blackjax==1.7.1
 # The formula gallery starts from a Polars dataframe, as the package tests do.
 polars>=2
-# The minimizer and sampler pages. Lower bounds name what each page needs.
+# The inference package pages. Lower bounds name the feature each page uses.
+# lbfgs, value_and_grad_from_state and projections.projection_box.
+optax>=0.2.3
+# Earlier releases import jax's removed xla_pmap_p and fail with JAX 0.11.
+numpyro>=0.21
+# from_dict with named groups and summary(ci_prob=) on the DataTree API.
+arviz>=1.0
+# The minimizer and sampler pages outside the JAX inference packages.
 # Earlier releases read jax.core.Jaxpr, which JAX 0.11 removed.
 optimistix>=0.0.10
 # Minuit(grad=, name=), minos and merrors of the iminuit 2 API.
 iminuit>=2
 # The first release that accepts ArviZ 1.
 nutpie>=0.16.9
-# from_dict and summary(ci_prob=) on the DataTree API.
-arviz>=1.0

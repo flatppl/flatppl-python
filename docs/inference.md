@@ -7,8 +7,9 @@ coordinates. `module.logdensity(...)` returns all three as a
 diagnostics and optimisers read. The package ships no adapter
 for any inference package. The gallery shows each package on these fields:
 [BlackJAX NUTS and variational inference](examples/blackjax_nuts_vi.rst),
-[NumPyro](examples/numpyro_nuts.rst), [Optax](examples/optax_fit.rst) and
-[ArviZ](examples/arviz_diagnostics.rst).
+[NumPyro](examples/numpyro_nuts.rst), [Optax](examples/optax_fit.rst),
+[ArviZ](examples/arviz_diagnostics.rst), [iminuit](examples/iminuit_errors.rst),
+[optimistix](examples/optimistix_fit.rst) and [nutpie](examples/nutpie_nuts.rst).
 
 ## From a measure
 

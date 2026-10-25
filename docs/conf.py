@@ -75,6 +75,9 @@ sphinx_gallery_conf = {
     "within_subsection_order": ExplicitOrder(
         [
             "nuts.py",
+            "nutpie_nuts.py",
+            "optimistix_fit.py",
+            "iminuit_errors.py",
             "formula.py",
             "regression.py",
             "zip_map.py",

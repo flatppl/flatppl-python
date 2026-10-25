@@ -25,6 +25,9 @@ tagged release.
 
 ### Added
 
+- Gallery pages for iminuit Hesse and Minos errors, optimistix BFGS and
+  Levenberg-Marquardt fits, and nutpie NUTS. Each checks its result against
+  closed forms and the posterior's evidence.
 - `Binding.inputs` gives a kernel's or likelihood's interface inputs, each with
   the support of the value its boundary binds.
 - `Module.logdensity` returns a `flatppl.inference.LogDensity` for samplers and

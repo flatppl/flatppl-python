@@ -6,7 +6,8 @@ coordinates. `module.logdensity(...)` returns all three as a
 {class}`~flatppl.inference.LogDensity`, with the names, shapes and bounds that
 diagnostics and optimisers read. The package ships no adapter
 for any inference package. The [example gallery](examples/index.rst) shows each
-package on these fields.
+package on these fields, including [iminuit](examples/iminuit_errors.rst),
+[optimistix](examples/optimistix_fit.rst) and [nutpie](examples/nutpie_nuts.rst).
 
 ## From a measure
 

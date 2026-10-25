@@ -15,6 +15,7 @@ tagged release.
   preserve the existing tutorial and converter models.
 - Enzyme alpha 10 fixes broadcast and padding rewrites that could reject or
   miscompute pyhf gradients, including the Belle II model.
+- Enzyme alpha 11 brings the compiler up to date with upstream Enzyme-JAX.
 - Formula defaults use explicit Lebesgue priors joined to proper laws. Conditional
   prior bounds preserve density constants and parameter dependence.
 - The bundled compiler removes `regression.Flat` and rejects empty calls.

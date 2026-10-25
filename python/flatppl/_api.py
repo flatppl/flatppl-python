@@ -1046,10 +1046,12 @@ class Module:
         - A measure, such as a prior or a posterior: the position is its
           variate on its support, a dict for a measure on a record such as
           ``lawof(record(theta = theta, s = s))`` or a posterior of it.
-        - A likelihood: the position is a record of every ``elementof``
-          parameter it depends on. A converter's settings record, such as a
-          pyhf measurement, supplies initial values, fit bounds and fixed
-          components. Fixed components leave the position and keep their
+        - A likelihood: the position is a record of its interface inputs,
+          under their interface names, so ``kernelof(y, a = theta)`` gives
+          ``a``. Each input takes the support of the value its boundary
+          binds. A converter's settings record, such as a pyhf measurement,
+          supplies initial values, fit bounds and fixed components for the
+          inputs it names. Fixed components leave the position and keep their
           initial values.
 
         Without ``measure`` this module is a query with one continuous

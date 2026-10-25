@@ -9,6 +9,9 @@ Python script or Jupyter notebook from the bottom of the page.
 * **Have a dataframe?** Fit a mixed model with automatic coordinate transforms.
 * **Have arrays?** Pass runtime data to the Gaussian regression.
 * **Want a portable analysis?** Save a regression to ZIP, reload it, and fit MAP.
+* **Using an inference package?** Sample and approximate with BlackJAX, sample
+  with NumPyro, fit with Optax, and diagnose with ArviZ, all from
+  ``module.logdensity(...)``.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

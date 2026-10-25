@@ -126,8 +126,9 @@ class Binding:
         domain: The inferred value set as a read-only tree, or ``None``. Each
             node has a ``"set"`` key: a named set such as ``"reals"`` or
             ``"posintegers"``, ``"interval"`` with ``"lo"`` and ``"hi"``
-            (numbers, or ``"-inf"`` and ``"inf"``), ``"stdsimplex"`` with
-            ``"n"``, ``"cartpow"`` with ``"of"`` and ``"shape"``,
+            (numbers, or ``"-inf"`` and ``"inf"``), ``"stdsimplex"``,
+            ``"ordered"`` or ``"zerosum"`` with ``"n"``, ``"cartpow"`` with
+            ``"of"`` and ``"shape"``,
             ``"cartprod"`` with a tuple ``"of"``, ``"record"`` with
             ``"fields"`` of ``"name"`` and ``"set"``, or ``"unknown"``. An
             extent that :meth:`Module.set` binds later is ``None``.
@@ -244,13 +245,17 @@ class Parameter:
         return f"<Parameter {self.name} in {domain}>"
 
 
+# §03 sets of real n-vectors, each written as `name(n)`.
+_VECTOR_SETS = frozenset({"stdsimplex", "ordered", "zerosum"})
+
+
 def _domain_text(domain: Mapping[str, Any]) -> str:
     """Write a domain tree in FlatPPL set syntax."""
     kind = domain["set"]
     if kind == "interval":
         return f"interval({domain['lo']}, {domain['hi']})"
-    if kind == "stdsimplex":
-        return f"stdsimplex({'?' if domain['n'] is None else domain['n']})"
+    if kind in _VECTOR_SETS:
+        return f"{kind}({'?' if domain['n'] is None else domain['n']})"
     if kind == "cartpow":
         shape = ["?" if n is None else str(n) for n in domain["shape"]]
         extent = shape[0] if len(shape) == 1 else "[" + ", ".join(shape) + "]"

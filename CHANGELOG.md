@@ -15,6 +15,9 @@ tagged release.
 - Formula defaults use explicit Lebesgue priors joined to proper laws. Conditional
   prior bounds preserve density constants and parameter dependence.
 - The bundled compiler removes `regression.Flat` and rejects empty calls.
+- `Module.query` and parameter reprs write `ordered(n)` and `zerosum(n)`
+  domains with their sizes. The flat layout holds these parameters, and an
+  unbound size is refused until `Module.set` binds it.
 
 ### Added
 

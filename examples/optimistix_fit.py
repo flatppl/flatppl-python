@@ -21,11 +21,6 @@ import optimistix as optx
 
 from flatppl import flatppl
 
-# optimistix stops when the function stops changing, which in float32 happens
-# about 1e-4 short of the optimum here. The page runs in float64 and restores
-# the default at its end.
-jax.config.update("jax_enable_x64", True)
-
 # %%
 # The model and its closed forms
 # ------------------------------
@@ -61,6 +56,10 @@ mode = {"mu": mn, "tau": (an - 0.5) / bn}
 # ``(mu, log tau)``, so its minimizer maps through ``constrain`` to the mode in
 # model coordinates. optimistix passes ``args`` to the function; here it is
 # unused.
+#
+# Float64 is used here because BFGS stops when the function stops changing,
+# which in float32 happens about 1e-4 short of the optimum. FlatPPL itself does
+# not require it. ``jax.enable_x64`` scopes it to these fits.
 
 
 def potential_of(fit: Any) -> Any:
@@ -74,12 +73,15 @@ def potential_of(fit: Any) -> Any:
 
 solver = optx.BFGS(rtol=1e-9, atol=1e-9)
 for name, measure, expected in [("MAP", "posterior", mode), ("MLE", "L", mle)]:
-    fit = model.logdensity(measure, jacobian=False, dtype="float64")
-    solution = optx.minimise(potential_of(fit), solver, fit.init)
-    point = fit.constrain(solution.value)
-    print(name, {key: round(float(value), 8) for key, value in point.items()})
+    with jax.enable_x64(True):
+        fit = model.logdensity(measure, jacobian=False, dtype="float64")
+        solution = optx.minimise(potential_of(fit), solver, fit.init)
+        point = {
+            key: float(value) for key, value in fit.constrain(solution.value).items()
+        }
+    print(name, {key: round(value, 8) for key, value in point.items()})
     for key, value in expected.items():
-        assert abs(float(point[key]) - value) < 1e-8 * abs(value), (name, key)
+        assert abs(point[key] - value) < 1e-8 * abs(value), (name, key)
 
 # %%
 # Levenberg-Marquardt on residuals
@@ -87,25 +89,28 @@ for name, measure, expected in [("MAP", "posterior", mode), ("MLE", "L", mle)]:
 # A least-squares solver wants the residual vector, not its summed square. This
 # query returns ``observed - mu`` for a given ``mu``; its least-squares
 # solution is the sample mean, the maximum likelihood ``mu`` for any ``tau``.
-residuals = (
-    flatppl(
-        """
-        observed = external(cartpow(reals, 8))
-        mu = elementof(reals)
-        inputs = mu
-        outputs = observed .- mu
-        """
+# It runs in float64 for the same stopping reason.
+with jax.enable_x64(True):
+    residuals = (
+        flatppl(
+            """
+            observed = external(cartpow(reals, 8))
+            mu = elementof(reals)
+            inputs = mu
+            outputs = observed .- mu
+            """
+        )
+        .set(observed=data)
+        .compile(dtype="float64")
     )
-    .set(observed=data)
-    .compile(dtype="float64")
-)
-least_squares = optx.least_squares(
-    lambda mu, args: residuals(mu),
-    optx.LevenbergMarquardt(rtol=1e-9, atol=1e-9),
-    jnp.float64(0.0),
-)
-print("Levenberg-Marquardt mu:", round(float(least_squares.value), 8))
-assert abs(float(least_squares.value) - mean) < 1e-8 * mean
+    least_squares = optx.least_squares(
+        lambda mu, args: residuals(mu),
+        optx.LevenbergMarquardt(rtol=1e-9, atol=1e-9),
+        jnp.float64(0.0),
+    )
+    fitted_mean = float(least_squares.value)
+print("Levenberg-Marquardt mu:", round(fitted_mean, 8))
+assert abs(fitted_mean - mean) < 1e-8 * mean
 
 # %%
 # The posterior's normalization
@@ -116,7 +121,7 @@ log_evidence = (
     lgamma(an) - lgamma(a0) + a0 * log(b0) - an * log(bn)
     + 0.5 * log(k0 / kn) - n / 2 * log(2 * pi)
 )  # fmt: skip
-density = model.logdensity("posterior", dtype="float64")
+density = model.logdensity("posterior")
 mu_axis = jnp.linspace(-3.0, 5.0, 401)
 log_tau_axis = jnp.linspace(-4.0, 3.0, 401)
 grid = jax.vmap(
@@ -128,4 +133,3 @@ total = np.trapezoid(
 )
 print(f"log evidence: grid {np.log(total):.6f}, closed form {log_evidence:.6f}")
 assert abs(np.log(total) - log_evidence) < 1e-6
-jax.config.update("jax_enable_x64", False)

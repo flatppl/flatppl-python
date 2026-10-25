@@ -20,10 +20,6 @@ from iminuit import Minuit
 
 from flatppl import flatppl
 
-# Minuit's Hessian comes from finite differences, which float32 values are too
-# coarse for. The page runs in float64 and restores the default at its end.
-jax.config.update("jax_enable_x64", True)
-
 # %%
 # The model
 # ---------
@@ -67,28 +63,30 @@ minos = np.sqrt(squares * (np.exp(1 / n) - 1) / n)
 # a float and a NumPy gradient. In model coordinates,
 # ``logdensity("L", unconstrained=False)`` and ``minuit.limits`` from
 # ``fit.bounds`` do the same, with Minuit's limit transform on ``tau``.
-fit = model.logdensity("L", jacobian=False, dtype="float64")
-flat = fit.flat
+#
+# Float64 is used here because Minuit's Hessian comes from finite differences
+# of the cost, which float32 values are too coarse for. FlatPPL itself does not
+# require it. ``jax.enable_x64`` scopes it to this fit.
+with jax.enable_x64(True):
+    fit = model.logdensity("L", jacobian=False, dtype="float64")
+    flat = fit.flat
 
+    def cost(x: np.ndarray) -> float:
+        """The negated log likelihood of a flat parameter vector."""
+        return float(flat.potential(jnp.asarray(x)))
 
-def cost(x: np.ndarray) -> float:
-    """The negated log likelihood of a flat parameter vector."""
-    return float(flat.potential(jnp.asarray(x)))
+    def gradient(x: np.ndarray) -> np.ndarray:
+        """The gradient of :func:`cost`."""
+        return -np.asarray(flat.grad(jnp.asarray(x)))
 
-
-def gradient(x: np.ndarray) -> np.ndarray:
-    """The gradient of :func:`cost`."""
-    return -np.asarray(flat.grad(jnp.asarray(x)))
-
-
-minuit = Minuit(cost, np.asarray(flat.init), grad=gradient, name=flat.names)
-minuit.errordef = Minuit.LIKELIHOOD
-minuit.tol = 1e-6
-minuit.migrad()
-minuit.hesse()
-minuit.minos("mu")
+    minuit = Minuit(cost, np.asarray(flat.init), grad=gradient, name=flat.names)
+    minuit.errordef = Minuit.LIKELIHOOD
+    minuit.tol = 1e-6
+    minuit.migrad()
+    minuit.hesse()
+    minuit.minos("mu")
+    point = fit.constrain(flat.unravel(jnp.asarray(minuit.values)))
 print(minuit.params)
-point = fit.constrain(flat.unravel(jnp.asarray(minuit.values)))
 
 # %%
 # Compare with the closed forms
@@ -120,7 +118,7 @@ log_evidence = (
     lgamma(an) - lgamma(a0) + a0 * log(b0) - an * log(bn)
     + 0.5 * log(k0 / kn) - n / 2 * log(2 * pi)
 )  # fmt: skip
-density = model.logdensity("posterior", dtype="float64")
+density = model.logdensity("posterior")
 mu_axis = jnp.linspace(-3.0, 5.0, 401)
 log_tau_axis = jnp.linspace(-4.0, 3.0, 401)
 grid = jax.vmap(
@@ -135,4 +133,3 @@ assert abs(np.log(total) - log_evidence) < 1e-6
 
 # %%
 # ``emcee`` takes ``density.flat.fn`` as its ``log_prob_fn`` in the same way.
-jax.config.update("jax_enable_x64", False)

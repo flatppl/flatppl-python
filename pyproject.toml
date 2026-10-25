@@ -51,7 +51,8 @@ testpaths = ["tests"]
 include = ["python", "tests", "examples"]
 extraPaths = ["python"]
 # Stubs declare the untyped imports as Any: enzyme_ad, blackjax, pyhf, pyarrow,
-# networkx, and the gallery's optax, numpyro, arviz, iminuit, uproot and scipy.
+# networkx, and the gallery's optax, numpyro, arviz, iminuit, nutpie, uproot
+# and scipy.
 stubPath = "typings"
 typeCheckingMode = "strict"
 pythonVersion = "3.12"

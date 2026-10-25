@@ -13,6 +13,13 @@ optax>=0.2.3
 numpyro>=0.21
 # from_dict with named groups and summary(ci_prob=) on the DataTree API.
 arviz>=1.0
+# The minimizer and sampler pages outside the JAX inference packages.
+# Earlier releases read jax.core.Jaxpr, which JAX 0.11 removed.
+optimistix>=0.0.10
+# Minuit(grad=, name=), minos and merrors of the iminuit 2 API.
+iminuit>=2
+# The first release that accepts ArviZ 1.
+nutpie>=0.16.9
 # The interaction pages. Lower bounds name what each page needs.
 # Writing hist objects to ROOT files and to_hist() on reading.
 uproot>=5

@@ -16,6 +16,8 @@ Python script or Jupyter notebook from the bottom of the page.
   a workspace with cabinetry and run a discovery fit on the FlatPPL likelihood.
 * **Shipping a model?** Export the compiled density with ``jax.export`` and run
   it without FlatPPL.
+* **Running toys?** Batch pseudo-experiments with ``jax.vmap`` and switch the
+  lowering target between CPU and GPU.
 * **Have a FlatPPL model?** Query its bindings, inspect its graph, or run a file
   from the example corpus.
 

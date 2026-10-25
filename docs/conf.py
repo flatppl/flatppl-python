@@ -85,6 +85,7 @@ sphinx_gallery_conf = {
             "uproot_hist.py",
             "cabinetry_discovery.py",
             "jax_export.py",
+            "gpu_toys.py",
             "query.py",
             "inspection.py",
             "corpus.py",

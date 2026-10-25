@@ -1,4 +1,4 @@
-"""Build a :class:`flatppl.inference.LogDensity` from a query."""
+"""Build a :class:`flatppl.inference.LogDensity` from a query or a measure."""
 
 from __future__ import annotations
 
@@ -100,8 +100,39 @@ def _flat_names(position: Any, name: str) -> tuple[str, ...]:
     return tuple(names)
 
 
+def _measure_query(module: Module, measure: str) -> Module:
+    """Write the query of a measure's log density over its support."""
+    from ._api import _domain_text, flatppl  # pyright: ignore[reportPrivateUsage]
+    from ._query import _domain  # pyright: ignore[reportPrivateUsage]
+
+    binding = module.bindings.get(measure)
+    if binding is None:
+        raise ValueError(f"no public binding named `{measure}`")
+    if not (binding.value_type or "").startswith("measure"):
+        raise ValueError(
+            f"`{measure}` is {binding.value_type or 'untyped'}, not a measure; pass a "
+            "measure binding such as a prior or a posterior"
+        )
+    # Refuses an unknown support and extents not bound yet, naming the binding.
+    _domain(binding)
+    assert binding.domain is not None
+    lines: list[str] = []
+    compat = module.bindings.get("flatppl_compat")
+    if compat is not None and compat.source is not None:
+        lines.append(f"flatppl_compat = {compat.source}")
+    registered = module.context._register_query_model(module)  # pyright: ignore[reportPrivateUsage]
+    lines += [
+        f'_model = load_module("{registered}")',
+        f"point = elementof({_domain_text(binding.domain)})",
+        "inputs = point",
+        f"outputs = logdensityof(_model.{measure}, point)",
+    ]
+    return flatppl("\n".join(lines) + "\n", context=module.context)
+
+
 def build(
-    query: Module,
+    module: Module,
+    measure: str | None,
     *,
     unconstrained: bool,
     jacobian: bool,
@@ -113,6 +144,7 @@ def build(
     """Compile a :class:`LogDensity` for :meth:`flatppl.Module.logdensity`."""
     from ._jax import float_dtype
 
+    query = module if measure is None else _measure_query(module, measure)
     transformed = query.compile_transformed(
         logdensity=jacobian,
         dtype=dtype,

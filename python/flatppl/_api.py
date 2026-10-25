@@ -1020,6 +1020,7 @@ class Module:
 
     def logdensity(
         self,
+        measure: str | None = None,
         *,
         unconstrained: bool = True,
         jacobian: bool = True,
@@ -1028,13 +1029,18 @@ class Module:
         integration: Integration | None = None,
         optimize_forward: bool = False,
     ) -> LogDensity:
-        """Prepare this query's log density for a sampler or an optimiser.
+        """Prepare a log density for a sampler or an optimiser.
 
-        The query has one continuous ``elementof`` input and a scalar
-        log-density output, as for :meth:`compile_transformed`. The position
-        is that input, a dict for a record.
+        With ``measure``, the density is that measure's, such as a prior or a
+        posterior, and the position is its variate on its support: a dict for
+        a measure on a record, such as ``lawof(record(theta = theta, s = s))``
+        or a posterior of it. Without ``measure`` this module is a query with
+        one continuous ``elementof`` input and a scalar log-density output, as
+        for :meth:`compile_transformed`, and the position is that input.
 
         Args:
+            measure: A measure binding of this module, or ``None`` when this
+                module is the query.
             unconstrained: Take positions in unconstrained coordinates, where
                 every real vector is valid. ``False`` takes model parameters.
             jacobian: Add the log-Jacobian of the coordinate map, so the
@@ -1052,24 +1058,28 @@ class Module:
             parameter metadata. See :class:`flatppl.inference.LogDensity`.
 
         Raises:
-            CompilationError: The query has no supported continuous chart,
-                several inputs, or a non-scalar output.
-            ValueError: The query requests a gradient instead of a scalar value.
+            CompilationError: The support has no supported continuous chart,
+                or the query has several inputs or a non-scalar output.
+            ValueError: ``measure`` is not a measure binding, its support is
+                unknown or has an extent not bound yet, or the query requests
+                a gradient instead of a scalar value.
 
         Example:
             >>> from flatppl import flatppl
-            >>> density = flatppl('''
-            ... rate = elementof(posreals)
-            ... inputs = rate
-            ... outputs = logdensityof(Gamma(2, 1), rate)
-            ... ''').logdensity()
-            >>> float(density.constrain(density.init)), float(density.grad(density.init))
+            >>> model = flatppl('''
+            ... rate ~ Gamma(shape = 2.0, rate = 1.0)
+            ... prior = lawof(record(rate = rate))
+            ... ''')
+            >>> density = model.logdensity("prior")
+            >>> point = density.constrain(density.init)
+            >>> float(point["rate"]), float(density.grad(density.init)["rate"])
             (1.0, 1.0)
         """
         from ._inference import build
 
         return build(
             self,
+            measure,
             unconstrained=unconstrained,
             jacobian=jacobian,
             dtype=dtype,

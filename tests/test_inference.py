@@ -1,4 +1,5 @@
 import json
+from math import lgamma
 from typing import Any
 
 import jax
@@ -271,3 +272,82 @@ def test_a_query_without_a_scalar_output_is_refused() -> None:
     )
     with pytest.raises(CompilationError):
         query.logdensity()
+
+
+DRAWS = """
+theta ~ Normal(mu = 0.0, sigma = 1.0)
+s ~ Exponential(rate = 1.0)
+y ~ Normal(mu = theta, sigma = s)
+scale = lawof(s)
+prior = lawof(record(theta = theta, s = s))
+L = likelihoodof(kernelof(record(y = y), theta = theta, s = s), record(y = 1.0))
+posterior = bayesupdate(L, prior)
+"""
+
+
+def normal(x: Any, mu: Any, sigma: Any) -> Any:
+    return -0.5 * ((x - mu) / sigma) ** 2 - np.log(sigma * np.sqrt(2 * np.pi))
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_draw_style_posterior_takes_its_record_support() -> None:
+    density = flatppl(DRAWS).logdensity("posterior", dtype="float64")
+    assert density.names == ("theta", "s")
+    lower, upper = density.bounds
+    assert (float(lower["s"]), float(upper["s"])) == (0.0, np.inf)
+    assert float(lower["theta"]) == -np.inf
+    start = density.constrain(density.init)
+    assert (float(start["theta"]), float(start["s"])) == (0.0, 1.0)
+    for theta, u in [(0.3, -0.4), (-1.2, 0.5)]:
+        s = np.exp(u)
+        # Closed form: Normal prior, Exponential(1) prior, Normal observation
+        # of y = 1, and log|ds/du| = u.
+        expected = normal(theta, 0, 1) - s + normal(1.0, theta, s) + u
+        point = {"theta": jnp.float64(theta), "s": jnp.float64(u)}
+        assert float(density(point)) == pytest.approx(expected, rel=1e-12)
+    model = flatppl(DRAWS).logdensity("posterior", unconstrained=False, dtype="float64")
+    point = {"theta": jnp.float64(0.3), "s": jnp.float64(0.7)}
+    expected = normal(0.3, 0, 1) - 0.7 + normal(1.0, 0.3, 0.7)
+    assert float(model(point)) == pytest.approx(expected, rel=1e-12)
+
+
+def test_the_law_of_a_draw_has_a_scalar_position() -> None:
+    density = flatppl(DRAWS).logdensity("scale")
+    assert density.names == ("point",)
+    u = jnp.asarray([-1.0, 0.0, 0.5], dtype=jnp.float32)
+    # Exponential(1) in log coordinates: -exp(u) + u.
+    np.testing.assert_allclose(jax.vmap(density)(u), u - jnp.exp(u), rtol=1e-6)
+
+
+@pytest.mark.usefixtures("x64")
+def test_a_conjugate_posterior_integrates_to_the_evidence() -> None:
+    density = flatppl(
+        """
+        lam ~ Gamma(shape = 2.0, rate = 1.0)
+        y ~ iid(Poisson(rate = lam), 3)
+        L = likelihoodof(kernelof(record(y = y), lam = lam), record(y = [3, 1, 4]))
+        posterior = bayesupdate(L, lawof(record(lam = lam)))
+        """
+    ).logdensity("posterior", dtype="float64")
+    grid = jnp.linspace(-6.0, 5.0, 20001, dtype=jnp.float64)
+    values = jax.vmap(lambda u: density({"lam": u}))(grid)
+    total = np.trapezoid(np.exp(np.asarray(values)), np.asarray(grid))
+    # Closed-form Gamma-Poisson evidence: prod 1/y! * b^a/Gamma(a) *
+    # Gamma(a + sum y) / (b + n)^(a + sum y) with a = 2, b = 1, n = 3, sum y = 8.
+    evidence = np.exp(
+        -np.log(6.0 * 1.0 * 24.0) + lgamma(10.0) - lgamma(2.0) - 10.0 * np.log(4.0)
+    )
+    assert total == pytest.approx(evidence, rel=1e-6)
+    # The posterior is Gamma(10, 4); its mean is 2.5.
+    mean = np.trapezoid(np.exp(np.asarray(values) + np.asarray(grid)), np.asarray(grid))
+    assert mean / total == pytest.approx(2.5, rel=1e-6)
+
+
+def test_non_measures_and_unknown_names_are_refused() -> None:
+    model = flatppl(DRAWS)
+    with pytest.raises(ValueError, match="no public binding named `absent`"):
+        model.logdensity("absent")
+    with pytest.raises(ValueError, match="`L` is likelihood"):
+        model.logdensity("L")
+    with pytest.raises(ValueError, match="`theta` is real, not a measure"):
+        model.logdensity("theta")

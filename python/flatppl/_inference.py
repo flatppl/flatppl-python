@@ -124,7 +124,8 @@ def _free_set(
     assert domain is not None
     leaf = domain["of"] if domain["set"] == "cartpow" else domain
     limits = _limits(leaf) if len(shape) <= 1 else None
-    narrowed = bounds and limits is not None and parameter.lo is not None
+    given = parameter.lo is not None or parameter.hi is not None
+    narrowed = bounds and limits is not None and given
     if free.all() and not narrowed:
         return _domain_text(domain)
     if limits is None:
@@ -135,8 +136,11 @@ def _free_set(
         )
     count = int(free.sum())
     if narrowed:
-        lo = np.maximum(_components(parameter.lo, shape), limits[0])[free]
-        hi = np.minimum(_components(parameter.hi, shape), limits[1])[free]
+        # Each bound narrows on its own; an absent one is unbounded.
+        lo_given = -math.inf if parameter.lo is None else parameter.lo
+        hi_given = math.inf if parameter.hi is None else parameter.hi
+        lo = np.maximum(_components(lo_given, shape), limits[0])[free]
+        hi = np.minimum(_components(hi_given, shape), limits[1])[free]
         sets = [
             f"interval({_number(a)}, {_number(b)})"
             for a, b in zip(lo.tolist(), hi.tolist(), strict=True)

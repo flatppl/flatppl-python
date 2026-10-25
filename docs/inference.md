@@ -2,13 +2,13 @@
 
 Samplers and optimisers need the same three things: a log density on a
 position, a starting position, and a way between constrained and unconstrained
-coordinates. `module.logdensity(...)` returns all three as a
-{class}`~flatppl.inference.LogDensity`, with the names, shapes, bounds and fixed
-components that diagnostics and optimisers read. The package ships no adapter
+coordinates. `query.logdensity(...)` returns all three as a
+{class}`~flatppl.inference.LogDensity`, with the names, shapes and bounds that
+diagnostics and optimisers read. The package ships no adapter
 for any inference package. The [example gallery](examples/index.rst) shows each
 package on these fields.
 
-## From a query
+## A scalar query
 
 A query with one continuous `elementof` input and a scalar log-density output
 gives the density in unconstrained coordinates, with the log-Jacobian added:
@@ -35,48 +35,47 @@ print([round(float(v), 5) for v in values])
 In free coordinates `rate = exp(u)`, so the density is `2*u - exp(u)`. The
 starting point is zero in free coordinates, which is `rate = 1`.
 
-## From a model's measure
+## Records and bounds
 
-Pass a likelihood or measure binding to take its log density over every
-`elementof` parameter it depends on. The position is a record of those
-parameters. A converter's settings record supplies the initial values, the fit
-bounds and the fixed components:
+A record input gives a dict position. This query scores a pyhf likelihood with
+the signal strength `mu` restricted to its fit bounds:
 
 ```{testcode}
-from flatppl import from_pyhf
+from flatppl import Context, flatppl, from_pyhf
 
+context = Context()
 model = from_pyhf("""{"channels": [{"name": "c", "samples": [
     {"name": "s", "data": [5.0, 10.0],
      "modifiers": [{"name": "mu", "type": "normfactor", "data": null}]},
     {"name": "b", "data": [50.0, 60.0],
-     "modifiers": [{"name": "gamma", "type": "staterror", "data": [5.0, 0.0]}]}]}],
+     "modifiers": [{"name": "gamma", "type": "shapesys", "data": [5.0, 6.0]}]}]}],
     "observations": [{"name": "c", "data": [52.0, 63.0]}],
     "measurements": [{"name": "m", "config": {"poi": "mu", "parameters": []}}],
-    "version": "1.0.0"}""")
-density = model.logdensity("likelihood", unconstrained=False)
+    "version": "1.0.0"}""", context=context)
+context.register("model.flatppl", model)
+density = flatppl("""
+    m = load_module("model.flatppl")
+    point = elementof(cartprod(mu = interval(0.0, 10.0), gamma = cartpow(posreals, 2)))
+    inputs = point
+    outputs = logdensityof(m.likelihood, point)
+""", context=context).logdensity(unconstrained=False)
 print(density.names, dict(density.shapes))
-print(density.fixed["gamma"].tolist(), density.flat.names)
+print(density.flat.names)
 lower, upper = density.bounds
-print(float(lower["mu"]), float(upper["mu"]))
+print(float(lower["mu"]), float(upper["mu"]), lower["gamma"].tolist())
+print(float(density.init["mu"]), density.init["gamma"].tolist())
 ```
 
 ```{testoutput}
-('mu', 'gamma') {'mu': (), 'gamma': (1,)}
-[False, True] ('gamma[1]', 'mu')
-0.0 10.0
+('mu', 'gamma') {'mu': (), 'gamma': (2,)}
+('gamma[1]', 'gamma[2]', 'mu')
+0.0 10.0 [0.0, 0.0]
+5.0 [1.0, 1.0]
 ```
 
-pyhf fixes the second `gamma` bin because its uncertainty is zero. The position
-omits it, and the density holds it at its initial value.
-
-With `bounds=True`, the default, each real parameter's set narrows to its fit
-bounds, intersected with its declared set. In unconstrained coordinates that
-selects the scaled logistic chart, and a sampler sees the bounds as the support
-of the density. Pass `bounds=False` to keep the declared sets.
-
-A draw-style model, `theta ~ ...` with `prior = lawof(...)`, has no `elementof`
-parameters. Write a query with an explicit parameter input, as in the
-[NUTS tutorial](examples/nuts.rst), and call `logdensity()` on the query.
+`bounds` comes from the input's declared sets, here `interval(0.0, 10.0)` and
+`posreals`. The flat view orders record fields by name, as JAX does. A finite interval takes the scaled logistic chart in unconstrained
+coordinates, so a sampler sees the interval as the support of the density.
 
 ## Coordinates and the Jacobian
 
@@ -102,15 +101,12 @@ for each domain.
 | `constrain`, `unconstrain` | Coordinate maps, compiled. |
 | `names`, `shapes` | Parameter names and their shapes in model coordinates. |
 | `bounds` | `(lower, upper)` pytrees in model coordinates. |
-| `fixed` | Fixed components of each parameter, for a measure. |
+| `fixed` | Fixed components that the position omits; empty for a query. |
 | `flat` | `fn`, `grad`, `potential`, `init`, `unravel` and `names` over one vector. |
 | `transformed` | The four compiled functions of `compile_transformed`. |
 
 The flat vector orders record fields as JAX does, by name. `flat.names` labels
 each element, such as `beta[2]`, counting from one as FlatPPL does.
 
-`init` comes from the converter's initial values where the module has them.
-Otherwise it is the point at zero free coordinates: 0 for `reals`, 1 for
-`posreals`, the midpoint of a finite interval, and the uniform simplex. An
-initial value on a domain boundary raises `ValueError`, because its free
-coordinate is infinite.
+`init` is the point at zero free coordinates: 0 for `reals`, 1 for `posreals`,
+the midpoint of a finite interval, and the uniform simplex.

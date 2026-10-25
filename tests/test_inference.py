@@ -7,7 +7,7 @@ import numpy as np
 import pyhf
 import pytest
 
-from flatppl import CompilationError, flatppl, from_pyhf
+from flatppl import CompilationError, Context, flatppl, from_pyhf
 
 GAMMA = """
 rate = elementof(posreals)
@@ -206,26 +206,39 @@ def pyhf_reference() -> tuple[Any, Any]:
     return model, workspace.data(model)
 
 
+# The query restricts mu and gamma to pyhf's fit bounds and holds lumi and the
+# zero-uncertainty gamma bin at pyhf's initial values, as pyhf fixes both.
+PYHF_QUERY = """
+m = load_module("pyhf.flatppl")
+point = elementof(cartprod(mu = interval(0.0, 10.0), gamma = cartpow(interval(1e-10, 10.0), 1)))
+inputs = point
+outputs = logdensityof(m.likelihood, record(mu = point.mu, gamma = [point.gamma[1], 1.0], lumi = 1.1))
+"""
+
+
+def pyhf_query() -> Any:
+    context = Context()
+    context.register("pyhf.flatppl", from_pyhf(json.dumps(SPEC), context=context))
+    return flatppl(PYHF_QUERY, context=context)
+
+
 @pytest.mark.usefixtures("x64")
-def test_a_measure_takes_converter_inits_bounds_and_fixed_components() -> None:
+def test_a_pyhf_likelihood_matches_pyhf_in_model_coordinates() -> None:
     model, data = pyhf_reference()
-    # pyhf fixes lumi by the measurement and the zero-uncertainty gamma bin.
     assert model.config.par_order == ["lumi", "mu", "gamma"]
     assert model.config.suggested_fixed() == [True, False, False, True]
-    density = from_pyhf(json.dumps(SPEC)).logdensity(
-        "likelihood", unconstrained=False, dtype="float64"
-    )
+    density = pyhf_query().logdensity(unconstrained=False, dtype="float64")
     assert density.names == ("mu", "gamma")
     assert dict(density.shapes) == {"mu": (), "gamma": (1,)}
-    assert density.fixed["lumi"] is True and density.fixed["mu"] is False
-    assert np.asarray(density.fixed["gamma"]).tolist() == [False, True]
-    assert float(density.init["mu"]) == 1.0
-    assert np.asarray(density.init["gamma"]).tolist() == [1.0]
+    assert dict(density.fixed) == {}
     lower, upper = density.bounds
     assert (float(lower["mu"]), float(upper["mu"])) == (0.0, 10.0)
     assert (float(lower["gamma"][0]), float(upper["gamma"][0])) == (1e-10, 10.0)
+    # The start is the midpoint of each finite interval.
+    assert float(density.init["mu"]) == pytest.approx(5.0)
+    assert float(density.init["gamma"][0]) == pytest.approx(5.0 + 5e-11)
 
-    # pyhf 0.7.6 is the oracle; the fixed components keep pyhf's init values.
+    # pyhf 0.7.6 is the oracle.
     for mu, gamma in [(1.0, 1.0), (0.4, 1.05), (2.5, 0.9)]:
         expected = model.logpdf(np.array([1.1, mu, gamma, 1.0]), data)[0]
         point = {"mu": jnp.float64(mu), "gamma": jnp.asarray([gamma])}
@@ -233,10 +246,9 @@ def test_a_measure_takes_converter_inits_bounds_and_fixed_components() -> None:
 
 
 @pytest.mark.usefixtures("x64")
-def test_fit_bounds_set_the_unconstrained_chart() -> None:
+def test_finite_intervals_take_the_scaled_logistic_chart() -> None:
     model, data = pyhf_reference()
-    module = from_pyhf(json.dumps(SPEC))
-    density = module.logdensity("likelihood", dtype="float64")
+    density = pyhf_query().logdensity(dtype="float64")
     u = {"mu": jnp.float64(0.3), "gamma": jnp.asarray([-0.2])}
     x = density.constrain(u)
 
@@ -252,53 +264,6 @@ def test_fit_bounds_set_the_unconstrained_chart() -> None:
     assert float(density(u)) == pytest.approx(
         expected + mu_jacobian + gamma_jacobian, rel=1e-12
     )
-    # pyhf's suggested init is the starting point.
-    start = density.constrain(density.init)
-    assert (float(start["mu"]), float(start["gamma"][0])) == pytest.approx((1.0, 1.0))
-
-    # Without bounds mu keeps its declared reals and gamma its posreals.
-    unbounded = module.logdensity("likelihood", bounds=False, dtype="float64")
-    x = unbounded.constrain(u)
-    assert float(x["mu"]) == pytest.approx(0.3)
-    assert float(x["gamma"][0]) == pytest.approx(np.exp(-0.2))
-    assert float(unbounded.bounds[1]["mu"]) == np.inf
-
-
-def test_measures_without_parameters_or_with_unbound_externals_are_refused() -> None:
-    model = flatppl(
-        """
-        theta ~ Normal(mu = 0.0, sigma = 1.0)
-        prior = lawof(record(theta = theta))
-        mu = elementof(reals)
-        n = external(posintegers)
-        y = external(cartpow(reals, n))
-        L = likelihoodof(functionof(iid(Normal(mu = mu, sigma = 1.0), n)), y)
-        """
-    )
-    with pytest.raises(ValueError, match="no public binding named `absent`"):
-        model.logdensity("absent")
-    with pytest.raises(ValueError, match="depends on no elementof parameter"):
-        model.logdensity("prior")
-    with pytest.raises(
-        ValueError, match=r"external `n`, `y`; bind it with Module\.set"
-    ):
-        model.logdensity("L")
-
-
-def test_all_fixed_parameters_and_boundary_inits_are_refused() -> None:
-    spec = json.loads(json.dumps(SPEC))
-    parameters = spec["measurements"][0]["config"]["parameters"]
-    parameters.append({"name": "mu", "fixed": True})
-    parameters.append({"name": "gamma", "fixed": True})
-    with pytest.raises(ValueError, match="every parameter of `likelihood` is fixed"):
-        from_pyhf(json.dumps(spec)).logdensity("likelihood")
-
-    spec = json.loads(json.dumps(SPEC))
-    spec["measurements"][0]["config"]["parameters"].append(
-        {"name": "mu", "inits": [0.0], "bounds": [[0.0, 10.0]]}
-    )
-    with pytest.raises(ValueError, match="domain boundary"):
-        from_pyhf(json.dumps(spec)).logdensity("likelihood")
 
 
 def test_a_query_without_a_scalar_output_is_refused() -> None:

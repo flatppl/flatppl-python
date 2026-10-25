@@ -1020,31 +1020,21 @@ class Module:
 
     def logdensity(
         self,
-        measure: str | None = None,
         *,
         unconstrained: bool = True,
         jacobian: bool = True,
-        bounds: bool = True,
         dtype: DTypeLike = "float32",
         target: Literal["cpu", "gpu"] | None = None,
         integration: Integration | None = None,
         optimize_forward: bool = False,
     ) -> LogDensity:
-        """Prepare a scalar log density for a sampler or an optimiser.
+        """Prepare this query's log density for a sampler or an optimiser.
 
-        Without ``measure`` this module is a query with one continuous
-        ``elementof`` input and a scalar log-density output, as for
-        :meth:`compile_transformed`. With ``measure`` this module is a model:
-        the log density of that binding, a likelihood or a measure on a record
-        of the model's parameters, is taken over every ``elementof``
-        parameter it depends on, as a record. A converter's settings record,
-        such as a pyhf measurement, then supplies initial values, fit bounds
-        and fixed components. Fixed components leave the position and keep
-        their initial values.
+        The query has one continuous ``elementof`` input and a scalar
+        log-density output, as for :meth:`compile_transformed`. The position
+        is that input, a dict for a record.
 
         Args:
-            measure: A likelihood or measure binding of this model, or
-                ``None`` when this module is the query.
             unconstrained: Take positions in unconstrained coordinates, where
                 every real vector is valid. ``False`` takes model parameters.
             jacobian: Add the log-Jacobian of the coordinate map, so the
@@ -1052,9 +1042,6 @@ class Module:
                 for sampling and ``False`` for maximum likelihood or maximum a
                 posteriori fits in unconstrained coordinates. It has no effect
                 when ``unconstrained`` is ``False``.
-            bounds: With ``measure``, narrow each real parameter's set to its
-                converter fit bounds, intersected with its declared set. The
-                density then has the bounds as its support.
             dtype: Floating-point precision, as in :meth:`compile`.
             target: Lowering profile, as in :meth:`compile`.
             integration: Numerical integration settings, as in :meth:`compile`.
@@ -1065,11 +1052,9 @@ class Module:
             parameter metadata. See :class:`flatppl.inference.LogDensity`.
 
         Raises:
-            ValueError: ``measure`` is not a binding, depends on an unbound
-                external or on no parameter, every parameter is fixed, or the
-                initial point lies on a domain boundary.
-            CompilationError: The query has no supported continuous chart or a
-                non-scalar output.
+            CompilationError: The query has no supported continuous chart,
+                several inputs, or a non-scalar output.
+            ValueError: The query requests a gradient instead of a scalar value.
 
         Example:
             >>> from flatppl import flatppl
@@ -1085,10 +1070,8 @@ class Module:
 
         return build(
             self,
-            measure,
             unconstrained=unconstrained,
             jacobian=jacobian,
-            bounds=bounds,
             dtype=dtype,
             target=target,
             integration=integration,

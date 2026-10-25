@@ -72,8 +72,7 @@ class LogDensity:
         potential: The negated log density, jitted. Optimisers and NumPyro
             minimise this sign.
         init: A starting position in the coordinates of :attr:`fn`: the
-            converter's initial values where the module has them, otherwise
-            the point at zero unconstrained coordinates, such as 1 for
+            point at zero unconstrained coordinates, such as 1 for
             ``posreals`` and the midpoint of a finite interval.
         constrain: Map unconstrained coordinates to model parameters.
         unconstrain: Map interior model parameters to unconstrained
@@ -84,10 +83,9 @@ class LogDensity:
         bounds: ``(lower, upper)``, two pytrees shaped like a position in
             model coordinates, with each element's bounds and infinities
             where a set has none.
-        fixed: For a log density built from a measure, each parameter's
-            fixed components, as a bool or a bool array. The position omits
-            them and the density holds them at their initial values. Empty
-            for a log density built from a query.
+        fixed: Each parameter's fixed components, as a bool or a bool
+            array, which the position omits. A query declares only free
+            inputs, so it is empty.
         unconstrained: Whether :attr:`fn` takes unconstrained coordinates.
         jacobian: Whether :attr:`fn` includes the log-Jacobian.
         flat: The same density over one flat vector.

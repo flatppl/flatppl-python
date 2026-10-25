@@ -167,7 +167,6 @@ def build(
         shapes=MappingProxyType(shapes),
         dtype=float_dtype(dtype),
         bounds=model_bounds,
-        fixed=MappingProxyType({}),
         unconstrained=unconstrained,
         jacobian=jacobian and unconstrained,
         flat=flat,

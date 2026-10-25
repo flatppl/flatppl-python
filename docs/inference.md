@@ -101,7 +101,6 @@ for each domain.
 | `constrain`, `unconstrain` | Coordinate maps, compiled. |
 | `names`, `shapes` | Parameter names and their shapes in model coordinates. |
 | `bounds` | `(lower, upper)` pytrees in model coordinates. |
-| `fixed` | Fixed components that the position omits; empty for a query. |
 | `flat` | `fn`, `grad`, `potential`, `init`, `unravel` and `names` over one vector. |
 | `transformed` | The four compiled functions of `compile_transformed`. |
 

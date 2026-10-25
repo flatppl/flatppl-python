@@ -2,8 +2,8 @@
 
 :meth:`flatppl.Module.logdensity` returns a :class:`LogDensity`: the log
 density on a position pytree, a starting point in the same coordinates, the
-coordinate maps, and the names, shapes, bounds and fixed components that
-samplers, optimisers and diagnostics read. Every map is compiled StableHLO from
+coordinate maps, and the names, shapes and bounds that samplers, optimisers and
+diagnostics read. Every map is compiled StableHLO from
 :meth:`flatppl.Module.compile_transformed`.
 
 The package ships no adapter for any inference package. The
@@ -17,8 +17,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import jax
-import numpy as np
-import numpy.typing as npt
 
 # Autodoc reads `TransformedFunction` as its alias `flatppl.TransformedFunction`
 # and evaluates that in this module.
@@ -83,9 +81,6 @@ class LogDensity:
         bounds: ``(lower, upper)``, two pytrees shaped like a position in
             model coordinates, with each element's bounds and infinities
             where a set has none.
-        fixed: Each parameter's fixed components, as a bool or a bool
-            array, which the position omits. A query declares only free
-            inputs, so it is empty.
         unconstrained: Whether :attr:`fn` takes unconstrained coordinates.
         jacobian: Whether :attr:`fn` includes the log-Jacobian.
         flat: The same density over one flat vector.
@@ -102,7 +97,6 @@ class LogDensity:
     shapes: Mapping[str, tuple[int, ...]]
     dtype: str
     bounds: tuple[Any, Any] = field(repr=False)
-    fixed: Mapping[str, bool | npt.NDArray[np.bool]] = field(repr=False)
     unconstrained: bool
     jacobian: bool
     flat: FlatLogDensity = field(repr=False)

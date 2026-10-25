@@ -40,11 +40,7 @@ def test_unconstrained_density_matches_the_change_of_variables_and_normalises() 
         {"rate": ()},
         "float32",
     )
-    assert (density.unconstrained, density.jacobian, dict(density.fixed)) == (
-        True,
-        True,
-        {},
-    )
+    assert (density.unconstrained, density.jacobian) == (True, True)
     assert [float(b) for b in density.bounds] == [0.0, np.inf]
 
 
@@ -230,7 +226,6 @@ def test_a_pyhf_likelihood_matches_pyhf_in_model_coordinates() -> None:
     density = pyhf_query().logdensity(unconstrained=False, dtype="float64")
     assert density.names == ("mu", "gamma")
     assert dict(density.shapes) == {"mu": (), "gamma": (1,)}
-    assert dict(density.fixed) == {}
     lower, upper = density.bounds
     assert (float(lower["mu"]), float(upper["mu"])) == (0.0, 10.0)
     assert (float(lower["gamma"][0]), float(upper["gamma"][0])) == (1e-10, 10.0)

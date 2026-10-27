@@ -47,6 +47,14 @@ class TupleSchema(TypedDict):
 type Schema = TensorSchema | RecordSchema | TableSchema | TupleSchema
 
 
+class RuntimeStatus(TypedDict):
+    """The device error status, separate from authored query outputs."""
+
+    index: int
+    dtype: str
+    shape: list[int]
+
+
 class Export(TypedDict):
     """A compiled query and its interface."""
 
@@ -57,6 +65,7 @@ class Export(TypedDict):
     multiple_outputs: bool
     output_names: list[str | None]
     batch_shape: NotRequired[list[int]]
+    runtime_status: NotRequired[RuntimeStatus]
 
 
 class InputInfo(TypedDict):

@@ -17,7 +17,9 @@ from enzyme_ad.jax import hlo_call, optimization_passes
 from jax.core import Tracer
 from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
+from jax.experimental import checkify
 from jax.typing import DTypeLike
+from numpy.typing import NDArray
 
 from ._frozen import freeze
 from ._schema import Export, Schema, TensorSchema
@@ -143,6 +145,23 @@ def _unpack(schema: Schema, leaves: tuple[jax.Array, ...]) -> Any:
     return {item["name"]: _unpack(item["value"], leaves) for item in schema["fields"]}
 
 
+@custom_vmap
+def _status_for_check(status: jax.Array) -> jax.Array:
+    return status
+
+
+@_status_for_check.def_vmap
+def _batch_status_for_check(
+    size: int, in_batched: tuple[bool], status: jax.Array
+) -> tuple[jax.Array, bool]:
+    # Checkify selects a failing lane even from an empty map. No call ran there.
+    # Recurse through outer maps without combining the nonempty lanes.
+    if size == 0:
+        shape = status.shape[1:] if in_batched[0] else status.shape
+        return jnp.zeros(shape, dtype=status.dtype), False  # pyright: ignore[reportUnknownMemberType]
+    return _status_for_check(status), in_batched[0]
+
+
 def _compiled_call(
     exported: Export,
     export_batch: ExportBatch,
@@ -193,7 +212,7 @@ def _compiled_call(
         @partial(call.defjvp, symbolic_zeros=True)  # pyright: ignore[reportUnknownMemberType]
         def derivative(
             primals: tuple[jax.Array, ...], tangents: tuple[Any, ...]
-        ) -> tuple[tuple[jax.Array, ...], tuple[jax.Array, ...]]:
+        ) -> tuple[tuple[jax.Array, ...], tuple[jax.Array | NDArray[np.void], ...]]:
             if not autodiff:
                 raise TypeError("query was compiled with autodiff=False")
             active = tuple(
@@ -208,10 +227,18 @@ def _compiled_call(
                     args[i] = value
                 return raw(*args)  # pyright: ignore[reportUnknownVariableType]
 
-            return jax.jvp(  # pyright: ignore[reportUnknownMemberType]
+            outputs, derivatives = jax.jvp(  # pyright: ignore[reportUnknownMemberType]
                 differentiate,
                 tuple(primals[i] for i in active),
                 tuple(tangents[i] for i in active),
+            )
+            # Discrete results, including device status, have no tangent space.
+            # Enzyme returns integer zeros; JAX custom JVPs require float0.
+            return outputs, tuple(
+                derivative
+                if jnp.issubdtype(output.dtype, jnp.inexact)
+                else np.zeros(output.shape, dtype=jax.dtypes.float0)
+                for output, derivative in zip(outputs, derivatives, strict=True)
             )
 
         program: _Call = jax.jit(call)  # pyright: ignore[reportUnknownMemberType]
@@ -231,7 +258,8 @@ class CompiledFunction:
     :meth:`flatppl.Module.compile` returns instances. Calls take the query's inputs
     and return its outputs as described in :doc:`/values`. The function works
     under ``jax.jit``, ``jax.grad``, ``jax.vmap`` and sharding; see
-    :doc:`/jax`.
+    :doc:`/jax`. Queries with runtime checks require ``checkify.checkify``
+    around the staged computation before ``jax.jit``.
 
     Attributes:
         stablehlo: The emitted StableHLO text of the unbatched query.
@@ -340,7 +368,18 @@ class CompiledFunction:
         leaves: list[jax.Array | None] = [None] * self._input_count
         for item in self.schema["inputs"]:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
-        return _unpack(self.schema["output"], self._call(*leaves))
+        result = self._call(*leaves)
+        if status := self.schema.get("runtime_status"):
+            error = _status_for_check(result[int(status["index"])])
+            checkify.check(jnp.all(error != 1), "FlatPPL index out of range")  # pyright: ignore[reportUnknownMemberType]
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all(error != 2),
+                "FlatPPL integer conversion exceeds the target width",
+            )
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all((error >= 0) & (error <= 2)), "Unknown FlatPPL runtime error"
+            )
+        return _unpack(self.schema["output"], result)
 
     def stats(self) -> Mapping[str, int]:
         """Count the operations of the unbatched StableHLO program.

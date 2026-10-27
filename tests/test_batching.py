@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax.experimental import checkify
 
 from flatppl import Integration, flatppl
 
@@ -97,8 +98,10 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(
 
     mapped = jax.vmap(function, in_axes=axes)
     reference = jax.vmap(oracle, in_axes=axes)
-    compiled = jax.jit(mapped).lower(*arguments).compile()
-    np.testing.assert_allclose(compiled(*arguments), reference(*arguments))
+    compiled = jax.jit(checkify.checkify(mapped)).lower(*arguments).compile()
+    error, result = compiled(*arguments)
+    error.throw()
+    np.testing.assert_allclose(result, reference(*arguments))
     text = compiled.as_text()
     assert text is not None
     assert not re.search(r"\bwhile\(", text)
@@ -112,7 +115,8 @@ def test_gather_maps_keep_values_gradients_and_tensor_execution(
             jax.grad(lambda x, i: jnp.sum(reference(x, i))),
         ),
     ):
-        found = jax.jit(actual)(*arguments)
+        error, found = jax.jit(checkify.checkify(actual))(*arguments)
+        error.throw()
         wanted = expected(*arguments)
         for value, target in zip(
             jax.tree.leaves(found), jax.tree.leaves(wanted), strict=True
@@ -130,8 +134,13 @@ def test_empty_gather_map_keeps_empty_values_and_gradients() -> None:
     x = jnp.empty((0, 3))
     i = jnp.empty((0,), dtype=jnp.int32)
     mapped = jax.vmap(function)
-    np.testing.assert_array_equal(jax.jit(mapped)(x, i), np.empty(0))
-    gradient = jax.jit(jax.grad(lambda x: jnp.sum(mapped(x, i))))(x)
+    error, result = jax.jit(checkify.checkify(mapped))(x, i)
+    error.throw()
+    np.testing.assert_array_equal(result, np.empty(0))
+    error, gradient = jax.jit(
+        checkify.checkify(jax.grad(lambda x: jnp.sum(mapped(x, i))))
+    )(x)
+    error.throw()
     np.testing.assert_array_equal(gradient, np.empty((0, 3)))
 
 
@@ -151,7 +160,10 @@ def test_dynamic_matrix_axes_keep_batched_values_and_gradients() -> None:
     def oracle(x: jax.Array, rows: jax.Array, columns: jax.Array) -> jax.Array:
         return jnp.sum(x[rows - 1, :, columns - 1] * jnp.array([1.0, 2.0, 4.0]))
 
-    actual = jax.jit(jax.vmap(jax.value_and_grad(function)))(x, rows, columns)
+    error, actual = jax.jit(checkify.checkify(jax.vmap(jax.value_and_grad(function))))(
+        x, rows, columns
+    )
+    error.throw()
     expected = jax.vmap(jax.value_and_grad(oracle))(x, rows, columns)
     for found, wanted in zip(
         jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True
@@ -170,7 +182,10 @@ def test_scan_in_callable_broadcast_keeps_state_and_host_gradients() -> None:
         outputs = sum(sum.(trajectory.([q, q+1.0])))
     """).compile()
     q = jnp.array([[-0.5, 0.0, 0.25], [1.0, 1.5, 2.0]])
-    actual, gradient = jax.jit(jax.vmap(jax.vmap(jax.value_and_grad(function))))(q)
+    error, (actual, gradient) = jax.jit(
+        checkify.checkify(jax.vmap(jax.vmap(jax.value_and_grad(function))))
+    )(q)
+    error.throw()
     # Each trajectory is [1, a+2, a*a+2*a+3]. Sum it at a=q and a=q+1.
     np.testing.assert_allclose(actual, 2 * q * q + 8 * q + 16)
     np.testing.assert_allclose(gradient, 4 * q + 8)
@@ -222,12 +237,17 @@ def test_nested_gathers_keep_original_cell_axes() -> None:
 
     actual = mapped(function)
     reference = mapped(lambda rows, indices: rows[indices - 1])
-    compiled = jax.jit(actual).lower(rows, indices).compile()
-    np.testing.assert_array_equal(compiled(rows, indices), reference(rows, indices))
+    compiled = jax.jit(checkify.checkify(actual)).lower(rows, indices).compile()
+    error, result = compiled(rows, indices)
+    error.throw()
+    np.testing.assert_array_equal(result, reference(rows, indices))
     text = compiled.as_text()
     assert text is not None
     assert not re.search(r"\bwhile\(", text)
-    found = jax.jit(jax.grad(lambda rows: actual(rows, indices).sum()))(rows)
+    error, found = jax.jit(
+        checkify.checkify(jax.grad(lambda rows: actual(rows, indices).sum()))
+    )(rows)
+    error.throw()
     wanted = jax.grad(lambda rows: reference(rows, indices).sum())(rows)
     np.testing.assert_array_equal(found, wanted)
 

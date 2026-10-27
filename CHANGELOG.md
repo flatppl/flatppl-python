@@ -7,6 +7,9 @@ tagged release.
 
 ### Changed
 
+- Dynamic index errors and integer-width overflow now report device-side errors.
+  Wrap staged computations containing these checks with JAX `checkify.checkify`
+  and raise the error at the host boundary.
 - The pyhf guide starts in float64, compares with pyhf to 1e-12, and fits
   through `model.logdensity("likelihood")`. The values guide shows the one
   conversion a DataFrame needs before `jax.jit`. Inline examples omit

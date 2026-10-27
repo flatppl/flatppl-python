@@ -100,6 +100,8 @@ dependencies = [
  "arrow-schema",
  "arrow-select",
  "flatbuffers",
+ "lz4_flex",
+ "zstd",
 ]
 
 [[package]]
@@ -172,6 +174,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6651c9ed80effdc7db0ff72512157f901af5e3549e341e24b1dd4887d836d838"
 dependencies = [
  "find-msvc-tools",
+ "jobserver",
+ "libc",
  "shlex",
 ]
 
@@ -350,7 +354,7 @@ dependencies = [
 [[package]]
 name = "flatppl-bundle"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
  "flatppl-syntax",
@@ -362,7 +366,7 @@ dependencies = [
 [[package]]
 name = "flatppl-convert"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
 ]
@@ -370,12 +374,26 @@ dependencies = [
 [[package]]
 name = "flatppl-core"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
+
+[[package]]
+name = "flatppl-data"
+version = "0.1.0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
+dependencies = [
+ "arrow-array",
+ "arrow-ipc",
+ "arrow-schema",
+ "csv",
+ "half",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "flatppl-determinizer"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
  "flatppl-infer",
@@ -384,10 +402,11 @@ dependencies = [
 [[package]]
 name = "flatppl-fileaccess"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "dirs",
  "flatppl-core",
+ "nix",
  "serde",
  "serde_json",
  "sha2",
@@ -396,14 +415,11 @@ dependencies = [
 [[package]]
 name = "flatppl-formula"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
- "arrow-array",
- "arrow-ipc",
- "arrow-schema",
- "csv",
  "flatppl-convert",
  "flatppl-core",
+ "flatppl-data",
  "flatppl-infer",
  "flatppl-syntax",
  "nalgebra",
@@ -414,10 +430,11 @@ dependencies = [
 [[package]]
 name = "flatppl-host"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-bundle",
  "flatppl-core",
+ "flatppl-data",
  "flatppl-determinizer",
  "flatppl-fileaccess",
  "flatppl-formula",
@@ -434,7 +451,7 @@ dependencies = [
 [[package]]
 name = "flatppl-hs3"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-convert",
  "flatppl-core",
@@ -446,7 +463,7 @@ dependencies = [
 [[package]]
 name = "flatppl-infer"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
  "ron",
@@ -456,7 +473,7 @@ dependencies = [
 [[package]]
 name = "flatppl-mathdoc"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
  "flatppl-fileaccess",
@@ -475,7 +492,7 @@ dependencies = [
 [[package]]
 name = "flatppl-python-api"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-host",
  "pyo3",
@@ -485,7 +502,7 @@ dependencies = [
 [[package]]
 name = "flatppl-stablehlo"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
  "flatppl-determinizer",
@@ -496,7 +513,7 @@ dependencies = [
 [[package]]
 name = "flatppl-syntax"
 version = "0.1.0"
-source = "git+https://github.com/flatppl/flatppl-rust?rev=e809f23cce1910192ed51181bf6b3c7db445d0a0#e809f23cce1910192ed51181bf6b3c7db445d0a0"
+source = "git+https://github.com/flatppl/flatppl-rust?rev=7a7425e041165e8f967cfdd065d2b4fba9c0b65d#7a7425e041165e8f967cfdd065d2b4fba9c0b65d"
 dependencies = [
  "flatppl-core",
 ]
@@ -544,8 +561,19 @@ checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
  "libc",
- "r-efi",
+ "r-efi 5.3.0",
  "wasip2",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi 6.0.0",
 ]
 
 [[package]]
@@ -646,6 +674,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "jobserver"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
+dependencies = [
+ "getrandom 0.4.3",
+ "libc",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -682,6 +720,15 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "lz4_flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
+dependencies = [
+ "twox-hash",
+]
 
 [[package]]
 name = "matrixmultiply"
@@ -808,6 +855,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "pkg-config"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+
+[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -893,6 +946,12 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+
+[[package]]
+name = "r-efi"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rawpointer"
@@ -1094,6 +1153,12 @@ checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
 dependencies = [
  "crunchy",
 ]
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "typed-path"
@@ -1314,3 +1379,31 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zstd"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db3ae9bf90af6e40197bef767eeefc46ad6397420fe873830bd85e5fbbfb3c70"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "8.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ded520f16b29e1a9b771c722221b2b0a0398c2316d9bb3c42b458a5414d7434b"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.1.2+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "481ada9c543b2323cbb7bbdbb5249177fbf0188ed959ed2c15e4b22421c84ed3"
+dependencies = [
+ "cc",
+ "pkg-config",
+]

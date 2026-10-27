@@ -1,11 +1,16 @@
 import math
 import runpy
 from pathlib import Path
+from typing import Any
 
 import blackjax
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
+from jax.experimental import checkify
+
+from flatppl import flatppl
 
 
 def test_public_example_samples_the_known_posterior():
@@ -60,3 +65,37 @@ def test_matrix_data_and_vector_posterior_match_gaussian_regression():
     assert np.min(ess) > 200
     assert np.all(np.abs(moments.mean(axis=0) - expected) < 6 * mcse)
     assert np.count_nonzero(divergent) == 0
+
+
+def test_checked_density_keeps_nuts_errors_inside_the_compiled_loop():
+    function = flatppl("""
+        x = external(reals)
+        k = external(integers)
+        inputs = (x, k)
+        outputs = -0.5 * (get([1.0, 2.0, 3.0], k) * x)^2
+    """).compile()
+
+    def run(index: jax.Array):
+        algorithm = blackjax.nuts(
+            lambda x: function(x, index),
+            step_size=0.2,
+            inverse_mass_matrix=jnp.ones(1),
+            max_num_doublings=3,
+        )
+
+        def step(state: Any, key: jax.Array):
+            state, _ = algorithm.step(key, state)
+            return state, state.position
+
+        state = algorithm.init(jnp.float32(0.3))
+        return jax.lax.scan(step, state, jax.random.split(jax.random.key(827), 8))
+
+    checked = jax.jit(checkify.checkify(run))
+    error, (state, positions) = checked(jnp.int32(2))
+    error.throw()
+    assert np.isfinite(positions).all()
+    np.testing.assert_allclose(state.logdensity, -2 * state.position**2, rtol=2e-6)
+    np.testing.assert_allclose(state.logdensity_grad, -4 * state.position, rtol=2e-6)
+    error, _ = checked(jnp.int32(4))
+    with pytest.raises(checkify.JaxRuntimeError, match="index out of range"):
+        error.throw()

@@ -58,6 +58,50 @@ For numerical scalar marginals and normalizers, enable
 smooth integrands and explicit scalar breakpoints, subject to the documented
 ordering restrictions. The quadrature error estimate does not bound gradient error.
 
+## Runtime checks
+
+Queries with dynamic indexing or real-to-integer conversion check their inputs
+on the device. Invalid indices and integer-width overflow raise errors on direct
+calls. A valid density of `-inf` remains a normal result.
+
+Before `jax.jit`, wrap the whole computation with JAX's
+[`checkify.checkify`](https://docs.jax.dev/en/latest/debugging/checkify_guide.html).
+It carries errors as device values. Raise the error once, after the compiled call:
+
+```{testcode}
+import jax
+import jax.numpy as jnp
+from flatppl import flatppl
+from jax.experimental import checkify
+
+select = flatppl(r"""
+    values = external(cartpow(reals, 3))
+    index = external(integers)
+    inputs = (values, index)
+    outputs = get(values, index)
+""").compile()
+checked_select = jax.jit(checkify.checkify(select))
+error, value = checked_select(jnp.array([2.0, 4.0, 8.0]), jnp.int32(2))
+error.throw()
+print(float(value))
+```
+
+```{testoutput}
+4.0
+```
+
+The same pattern wraps gradients, mapped calls, or a complete sampling loop.
+For BlackJAX, wrap the function containing initialization and all steps, then
+call `error.throw()` after it returns. Do not consume outputs from a failed call.
+Checks add no Python callbacks inside the compiled computation.
+
+Plain `jax.jit(select)` cannot stage an unhandled check. Queries without runtime
+checks keep their existing signature and need no `checkify` wrapper.
+
+JAX 0.11.2 cannot reduce errors from some empty nested maps when differentiation
+encloses the map. Handle an empty batch before that composition, or map the
+differentiated function with `vmap(grad(function))`.
+
 ## Batch calls with vmap
 
 Use standard JAX axes. `None` shares an input across calls:

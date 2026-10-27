@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import pytest
+from jax.experimental import checkify
 
 from flatppl import flatppl
 
@@ -17,10 +18,11 @@ def test_scalar_indices_keep_both_bases_and_selected_gradients() -> None:
         inputs = (x, i, j)
         outputs = x[i] + get0(x, j)
     """).compile()
-    actual = jax.jit(jax.value_and_grad(function))
+    actual = jax.jit(checkify.checkify(jax.value_and_grad(function)))
     values = jnp.array([-2.0, 3.0, 7.0, 13.0])
     for i, j in ((1, 3), (3, 2)):
-        value, gradient = actual(values, i, j)
+        error, (value, gradient) = actual(values, i, j)
+        error.throw()
         expected = np.zeros(4)
         expected[i - 1] += 1
         expected[j] += 1
@@ -37,7 +39,10 @@ def test_scalar_index_preserves_nested_cells() -> None:
     """).compile()
     rows = jnp.array([[1.0, 2.0, 4.0], [8.0, 16.0, 32.0]])
     np.testing.assert_array_equal(function(rows, 2), rows[1])
-    gradient = jax.jit(jax.grad(lambda rows: function(rows, 2).sum()))(rows)
+    error, gradient = jax.jit(
+        checkify.checkify(jax.grad(lambda rows: function(rows, 2).sum()))
+    )(rows)
+    error.throw()
     np.testing.assert_array_equal(gradient, [[0, 0, 0], [1, 1, 1]])
 
 
@@ -50,7 +55,10 @@ def test_scalar_indices_preserve_callable_batches() -> None:
         outputs = sum(lookup.(rows, indices))
     """).compile()
     rows = jnp.array([[1.0, 2.0, 4.0], [8.0, 16.0, 32.0]])
-    value, gradient = jax.jit(jax.value_and_grad(function))(rows, jnp.array([3, 1]))
+    error, (value, gradient) = jax.jit(checkify.checkify(jax.value_and_grad(function)))(
+        rows, jnp.array([3, 1])
+    )
+    error.throw()
     np.testing.assert_allclose(value, 12)
     np.testing.assert_array_equal(gradient, [[0, 0, 1], [1, 0, 0]])
 
@@ -165,9 +173,10 @@ def test_vector_indices_keep_each_callable_batch() -> None:
         outputs = sum(lookup.(rows, indices))
     """).compile()
     rows = jnp.array([[1.0, 2.0, 4.0], [8.0, 16.0, 32.0]])
-    value, gradient = jax.jit(jax.value_and_grad(function))(
+    error, (value, gradient) = jax.jit(checkify.checkify(jax.value_and_grad(function)))(
         rows, jnp.array([[3, 1], [2, 2]])
     )
+    error.throw()
     np.testing.assert_allclose(value, 37)
     np.testing.assert_array_equal(gradient, [[1, 0, 1], [0, 2, 0]])
 

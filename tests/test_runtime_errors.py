@@ -155,3 +155,91 @@ def test_checked_transformed_density_keeps_its_jacobian():
     error, _ = checked(jnp.log(jnp.float32(4)))
     with pytest.raises(checkify.JaxRuntimeError, match="index out of range"):
         error.throw()
+
+
+def test_order_statistics_preserve_values_and_gradients_and_check_probability():
+    function = flatppl("""
+        xs = external(cartpow(reals, 3))
+        p = external(reals)
+        inputs = (xs, p)
+        outputs = median(xs) + quantile(xs, p)
+    """).compile()
+    checked = jax.jit(checkify.checkify(jax.value_and_grad(function, argnums=(0, 1))))
+    point = jnp.array([8.0, 2.0, 4.0])
+    error, (value, (dx, dp)) = checked(point, jnp.float32(0.25))
+    error.throw()
+    assert value == 7
+    np.testing.assert_array_equal(dx, [0.0, 0.5, 1.5])
+    assert dp == 4
+    error, (value, _) = checked(point, jnp.float32(np.nan))
+    error.throw()
+    assert np.isnan(value)
+    for probability in (-0.1, 1.1, np.inf):
+        error, _ = checked(point, jnp.float32(probability))
+        with pytest.raises(checkify.JaxRuntimeError, match="quantile probability"):
+            error.throw()
+
+
+def test_linear_solve_preserves_values_and_gradients_and_checks_singularity():
+    function = flatppl("""
+        A = external(cartpow(reals, [2, 2]))
+        b = external(cartpow(reals, 2))
+        inputs = (A, b)
+        outputs = sum(linsolve(A, b))
+    """).compile()
+    checked = jax.jit(checkify.checkify(jax.value_and_grad(function, argnums=1)))
+    right = jnp.array([5.0, 7.0])
+    error, (value, gradient) = checked(jnp.array([[2.0, 1.0], [1.0, 3.0]]), right)
+    error.throw()
+    np.testing.assert_allclose(value, 3.4, rtol=2e-6)
+    np.testing.assert_allclose(gradient, [0.4, 0.2], rtol=2e-6)
+    error, _ = checked(jnp.array([[1.0, 2.0], [2.0, 4.0]]), right)
+    with pytest.raises(checkify.JaxRuntimeError, match="nonsingular matrix"):
+        error.throw()
+
+
+def test_inverse_uniform_transport_checks_probability_and_keeps_endpoints():
+    function = flatppl("""
+        u = external(reals)
+        inputs = u
+        outputs = builtin_fromuniform(Exponential, record(rate = 2), u)
+    """).compile()
+    checked = jax.jit(checkify.checkify(jax.value_and_grad(function)))
+    error, (value, gradient) = checked(jnp.float32(0.5))
+    error.throw()
+    np.testing.assert_allclose(value, np.log(2) / 2, rtol=2e-6)
+    assert gradient == 1
+    assert function(jnp.float32(0)) == 0
+    assert np.isposinf(function(jnp.float32(1)))
+    for probability in (-0.1, 1.1, np.nan):
+        error, _ = checked(jnp.float32(probability))
+        with pytest.raises(checkify.JaxRuntimeError, match="uniform variate"):
+            error.throw()
+
+
+@pytest.mark.parametrize("byte_seed", [False, True])
+def test_rnginit_checks_seed_range_and_preserves_integer_byte_equivalence(
+    byte_seed: bool,
+):
+    with jax.enable_x64():
+        domain = "cartpow(integers, 8)" if byte_seed else "integers"
+        function = flatppl(f"""
+            seed = external({domain})
+            inputs = seed
+            outputs = rnginit(seed)
+        """).compile(autodiff=False)
+        reference = flatppl("outputs = rnginit(1)").compile(autodiff=False)
+        checked = jax.jit(checkify.checkify(function))
+        valid = [1, 0, 0, 0, 0, 0, 0, 0] if byte_seed else 1
+        error, result = checked(jnp.asarray(valid, dtype=jnp.int32))
+        error.throw()
+        np.testing.assert_array_equal(result, reference())
+        invalid = (
+            [[256, 0, 0, 0, 0, 0, 0, 0], [-1, 0, 0, 0, 0, 0, 0, 0]]
+            if byte_seed
+            else [-1]
+        )
+        for seed in invalid:
+            error, _ = checked(jnp.asarray(seed, dtype=jnp.int32))
+            with pytest.raises(checkify.JaxRuntimeError, match="RNG seed"):
+                error.throw()

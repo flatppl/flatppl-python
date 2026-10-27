@@ -377,7 +377,20 @@ class CompiledFunction:
                 "FlatPPL integer conversion exceeds the target width",
             )
             checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all((error >= 0) & (error <= 2)), "Unknown FlatPPL runtime error"
+                jnp.all(error != 3), "FlatPPL quantile probability must be in [0, 1]"
+            )
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all(error != 4),
+                "FlatPPL linear solve requires a nonsingular matrix",
+            )
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all(error != 5), "FlatPPL uniform variate must be in [0, 1]"
+            )
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all(error != 6), "FlatPPL RNG seed is outside its valid range"
+            )
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all((error >= 0) & (error <= 6)), "Unknown FlatPPL runtime error"
             )
         return _unpack(self.schema["output"], result)
 

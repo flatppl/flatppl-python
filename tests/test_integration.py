@@ -12,6 +12,33 @@ from flatppl import CompilationError, Integration, Module, flatppl
 Scalar = float | jax.Array
 
 
+def test_polynomial_bin_masses_and_gradients_compose_with_vmap() -> None:
+    function = flatppl("""
+        flatppl_compat = "0.1"
+        a = external(nonnegreals)
+        weight(x, a) = polynomial([1.0, a], x)
+        intensity = weighted(weight, Lebesgue(interval(0.0, 1.0)), a)
+        inputs = a
+        outputs = logdensityof(BinnedPoissonProcess([0.0, 0.5, 1.0], intensity), [1, 2])
+    """).compile()
+    evaluate = jax.jit(jax.value_and_grad(function))
+    mapped = jax.jit(jax.vmap(jax.value_and_grad(function)))
+    coefficients = np.array([0.0, 2.0, 4.0], dtype=np.float32)
+    first = 0.5 + coefficients / 8
+    second = 0.5 + 3 * coefficients / 8
+    expected_value = np.log(first) + 2 * np.log(second) - first - second - np.log(2)
+    expected_gradient = (1 / first - 1) / 8 + 3 * (2 / second - 1) / 8
+    np.testing.assert_allclose(
+        evaluate(jnp.float32(2)),
+        [expected_value[1], expected_gradient[1]],
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    values, gradients = mapped(coefficients)
+    np.testing.assert_allclose(values, expected_value, rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(gradients, expected_gradient, rtol=2e-6, atol=2e-6)
+
+
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_shared_scale_marginal_matches_radial_density(dtype: str) -> None:
     with jax.enable_x64(dtype == "float64"):

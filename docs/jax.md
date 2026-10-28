@@ -58,6 +58,41 @@ For numerical scalar marginals and normalizers, enable
 smooth integrands and explicit scalar breakpoints, subject to the documented
 ordering restrictions. The quadrature error estimate does not bound gradient error.
 
+## Exact polynomial bin masses
+
+`BinnedPoissonProcess` integrates polynomial intensities exactly over each bin.
+For intensity `1 + a*x` on `[0, 1]` and edges `[0, 0.5, 1]`, the two Poisson
+rates are `0.5 + a/8` and `0.5 + 3*a/8`. At `a = 2`, they are `0.75` and `1.25`.
+This query scores observed counts `[1, 2]` and differentiates with respect to `a`:
+
+```{testcode}
+import jax
+import jax.numpy as jnp
+from flatppl import flatppl
+
+bin_score = flatppl(r"""
+    flatppl_compat = "0.1"
+    a = external(nonnegreals)
+    weight(x, a) = polynomial([1.0, a], x)
+    intensity = weighted(weight, Lebesgue(interval(0.0, 1.0)), a)
+    inputs = a
+    outputs = logdensityof(BinnedPoissonProcess([0.0, 0.5, 1.0], intensity), [1, 2])
+""").compile()
+value, slope = jax.jit(jax.value_and_grad(bin_score))(jnp.float32(2))
+print(f"{float(value):.6f}, {float(slope):.6f}")
+```
+
+```{testoutput}
+-2.534542, 0.266667
+```
+
+Write the weight using `polynomial` as above. This exact rule requires a fixed
+coefficient-vector length, a statically known finite support intersection and
+finite static bin edges in one dimension. Coefficients can remain runtime inputs
+independent of `x`; interval truncations intersect the support before each bin is
+integrated. Other function-weighted bin intensities still raise a compiler error,
+even with `integration=Integration()`: numerical opt-in adds no bin-mass fallback.
+
 ## Runtime checks
 
 Queries check dynamic indices, real-to-integer conversions, quantile

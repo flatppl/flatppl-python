@@ -60,9 +60,11 @@ ordering restrictions. The quadrature error estimate does not bound gradient err
 
 ## Runtime checks
 
-Queries with dynamic indexing or real-to-integer conversion check their inputs
-on the device. Invalid indices and integer-width overflow raise errors on direct
-calls. A valid density of `-inf` remains a normal result.
+Queries check dynamic indices, real-to-integer conversions, quantile
+probabilities, singular linear solves, inverse-uniform transport inputs and RNG
+seeds on the device. Invalid values raise descriptive errors on direct calls.
+A valid density of `-inf` remains a normal result. Quantiles propagate NaN
+probabilities; inverse-uniform transports reject NaN uniform variates.
 
 Before `jax.jit`, wrap the whole computation with JAX's
 [`checkify.checkify`](https://docs.jax.dev/en/latest/debugging/checkify_guide.html).
@@ -101,6 +103,27 @@ checks keep their existing signature and need no `checkify` wrapper.
 JAX 0.11.2 cannot reduce errors from some empty nested maps when differentiation
 encloses the map. Handle an empty batch before that composition, or map the
 differentiated function with `vmap(grad(function))`.
+
+## Order statistics, transports and seeds
+
+`median(xs)` and `quantile(xs, p)` support real arrays and first derivatives.
+Quantiles linearly interpolate adjacent order statistics for `p` in `[0, 1]`.
+Derivatives follow the selected ordering; ties and changes of interpolation
+interval need not be differentiable. A constant valid probability, including
+the median's `0.5`, requires no runtime check.
+
+The supported closed-form transports are `builtin_tonormal` and
+`builtin_fromnormal` for `Normal`, and `builtin_fromuniform` for `Cauchy`,
+`Exponential` and `Logistic`. These support first derivatives. Inverse-uniform
+transports accept both endpoints, including infinite results where required by
+the distribution. Other transport/kernel combinations raise a compiler error.
+
+With `compile(autodiff=False)`, `rnginit(seed)` accepts a runtime nonnegative
+integer or a nonempty byte vector with integer elements in `[0, 255]`. An integer
+seed denotes its eight-byte little-endian encoding. Scalar inputs are signed
+integers of the selected ABI width; use byte vectors for seeds outside that
+range. RNG states use `uint64` and require JAX x64 even for float32 queries.
+Pass the state returned by `rand` to the next draw to advance the sequence.
 
 ## Batch calls with vmap
 
@@ -280,17 +303,20 @@ extension. Both off-diagonal entries share the derivative, so a scalar used in
 both entries receives their sum. Forward-only compilation retains native matrix
 Cholesky and triangular solves.
 
-`inv`, `det` and `logabsdet` accept fixed-size real square matrices and support
-native FlatPPL broadcasts. Inverse and log-determinant gradients require an
+`inv`, `det`, `logabsdet` and `linsolve` accept fixed-size real square matrices
+and support native FlatPPL broadcasts. Inverse and log-determinant gradients require an
 invertible matrix. `det` also supports first derivatives at singular matrices,
 using complete pivoting to preserve the cofactor gradient. Rank decisions use
 exact zero pivots. A singular `logabsdet` returns `-inf`; its gradient is undefined.
 
+`linsolve(A, b)` solves `A x = b` for a vector `b` and supports first derivatives
+with respect to both inputs. Singular systems raise a runtime error; wrap JIT
+and gradient computations with `checkify` as described above. The compiler adds
+no regularization.
+
 Determinant gradient checks cover finite values and cofactors representable in
 the chosen precision, including singular determinants. They do not qualify
-gradients after a nonsingular determinant underflows or overflows. `linsolve`
-remains unsupported because its required singular-input runtime error needs an
-execution error channel.
+gradients after a nonsingular determinant underflows or overflows.
 
 FlatPPL callable broadcasts, `lower_cholesky.(matrices)`, `MvNormal.(means, covs)`
 and iid multivariate-normal observations support matrix cells. JAX `vmap` adds

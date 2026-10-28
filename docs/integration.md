@@ -1,7 +1,8 @@
 # Numerical integration
 
-Exact density rules remain the default. Enable numerical integration when a
-scalar normalizer or a single shared continuous latent has no exact rule:
+Exact density rules remain the default. Enable numerical integration when an
+admitted scalar normalizer, bin mass or single shared continuous latent has no
+exact rule:
 
 ```{testcode}
 import numpy as np
@@ -23,6 +24,40 @@ np.testing.assert_allclose(density(2.0, 0.25), expected, rtol=2e-5)
 Pass `density` to `jax.jit`, `jax.grad`, or BlackJAX as usual. Integration runs
 inside the emitted StableHLO program on the selected JAX device.
 There is no Python callback or integration-library runtime dependency.
+
+## Numerical bin masses
+
+`BinnedPoissonProcess` can integrate a direct function-weighted or logweighted
+Lebesgue intensity with `Integration()`. For intensity `exp(a*x)` on `[0, 1]`,
+the mean count in each bin is the integral of that intensity over the bin:
+
+```{testcode}
+import numpy as np
+from flatppl import Integration, flatppl
+
+bin_score = flatppl("""
+    flatppl_compat = "0.1"
+    a = external(reals)
+    intensity = logweighted((x, a) -> a*x, Lebesgue(interval(0.0, 1.0)), a)
+    inputs = a
+    outputs = logdensityof(BinnedPoissonProcess([0.0, 0.5, 1.0], intensity), [1, 2])
+""").compile(integration=Integration())
+a = 2.0
+edges = np.array([0.0, 0.5, 1.0])
+rates = np.diff(np.exp(a * edges)) / a
+expected = np.log(rates[0]) + 2*np.log(rates[1]) - rates.sum() - np.log(2)
+np.testing.assert_allclose(bin_score(a), expected, rtol=8e-5)
+```
+
+This fallback requires a direct scalar `weighted` or `logweighted` over
+`Lebesgue(interval(lo, hi))`, with finite static support bounds and finite static
+bin edges in one dimension. Parameters in the weight can remain runtime inputs.
+Each bin is clipped to the support; the compiler also checks the intensity over
+its whole support, including when every observed bin is disjoint. Invalid or
+nonconvergent integrals return NaN. Runtime support bounds, runtime bin edges,
+other references and coordinate-dependent nested integrals remain unsupported.
+Exact rules run first, and numerical fallback requires explicit opt-in.
+The convergence and derivative limits below apply to numerical bin masses too.
 
 ## Settings and failure
 

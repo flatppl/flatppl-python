@@ -90,8 +90,10 @@ Write the weight using `polynomial` as above. This exact rule requires a fixed
 coefficient-vector length, a statically known finite support intersection and
 finite static bin edges in one dimension. Coefficients can remain runtime inputs
 independent of `x`; interval truncations intersect the support before each bin is
-integrated. Other function-weighted bin intensities still raise a compiler error,
-even with `integration=Integration()`: numerical opt-in adds no bin-mass fallback.
+integrated. Other direct function weights can use
+[explicit numerical integration](integration.md#numerical-bin-masses).
+That path is limited to scalar `weighted` or `logweighted` Lebesgue intensities
+with finite static interval bounds and fixed finite bin edges.
 
 ## Runtime checks
 

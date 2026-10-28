@@ -39,6 +39,179 @@ def test_polynomial_bin_masses_and_gradients_compose_with_vmap() -> None:
     np.testing.assert_allclose(gradients, expected_gradient, rtol=2e-6, atol=2e-6)
 
 
+@pytest.mark.parametrize("operator", ["weighted", "logweighted"])
+def test_numerical_bin_masses_match_exponential_integrals(operator: str) -> None:
+    body = "exp(p*x)" if operator == "weighted" else "p*x"
+    query = flatppl(f"""
+        flatppl_compat = "0.1"
+        a = external(reals)
+        weight(x, p) = {body}
+        intensity = {operator}(weight, Lebesgue(interval(0.0, 1.0)), a)
+        inputs = a
+        outputs = logdensityof(BinnedPoissonProcess([-1.0, 0.0, 0.5, 1.0, 2.0], intensity), [0, 1, 2, 0])
+    """)
+    with pytest.raises(CompilationError):
+        query.compile()
+    function = query.compile(integration=Integration())
+    points = np.array([-1.0, 0.0, 0.5, 2.0], dtype=np.float32)
+    expected = []
+    for point in points:
+        a = float(point)
+        masses, slopes = [], []
+        for lo, hi in ((0.0, 0.5), (0.5, 1.0)):
+            masses.append(
+                (math.expm1(a * hi) - math.expm1(a * lo)) / a if a else hi - lo
+            )
+            slopes.append(
+                (math.exp(a * hi) * (a * hi - 1) - math.exp(a * lo) * (a * lo - 1))
+                / a**2
+                if a
+                else (hi**2 - lo**2) / 2
+            )
+        expected.append(
+            (
+                sum(
+                    n * math.log(m) - m - math.lgamma(n + 1)
+                    for n, m in zip((1, 2), masses, strict=True)
+                ),
+                sum(
+                    (n / m - 1) * slope
+                    for n, m, slope in zip((1, 2), masses, slopes, strict=True)
+                ),
+            )
+        )
+    expected = np.asarray(expected)
+    np.testing.assert_allclose(
+        jax.jit(jax.value_and_grad(function))(jnp.float32(0)),
+        expected[1],
+        rtol=8e-5,
+        atol=8e-5,
+    )
+    values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(points)
+    np.testing.assert_allclose(values, expected[:, 0], rtol=8e-5, atol=8e-5)
+    np.testing.assert_allclose(gradients, expected[:, 1], rtol=8e-5, atol=8e-5)
+    outer = jax.jit(jax.grad(lambda xs: jnp.sum(jax.vmap(function)(xs))))(points)
+    np.testing.assert_allclose(outer, expected[:, 1], rtol=8e-5, atol=8e-5)
+
+
+@pytest.mark.parametrize("power", [1, 2])
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_numerical_bin_mass_derivatives_at_zero_amplitude(
+    power: int, dtype: str
+) -> None:
+    with jax.enable_x64(dtype == "float64"):
+        domain = "nonnegreals" if power == 1 else "reals"
+        body = "p * exp(x)" if power == 1 else "p*p * exp(x)"
+        function = flatppl(f"""
+            flatppl_compat = "0.1"
+            a = external({domain})
+            weight(x, p) = {body}
+            intensity = weighted(weight, Lebesgue(interval(0.0, 1.0)), a)
+            inputs = a
+            outputs = logdensityof(BinnedPoissonProcess([0.0, 0.5, 1.0], intensity), [0, 0])
+        """).compile(
+            dtype=dtype,
+            integration=Integration(rtol=1e-5 if dtype == "float32" else 1e-9),
+        )
+        points = np.array(
+            [0.0, 0.1, 0.5, 1.0] if power == 1 else [-1.0, 0.0, 0.5, 2.0], dtype=dtype
+        )
+        mass = math.expm1(1)
+        expected_value = -(points**power) * mass
+        expected_gradient = -power * points ** (power - 1) * mass
+        tolerance = 8e-5 if dtype == "float32" else 2e-10
+        np.testing.assert_allclose(
+            jax.jit(jax.value_and_grad(function))(jnp.asarray(0, dtype=dtype)),
+            [0, -mass if power == 1 else 0],
+            rtol=tolerance,
+            atol=tolerance,
+        )
+        values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(points)
+        np.testing.assert_allclose(
+            values, expected_value, rtol=tolerance, atol=tolerance
+        )
+        np.testing.assert_allclose(
+            gradients, expected_gradient, rtol=tolerance, atol=tolerance
+        )
+        outer = jax.jit(jax.grad(lambda xs: jnp.sum(jax.vmap(function)(xs))))(points)
+        np.testing.assert_allclose(
+            outer, expected_gradient, rtol=tolerance, atol=tolerance
+        )
+
+
+def test_numerical_bin_mass_keeps_an_independent_inner_normalizer() -> None:
+    function = flatppl("""
+        flatppl_compat = "0.1"
+        a = external(reals)
+        reference = normalize(weighted((y, p) -> exp(p*y*y), Lebesgue(interval(0.0, 1.0)), a))
+        intensity = weighted((x, measure) -> densityof(measure, x), Lebesgue(interval(0.0, 1.0)), reference)
+        inputs = a
+        outputs = logdensityof(BinnedPoissonProcess([0.0, 1.0], intensity), [0])
+    """).compile(integration=Integration())
+    points = jnp.array([-1.0, 0.0, 0.5, 2.0], dtype=jnp.float32)
+    values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(points)
+    np.testing.assert_allclose(values, -np.ones(4), rtol=8e-5, atol=8e-5)
+    np.testing.assert_allclose(gradients, np.zeros(4), atol=8e-5)
+
+
+@pytest.mark.parametrize("operator", ["weighted", "logweighted"])
+def test_disjoint_numerical_bins_still_validate_the_whole_intensity(
+    operator: str,
+) -> None:
+    body = "p * exp(x)" if operator == "weighted" else "p + x"
+    invalid = -1.0 if operator == "weighted" else np.nan
+    function = flatppl(f"""
+        flatppl_compat = "0.1"
+        a = external(reals)
+        weight(x, p) = {body}
+        intensity = {operator}(weight, Lebesgue(interval(0.0, 1.0)), a)
+        inputs = a
+        outputs = logdensityof(BinnedPoissonProcess([2.0, 3.0], intensity), [0])
+    """).compile(integration=Integration())
+    points = jnp.array([invalid, 0.0, 1.0], dtype=jnp.float32)
+    values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(points)
+    assert np.isnan(values[0])
+    np.testing.assert_array_equal(values[1:], [0, 0])
+    np.testing.assert_array_equal(gradients[1:], [0, 0])
+
+
+@pytest.mark.parametrize(
+    "operator,weight,width,expected",
+    [
+        ("logweighted", "710.0 + 0*x", 1e-100, -math.exp(710 + math.log(1e-100))),
+        ("weighted", "3.4e-100 + 0*x", 1.5e308, -3.4e-100 * 1.5e308),
+    ],
+)
+def test_numerical_bin_masses_preserve_finite_float64_scale(
+    operator: str, weight: str, width: float, expected: float
+) -> None:
+    with jax.enable_x64():
+        function = flatppl(f"""
+            flatppl_compat = "0.1"
+            intensity = {operator}(x -> {weight}, Lebesgue(interval(0.0, {width})))
+            outputs = logdensityof(BinnedPoissonProcess([0.0, {width}], intensity), [0])
+        """).compile(dtype="float64", integration=Integration(rtol=1e-9))
+        np.testing.assert_allclose(jax.jit(function)(), expected, rtol=2e-10, atol=0)
+
+
+@pytest.mark.parametrize(
+    "support,edges",
+    [("interval(0.0, high)", "[0.0, 1.0]"), ("interval(0.0, 1.0)", "[0.0, high]")],
+)
+def test_numerical_bin_mass_opt_in_keeps_static_bounds_requirement(
+    support: str, edges: str
+) -> None:
+    query = flatppl(f"""
+        flatppl_compat = "0.1"
+        high = external(posreals)
+        intensity = weighted(x -> exp(x), Lebesgue({support}))
+        inputs = high
+        outputs = logdensityof(BinnedPoissonProcess({edges}, intensity), [0])
+    """)
+    with pytest.raises(CompilationError):
+        query.compile(integration=Integration())
+
+
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_shared_scale_marginal_matches_radial_density(dtype: str) -> None:
     with jax.enable_x64(dtype == "float64"):

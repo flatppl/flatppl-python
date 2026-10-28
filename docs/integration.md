@@ -25,6 +25,33 @@ Pass `density` to `jax.jit`, `jax.grad`, or BlackJAX as usual. Integration runs
 inside the emitted StableHLO program on the selected JAX device.
 There is no Python callback or integration-library runtime dependency.
 
+## Restricted bin intensities
+
+`truncate` restricts each bin's intensity mass without rescaling it.
+`normalize(truncate(...))` divides by the mass of the whole restricted support,
+including regions outside the observed bins. For `Normal(0, scale)` restricted to
+`[0, inf]`, that denominator is `0.5`. The mean count in `[1, inf]` is therefore
+`erfc(1/(scale*sqrt(2)))`, and a zero count has log probability minus this mean:
+
+```{testcode}
+import math
+import numpy as np
+from flatppl import flatppl
+
+truncated_bins = flatppl("""
+    flatppl_compat = "0.1"
+    scale = external(posreals)
+    intensity = normalize(truncate(Normal(0.0, scale), interval(0.0, inf)))
+    inputs = scale
+    outputs = logdensityof(BinnedPoissonProcess([1.0, inf], intensity), [0])
+""").compile()
+scale = 0.8
+expected = -math.erfc(1/(scale*math.sqrt(2)))
+np.testing.assert_allclose(truncated_bins(scale), expected, rtol=3e-5)
+```
+
+This Normal example uses an exact interval-mass rule and needs no numerical opt-in.
+
 ## Numerical bin masses
 
 `BinnedPoissonProcess` can integrate a direct function-weighted or logweighted
@@ -52,8 +79,10 @@ np.testing.assert_allclose(bin_score(a), expected, rtol=8e-5)
 This fallback requires a direct scalar `weighted` or `logweighted` over
 `Lebesgue(interval(lo, hi))`, with finite static support bounds and finite static
 bin edges in one dimension. Parameters in the weight can remain runtime inputs.
-Each bin is clipped to the support; the compiler also checks the intensity over
-its whole support, including when every observed bin is disjoint. Invalid or
+Finite static `truncate` restrictions are applied before numerical integration,
+so discarded regions are not integrated.
+Each bin is clipped to the retained support; the compiler also checks the intensity
+over that whole support, including when every observed bin is disjoint. Invalid or
 nonconvergent integrals return NaN. Runtime support bounds, runtime bin edges,
 other references and coordinate-dependent nested integrals remain unsupported.
 Exact rules run first, and numerical fallback requires explicit opt-in.

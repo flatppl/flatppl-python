@@ -12,6 +12,42 @@ from flatppl import CompilationError, Integration, Module, flatppl
 Scalar = float | jax.Array
 
 
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_halfline_bin_mass_keeps_live_scale_gradients_under_vmap(dtype: str) -> None:
+    with jax.enable_x64(dtype == "float64"):
+        function = flatppl("""
+            flatppl_compat = "0.1"
+            scale = external(posreals)
+            intensity = normalize(truncate(Normal(0.0, scale), interval(0.0, inf)))
+            inputs = scale
+            outputs = logdensityof(BinnedPoissonProcess([1.0, inf], intensity), [0])
+        """).compile(dtype=dtype)
+        scales = np.array([0.8, 1.2], dtype=dtype)
+        expected = np.array(
+            [
+                [
+                    -math.erfc(1 / (s * math.sqrt(2))),
+                    -2 * math.exp(-0.5 / s**2) / (math.sqrt(2 * math.pi) * s**2),
+                ]
+                for s in map(float, scales)
+            ]
+        )
+        tolerance = 3e-5 if dtype == "float32" else 2e-10
+        np.testing.assert_allclose(
+            jax.jit(jax.value_and_grad(function))(scales[0]),
+            expected[0],
+            rtol=tolerance,
+            atol=tolerance,
+        )
+        values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(scales)
+        np.testing.assert_allclose(
+            values, expected[:, 0], rtol=tolerance, atol=tolerance
+        )
+        np.testing.assert_allclose(
+            gradients, expected[:, 1], rtol=tolerance, atol=tolerance
+        )
+
+
 def test_polynomial_bin_masses_and_gradients_compose_with_vmap() -> None:
     function = flatppl("""
         flatppl_compat = "0.1"

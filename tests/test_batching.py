@@ -389,6 +389,42 @@ def test_mapped_sampling_preserves_each_explicit_key() -> None:
             np.testing.assert_array_equal(actual[1], expected[1])
 
 
+@pytest.mark.parametrize(
+    "sizes,cell_shape", [("2", (2, 3, 3)), ("[2, 3]", (2, 3, 3, 3))]
+)
+def test_mapped_lkj_iid_sampling_preserves_matrix_cells_and_rng(
+    sizes: str, cell_shape: tuple[int, ...]
+) -> None:
+    with jax.enable_x64():
+        draw = flatppl(f"""
+            flatppl_compat = "0.1"
+            n = 3
+            eta = external(posreals)
+            state = rnginit(0)
+            inputs = (state, eta)
+            outputs = rand(iid(LKJ(n, eta), {sizes}), state)
+        """).compile(autodiff=False)
+        state = jnp.array([1729, 0], dtype=jnp.uint64)
+        concentrations = jnp.array(
+            [[0.5, 1.0, 2.0], [2.0, 3.0, 4.0]], dtype=jnp.float32
+        )
+        mapped = jax.vmap(draw, in_axes=(None, 0))
+        for points, evaluate in (
+            (concentrations[:, 0], mapped),
+            (concentrations, jax.vmap(mapped, in_axes=(None, 0))),
+        ):
+            actual = jax.jit(evaluate)(state, points)
+            assert actual[0].shape == (*points.shape, *cell_shape)
+            assert actual[1].shape == (*points.shape, 2)
+            per_lane = [draw(state, eta) for eta in points.reshape(-1)]
+            expected = jax.tree.map(
+                lambda *xs: jnp.stack(xs).reshape((*points.shape, *xs[0].shape)),
+                *per_lane,
+            )
+            np.testing.assert_allclose(actual[0], expected[0], rtol=3e-6, atol=3e-6)
+            np.testing.assert_array_equal(actual[1], expected[1])
+
+
 def test_vectorized_blackjax_steps_match_native_density() -> None:
     density = flatppl("x = elementof(reals)\ninputs = x\noutputs = -0.5*x*x").compile()
     keys = jax.random.split(jax.random.key(19), 3)

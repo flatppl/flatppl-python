@@ -422,6 +422,32 @@ with jax.enable_x64():
 float32 [1729, 1]
 ```
 
+`LKJ(n, eta)` draws a full correlation matrix. Keep `n` fixed in the query and
+pass `eta` at runtime:
+
+```{testcode}
+import jax
+import jax.numpy as jnp
+from flatppl import flatppl
+
+with jax.enable_x64():
+    draw_correlation = flatppl("""
+        flatppl_compat = "0.1"
+        n = 3
+        eta = external(posreals)
+        state = rnginit(0)
+        inputs = (state, eta)
+        outputs = rand(LKJ(n, eta), state)
+    """).compile(autodiff=False)
+    state = jnp.array([1729, 0], dtype=jnp.uint64)
+    correlation, state = draw_correlation(state, jnp.float32(2))
+    print(correlation.shape)
+```
+
+```{testoutput}
+(3, 3)
+```
+
 These states are distinct from JAX random keys. BlackJAX uses its own JAX keys
 and does not require a FlatPPL random-state input to evaluate a density.
 

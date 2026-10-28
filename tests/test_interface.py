@@ -426,6 +426,33 @@ def test_rng_pairs_chaining_and_output_order() -> None:
             np.testing.assert_array_equal(actual, expected)
 
 
+def test_lkj_sampling_returns_a_correlation_matrix_and_threaded_state() -> None:
+    with jax.enable_x64():
+        draw = flatppl("""
+            flatppl_compat = "0.1"
+            n = 3
+            eta = external(posreals)
+            state = rnginit(0)
+            inputs = (state, eta)
+            outputs = rand(LKJ(n, eta), state)
+        """).compile(autodiff=False)
+        state = jnp.array([1729, 0], dtype=jnp.uint64)
+        eta = jnp.float32(2)
+        correlation, next_state = draw(state, eta)
+        assert correlation.shape == (3, 3)
+        np.testing.assert_allclose(correlation, correlation.T, atol=3e-6)
+        np.testing.assert_allclose(jnp.diag(correlation), jnp.ones(3), atol=3e-6)
+        assert np.all(np.linalg.eigvalsh(correlation) > 0)
+        replay, replay_state = draw(state, eta)
+        np.testing.assert_array_equal(replay, correlation)
+        np.testing.assert_array_equal(replay_state, next_state)
+        assert next_state.shape == (2,)
+        assert not np.array_equal(next_state, state)
+        following, following_state = draw(next_state, eta)
+        assert following.shape == correlation.shape
+        assert not np.array_equal(following_state, next_state)
+
+
 def test_precision_and_repeated_device_calls() -> None:
     module = flatppl("x = elementof(reals)\ninputs = x\noutputs = (x + 1.0) - x")
     with jax.enable_x64(False):

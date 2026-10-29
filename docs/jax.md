@@ -48,6 +48,8 @@ Forward and differentiated primal values can differ slightly through rounding.
 The compiler picks a CPU or GPU lowering profile from `jax.default_backend()`.
 The profiles differ only in how equivalent operations are lowered, so there is
 nothing to configure. Pass `target="cpu"` or `target="gpu"` to override it.
+The GPU profile expands short matrix loops to reduce launch overhead in small
+multivariate models. This leaves the model's precision unchanged.
 
 General real metric contractions support runtime indefinite matrices, repeated
 indices, batches, and raised outputs. Scalar complex intermediates can feed real

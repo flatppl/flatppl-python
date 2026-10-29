@@ -7,6 +7,8 @@ tagged release.
 
 ### Changed
 
+- Small matrix operations use bounded loop expansion on GPUs to reduce launch
+  overhead. CPU lowering and precision defaults are unchanged.
 - Multivariate mixture densities share one component body in StableHLO, reducing
   compilation time and GPU kernel work while preserving family cell shapes.
 - Dynamic index errors and integer-width overflow now report device-side errors.

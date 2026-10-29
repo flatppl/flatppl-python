@@ -7,6 +7,8 @@ tagged release.
 
 ### Changed
 
+- Multivariate mixture densities share one component body in StableHLO, reducing
+  compilation time and GPU kernel work while preserving family cell shapes.
 - Dynamic index errors and integer-width overflow now report device-side errors.
   Wrap staged computations containing these checks with JAX `checkify.checkify`
   and raise the error at the host boundary.

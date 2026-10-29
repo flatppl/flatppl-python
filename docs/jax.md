@@ -205,6 +205,44 @@ Batch axes remain separate from a query's authored cell dimensions, so
 `lengthof` and reductions keep their original meaning. New static batch shapes
 trigger compilation.
 
+### Multivariate mixtures
+
+`ksuperpose` combines a family of distributions with nonnegative weights.
+`normalize` divides by their total weight. This example shares one covariance
+matrix between two Normal components and evaluates three points:
+
+```{testcode}
+import jax
+import jax.numpy as jnp
+from flatppl import flatppl
+
+mixture = flatppl(r"""
+    weights = external(cartpow(nonnegreals, 2))
+    means = external(cartpow(reals, [2, 2]))
+    covariances = [rowstack([[1.0, 0.0], [0.0, 1.0]])]
+    distribution = normalize(ksuperpose(MvNormal, weights)(mu = means, cov = covariances))
+    x = elementof(cartpow(reals, 2))
+    inputs = (x, weights, means)
+    outputs = logdensityof(distribution, x)
+""").compile()
+points = jnp.array([[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]])
+weights = jnp.array([1.0, 1.0])
+means = jnp.array([[-1.0, 0.0], [1.0, 0.0]])
+values, gradients = jax.jit(
+    jax.vmap(jax.value_and_grad(mixture), in_axes=(0, None, None))
+)(points, weights, means)
+print(values.shape, gradients.shape)
+```
+
+```{testoutput}
+(3,) (3, 2)
+```
+
+Each gradient is with respect to one two-dimensional point. Pass `argnums` to
+`jax.value_and_grad` to differentiate weights or means instead. The compiler maps
+one density body across components, preserving vector and matrix cells. This
+also covers Dirichlet families. Component counts and cell shapes remain static.
+
 ## Compilation caches
 
 A module caches its exports, so compiling it again with the same options skips

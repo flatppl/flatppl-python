@@ -72,6 +72,41 @@ def test_empty_map_and_invariant_outputs() -> None:
     np.testing.assert_array_equal(constants, [7, 7, 7])
 
 
+def test_mixture_cells_preserve_shared_parameters_under_nested_maps() -> None:
+    function = flatppl("""
+        w = external(cartpow(posreals, 2))
+        alpha = external(cartpow(cartpow(posreals, 3), 2))
+        x = elementof(stdsimplex(3))
+        mixture = normalize(ksuperpose(Dirichlet, w)(alpha))
+        inputs = (w, alpha, x)
+        outputs = logdensityof(mixture, x)
+    """).compile()
+    weights = jnp.array([0.3, 1.2])
+    alpha = jnp.array([[0.6, 1.1, 2.3], [1.8, 0.8, 1.2]])
+    points = jax.nn.softmax(
+        jnp.sin(jnp.arange(18, dtype=jnp.float32)).reshape(2, 3, 3), axis=-1
+    )
+
+    def reference(w: jax.Array, a: jax.Array, x: jax.Array) -> jax.Array:
+        terms = jax.vmap(jax.scipy.stats.dirichlet.logpdf, in_axes=(None, 0))(x, a)
+        return jax.scipy.special.logsumexp(jnp.log(w) + terms) - jnp.log(w.sum())
+
+    def total(f: Callable[..., Any]) -> Callable[..., Any]:
+        mapped = jax.vmap(jax.vmap(f, in_axes=(None, None, 0)), in_axes=(None, None, 0))
+        return lambda w, a, x: jnp.sum(mapped(w, a, x))
+
+    actual = jax.jit(jax.value_and_grad(total(function), argnums=(0, 1, 2)))(
+        weights, alpha, points
+    )
+    expected = jax.value_and_grad(total(reference), argnums=(0, 1, 2))(
+        weights, alpha, points
+    )
+    for found, wanted in zip(
+        jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True
+    ):
+        np.testing.assert_allclose(found, wanted, rtol=2e-5, atol=2e-5)
+
+
 @pytest.mark.parametrize("selection", ["[1, 3, 3]", "indices", "indices[1]"])
 @pytest.mark.parametrize("axes", [(0, None), (None, 0), (0, 0)])
 def test_gather_maps_keep_values_gradients_and_tensor_execution(

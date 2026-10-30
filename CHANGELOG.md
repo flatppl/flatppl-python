@@ -7,6 +7,10 @@ tagged release.
 
 ### Changed
 
+- Enzyme alpha 12 adds native matrix derivatives and preserves shared work in
+  batched calls and pullbacks. Its wheels include Clang builtin headers.
+- The bundled compiler passes record elements whole to `scan`, `kscan` and
+  `filter`, including additional record-valued inputs.
 - Small matrix operations use bounded loop expansion on GPUs to reduce launch
   overhead. CPU lowering and precision defaults are unchanged.
 - Multivariate mixture densities share one component body in StableHLO, reducing

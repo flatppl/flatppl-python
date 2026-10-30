@@ -7,6 +7,8 @@ tagged release.
 
 ### Changed
 
+- Mixtures now use `ksuperpose(K, weights, parameters...)`. Weights and
+  parameters broadcast together; vector-valued parameters use nested vectors.
 - Enzyme alpha 12 adds native matrix derivatives and preserves shared work in
   batched calls and pullbacks. Its wheels include Clang builtin headers.
 - The bundled compiler passes record elements whole to `scan`, `kscan` and

@@ -11,8 +11,9 @@ tagged release.
   batched calls and pullbacks. Its wheels include Clang builtin headers.
 - The bundled compiler passes record elements whole to `scan`, `kscan` and
   `filter`, including additional record-valued inputs.
-- Small matrix operations use bounded loop expansion on GPUs to reduce launch
-  overhead. CPU lowering and precision defaults are unchanged.
+- Matrix densities use native StableHLO operations with target-specific
+  arithmetic paths for small matrices. Shared inputs and symmetric covariance
+  gradients are preserved.
 - Multivariate mixture densities share one component body in StableHLO, reducing
   compilation time and GPU kernel work while preserving family cell shapes.
 - Dynamic index errors and integer-width overflow now report device-side errors.

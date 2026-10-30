@@ -157,7 +157,8 @@ singular determinant cofactor gradients.
 The compiler corpus freezes independent analytic gradients. Package tests add
 InverseWishart and LKJ derivatives, inverses, log determinants, native matrix
 batches and shared covariance.
-Separate CPU/A100 probes cover both precisions and numerical scale limits.
+Separate CPU/A100/GH200 probes cover both precisions, numerical scale limits,
+and every covariance-gradient entry on both sides of the matrix size cutoffs.
 See [matrix derivatives](jax.md#matrix-derivatives) for the supported domain.
 
 The JavaScript backend still has separate gaps for Dalitz and numerical

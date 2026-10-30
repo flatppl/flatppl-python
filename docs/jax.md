@@ -374,11 +374,15 @@ derivatives through their real matrix inputs. Matrices must have fixed dimension
 and satisfy the distribution's positive-definite or correlation-matrix domain.
 The compiler adds no diagonal jitter or regularization.
 
-The default Enzyme compatibility mode decomposes Cholesky and triangular solves
-into portable StableHLO loops. Covariance gradients use a symmetric matrix
-extension. Both off-diagonal entries share the derivative, so a scalar used in
-both entries receives their sum. Forward-only compilation retains native matrix
-Cholesky and triangular solves.
+The default Enzyme compatibility mode uses native StableHLO Cholesky and
+triangular solves. It retains arithmetic Cholesky for CPU matrices up to size 2
+and arithmetic solves for those matrices with two right-hand-side columns.
+GPU matrices up to size 8 retain arithmetic Cholesky and solves to avoid native
+call overhead. CPU vector and wider solves remain native to share work across
+batches.
+Covariance gradients use a symmetric matrix extension. Both off-diagonal entries
+share the derivative, so a scalar used in both entries receives their sum.
+Forward-only compilation retains native Cholesky and triangular solves.
 
 `inv`, `det`, `logabsdet` and `linsolve` accept fixed-size real square matrices
 and support native FlatPPL broadcasts. Inverse and log-determinant gradients require an
@@ -399,7 +403,7 @@ FlatPPL callable broadcasts, `lower_cholesky.(matrices)`, `MvNormal.(means, covs
 and iid multivariate-normal observations support matrix cells. JAX `vmap` adds
 independent host batch axes around those cells.
 
-Independent CPU and A100 probes cover float32 and float64, changing means,
+Independent CPU, A100 and GH200 probes cover float32 and float64, changing means,
 covariances and observations, matrix right-hand sides, numerical scales and
 conditioned covariances. Poor conditioning still limits floating-point accuracy.
 

@@ -182,7 +182,7 @@ def test_mvnormal_covariance_mean_and_point_gradients() -> None:
         inputs = (mu, cov, x)
         outputs = logdensityof(MvNormal(mu, cov), x)
     """)
-    for n in (1, 2, 5):
+    for n in (1, 2, 9):
         function = query.set(n=n).compile()
         actual = jax.jit(jax.value_and_grad(function, argnums=(0, 1, 2)))
         mean = np.arange(n) / 3

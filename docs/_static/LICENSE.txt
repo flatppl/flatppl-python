@@ -1,0 +1,3 @@
+`favicon.ico` and `logo.svg` come from `flatppl-theme/assets/`.
+Regenerate them from that repository's `assets/logo-master.svg` with `bun run icons`.
+FlatPPL brand assets use [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

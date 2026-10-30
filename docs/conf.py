@@ -38,6 +38,10 @@ nitpick_ignore += [
 ]
 myst_heading_anchors = 3
 html_theme = "furo"
+html_favicon = "_static/favicon.ico"
+html_logo = "_static/logo.svg"
+html_static_path = ["_static"]
+html_css_files = ["brand.css"]
 html_title = project
 html_baseurl = "https://flatppl.org/flatppl-python/"
 html_show_sourcelink = False

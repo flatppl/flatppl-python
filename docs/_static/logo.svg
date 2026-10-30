@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" data-chalk="off" data-outlines="on" data-edges="off" data-board="off" data-background="on" data-nodes="on" data-arrows="on" data-text="on" data-plot="on" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title desc">
+  <title id="title">FlatPPL logo</title>
+  <desc id="desc">A directed graph above a histogram and bell curve, with the FlatPPL wordmark on a green background.</desc>
+  <metadata>Vector redraw of flatppl-theme/assets/logo-original.png. FlatPPL brand assets. Adapted with soft directional chalk grain. License: Creative Commons Attribution 4.0 International, https://creativecommons.org/licenses/by/4.0/.</metadata>
+  <style>
+    svg[data-outlines="off"] #outline-layer,
+    svg[data-chalk="off"] #outline-layer { display: none; }
+    svg[data-nodes="off"] #nodes-outline,
+    svg[data-nodes="off"] #graph-nodes,
+    svg[data-arrows="off"] #arrows-outline,
+    svg[data-arrows="off"] #graph-arrows,
+    svg[data-text="off"] #text-outline,
+    svg[data-text="off"] #text-layer,
+    svg[data-plot="off"] #plot-outline,
+    svg[data-plot="off"] #plot-layer { display: none; }
+    svg[data-edges="off"] #artwork-layer { filter: none; }
+    svg[data-chalk="off"] #chalk-effect { mask: none; }
+    svg[data-board="off"] #board-texture-layer { display: none; }
+    svg[data-background="off"] #background-layer,
+    svg[data-background="off"] #board-texture-layer { display: none; }
+  </style>
+  <defs>
+    <filter id="inset-outline" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feMorphology in="SourceAlpha" operator="erode" radius=".75" result="interior"/>
+      <feComposite in="SourceAlpha" in2="interior" operator="out" result="rim"/>
+      <feFlood flood-color="#ffffff"/>
+      <feComposite in2="rim" operator="in"/>
+    </filter>
+    <filter id="chalk-edges" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="2" seed="31" result="edge-noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="edge-noise" scale=".8" xChannelSelector="R" yChannelSelector="G"/>
+      <feGaussianBlur stdDeviation=".4"/>
+    </filter>
+    <mask id="histogram-envelope" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256" style="mask-type:luminance">
+      <path d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176L237 178H20Z" fill="white"/>
+      <path d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176" fill="none" stroke="black" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+    <marker id="arrowhead" viewBox="0 -8 14 16" refX="0" refY="0" markerWidth="14" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
+      <path d="M0 -8L14 0L0 8Z" fill="#ffffff"/>
+    </marker>
+    <filter id="chalk-grain" filterUnits="userSpaceOnUse" x="-256" y="-256" width="768" height="768" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".1 1.1" numOctaves="2" seed="3" result="streaks"/>
+      <feColorMatrix in="streaks" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1.6 0 0 0 .05" result="streak-mask"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="19" result="powder"/>
+      <feColorMatrix in="powder" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1.3 0 0 0 .2" result="powder-mask"/>
+      <feComposite in="streak-mask" in2="powder-mask" operator="in" result="chalk-density"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".12" numOctaves="2" seed="23" result="grain-warp"/>
+      <feDisplacementMap in="chalk-density" in2="grain-warp" scale=".7" xChannelSelector="R" yChannelSelector="G"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope=".85" intercept=".15"/>
+      </feComponentTransfer>
+    </filter>
+    <mask id="chalk" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256" style="mask-type:luminance">
+      <g transform="rotate(-43 128 128)">
+        <rect x="-256" y="-256" width="768" height="768" fill="white" filter="url(#chalk-grain)"/>
+      </g>
+    </mask>
+    <filter id="board" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".014 .045" numOctaves="2" seed="4" result="wipe"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".6" numOctaves="1" seed="12" result="dust"/>
+      <feComposite in="wipe" in2="dust" operator="arithmetic" k2=".8" k3=".2"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .22 0 0 0 -.1"/>
+    </filter>
+  </defs>
+  <g id="background-layer" inkscape:groupmode="layer" inkscape:label="Background">
+    <rect width="256" height="256" fill="#224535"/>
+  </g>
+  <g id="board-texture-layer" inkscape:groupmode="layer" inkscape:label="Board texture">
+    <rect width="256" height="256" fill="#224535" filter="url(#board)"/>
+  </g>
+  <g id="artwork-layer" inkscape:groupmode="layer" inkscape:label="Artwork" filter="url(#chalk-edges)">
+  <g id="chalk-effect" fill="#ffffff" mask="url(#chalk)">
+    <g id="graph-nodes" inkscape:groupmode="layer" inkscape:label="Graph nodes">
+      <circle cx="32" cy="37" r="18.5"/>
+      <circle cx="130" cy="37" r="18.5"/>
+      <circle cx="226" cy="37" r="18.5"/>
+      <circle cx="32" cy="126" r="18.5"/>
+      <circle cx="226" cy="126" r="18.5"/>
+    </g>
+    <g id="graph-arrows" inkscape:groupmode="layer" inkscape:label="Arrows" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="butt" marker-end="url(#arrowhead)">
+      <path d="M57.5 37L90.5 37"/>
+      <path d="M155.5 37L186.5 37"/>
+      <path d="M226 62.5L226 86.5"/>
+      <path d="M50.8772 108.8564L100.7589 63.5557"/>
+      <path d="M148.7001 54.3366L197.0332 99.1453"/>
+    </g>
+    <g id="plot-layer" inkscape:groupmode="layer" inkscape:label="Plot">
+    <g id="histogram" mask="url(#histogram-envelope)">
+      <rect x="55" y="162" width="17" height="16"/>
+      <rect x="79" y="131" width="19" height="47"/>
+      <rect x="105" y="97" width="19" height="81"/>
+      <rect x="131" y="80" width="20" height="98"/>
+      <rect x="158" y="132" width="19" height="46"/>
+      <rect x="184" y="162" width="18" height="16"/>
+    </g>
+    <path id="bell-curve" d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/>
+    </g>
+    <g id="text-layer" inkscape:groupmode="layer" inkscape:label="Text">
+    <g id="flat-script" fill="none" stroke="#ffffff" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 234C20 223 28 202 33 192M23 194C33 191 43 190 54 192M24 213L47 210"/>
+      <path d="M67 192C64 203 57 217 54 227Q52 233 60 229"/>
+      <path d="M90 211C80 202 67 223 73 229C79 235 88 219 91 211L85 226C82 234 91 229 96 225"/>
+      <path d="M113 196L104 220C98 236 111 230 119 223M101 208L124 205"/>
+    </g>
+    <g id="ppl-wordmark" fill-rule="evenodd">
+      <path d="M136 190H151C162 190 168 195 168 205C168 215 161 220 151 220H144V234H136ZM144 198V212H151C157 212 160 210 160 205C160 200 157 198 151 198Z"/>
+      <path d="M175 190H190C201 190 207 195 207 205C207 215 200 220 190 220H183V234H175ZM183 198V212H190C196 212 199 210 199 205C199 200 196 198 190 198Z"/>
+      <path d="M214 190H222V226H242V234H214Z"/>
+    </g>
+    </g>
+  </g>
+    <g id="outline-layer" inkscape:groupmode="layer" inkscape:label="Solid outlines" fill="#ffffff">
+      <use id="nodes-outline" href="#graph-nodes" filter="url(#inset-outline)"/>
+      <use id="arrows-outline" href="#graph-arrows" filter="url(#inset-outline)"/>
+      <use id="plot-outline" href="#plot-layer" filter="url(#inset-outline)"/>
+      <use id="text-outline" href="#text-layer" filter="url(#inset-outline)"/>
+    </g>
+  </g>
+</svg>

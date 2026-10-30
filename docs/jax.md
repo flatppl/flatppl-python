@@ -209,8 +209,9 @@ trigger compilation.
 
 ### Multivariate mixtures
 
-`ksuperpose` combines a family of distributions with nonnegative weights.
-`normalize` divides by their total weight. This example shares one covariance
+`ksuperpose` broadcasts the weights and parameters together, then adds the
+weighted distributions. `normalize` divides by the total broadcast weight.
+This example shares one covariance
 matrix between two Normal components and evaluates three points:
 
 ```{testcode}
@@ -220,9 +221,9 @@ from flatppl import flatppl
 
 mixture = flatppl(r"""
     weights = external(cartpow(nonnegreals, 2))
-    means = external(cartpow(reals, [2, 2]))
+    means = external(cartpow(cartpow(reals, 2), 2))
     covariances = [rowstack([[1.0, 0.0], [0.0, 1.0]])]
-    distribution = normalize(ksuperpose(MvNormal, weights)(mu = means, cov = covariances))
+    distribution = normalize(ksuperpose(MvNormal, weights, mu = means, cov = covariances))
     x = elementof(cartpow(reals, 2))
     inputs = (x, weights, means)
     outputs = logdensityof(distribution, x)
@@ -240,6 +241,8 @@ print(values.shape, gradients.shape)
 (3,) (3, 2)
 ```
 
+Each mean is one vector element in FlatPPL; Python still supplies a `(2, 2)`
+array. The length-one covariance collection shares its matrix across components.
 Each gradient is with respect to one two-dimensional point. Pass `argnums` to
 `jax.value_and_grad` to differentiate weights or means instead. The compiler maps
 one density body across components, preserving vector and matrix cells. This

@@ -77,7 +77,7 @@ def test_mixture_cells_preserve_shared_parameters_under_nested_maps() -> None:
         w = external(cartpow(posreals, 2))
         alpha = external(cartpow(cartpow(posreals, 3), 2))
         x = elementof(stdsimplex(3))
-        mixture = normalize(ksuperpose(Dirichlet, w)(alpha))
+        mixture = normalize(ksuperpose(Dirichlet, w, alpha))
         inputs = (w, alpha, x)
         outputs = logdensityof(mixture, x)
     """).compile()

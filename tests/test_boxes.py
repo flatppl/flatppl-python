@@ -240,3 +240,33 @@ def test_box_names_are_identifiers() -> None:
     assert (
         repr(Box("http://127.0.0.1:1/", "demo")) == "Box('http://127.0.0.1:1', 'demo')"
     )
+
+
+BOUNDARY = """a = elementof(reals)
+b = elementof(reals)
+t = [2.0 * a, exp(b)]
+u = logdensityof(bb.posterior, t) + bb.f([a, b, a * b])
+inputs = (a, b)
+outputs = u * b + sin(a)
+"""
+
+
+def boundary(a: jax.Array, b: jax.Array) -> jax.Array:
+    t = jnp.array([2.0 * a, jnp.exp(b)])
+    u = -0.5 * jnp.sum((t - 1.0) ** 2) + a**2 + b**2 + (a * b) ** 2
+    return u * b + jnp.sin(a)
+
+
+def test_gradients_cross_the_box_boundary(server: FakeBoxServer) -> None:
+    """Parameters feed the box and are reused after it."""
+    with jax.enable_x64():
+        query = model(BOUNDARY).compile(boxes=boxes(server), dtype="float64")
+        a, b = jnp.array(0.3), jnp.array(-0.7)
+        np.testing.assert_allclose(query(a, b), boundary(a, b), rtol=1e-12)
+        actual = jax.jit(jax.grad(query, argnums=(0, 1)))(a, b)
+        expected = jax.grad(boundary, argnums=(0, 1))(a, b)
+        np.testing.assert_allclose(actual, expected, rtol=1e-12)
+        points = (jnp.array([0.3, -1.2, 0.8]), jnp.array([-0.7, 0.4, 1.1]))
+        mapped = jax.jit(jax.vmap(jax.grad(query, argnums=(0, 1))))(*points)
+        wanted = jax.vmap(jax.grad(boundary, argnums=(0, 1)))(*points)
+        np.testing.assert_allclose(mapped, wanted, rtol=1e-12)

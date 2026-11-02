@@ -15,6 +15,7 @@ import numpy.typing as npt
 
 # The native module ships compiled in the wheel, with a stub in the source tree.
 from . import _native  # pyright: ignore[reportMissingModuleSource]
+from ._box import Box
 from ._frozen import freeze
 
 if TYPE_CHECKING:
@@ -103,7 +104,14 @@ def native_call[**P, T](
         raise CompilationError(json.loads(str(error))) from None
 
 
-type _ExportKey = tuple[str, bool, tuple[float, float, int] | None, str, Batch | None]
+type _ExportKey = tuple[
+    str,
+    bool,
+    tuple[float, float, int] | None,
+    str,
+    Batch | None,
+    tuple[tuple[str, str, str], ...],
+]
 
 
 @dataclass(frozen=True, repr=False)
@@ -880,6 +888,7 @@ class Module:
         integration: Integration | None = None,
         optimize_forward: bool = False,
         target: Literal["cpu", "gpu"] | None = None,
+        boxes: Mapping[str, Box] | None = None,
     ) -> CompiledFunction:
         """Compile the module's ``inputs`` and ``outputs`` into a JAX function.
 
@@ -900,6 +909,9 @@ class Module:
             target: The ``"cpu"`` or ``"gpu"`` lowering profile. The default
                 follows ``jax.default_backend()``. Both run on any backend and
                 give the same values.
+            boxes: Black boxes for the module's interface modules, keyed by
+                the ``load_module`` alias that loads each interface. Box
+                queries run on the box server. See :doc:`/boxes`.
 
         Returns:
             The compiled function.
@@ -934,8 +946,12 @@ class Module:
             else (integration.rtol, integration.atol, integration.max_intervals)
         )
 
+        from ._boxes import describe_bindings
+
+        bound = tuple(describe_bindings(boxes or {}))
+
         def export(batch: Batch | None = None) -> Export:
-            key = (dtype_name, autodiff, settings, target_name, batch)
+            key = (dtype_name, autodiff, settings, target_name, batch, bound)
             if key not in self._exports:
                 self._exports[key] = json.loads(
                     native_call(
@@ -945,6 +961,7 @@ class Module:
                         settings,
                         batch,
                         target_name,
+                        list(bound) or None,
                     )
                 )
             return self._exports[key]
@@ -960,6 +977,7 @@ class Module:
             export_batch=export_batch,
             optimize_forward=optimize_forward,
             gradient=self._gradient,
+            boxes=boxes,
         )
 
     def compile_transformed(

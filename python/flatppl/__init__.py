@@ -18,6 +18,7 @@ from ._api import (
     flatppl,
     load,
 )
+from ._box import Box, BoxError
 from ._constants import Fixed, Reference
 from ._graph import Graph
 from .formula import from_formula
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Binding",
+    "Box",
+    "BoxError",
     "CompilationError",
     "CompiledFunction",
     "Context",

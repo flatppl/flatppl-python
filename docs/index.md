@@ -61,6 +61,7 @@ inference
 modules
 values
 formula
+boxes
 jax
 integration
 api

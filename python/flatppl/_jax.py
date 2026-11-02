@@ -390,7 +390,12 @@ class CompiledFunction:
                 jnp.all(error != 6), "FlatPPL RNG seed is outside its valid range"
             )
             checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all((error >= 0) & (error <= 6)), "Unknown FlatPPL runtime error"
+                jnp.all(error != 7),
+                "FlatPPL categorical probabilities need finite, nonnegative values "
+                "with a positive total",
+            )
+            checkify.check(  # pyright: ignore[reportUnknownMemberType]
+                jnp.all((error >= 0) & (error <= 7)), "Unknown FlatPPL runtime error"
             )
         return _unpack(self.schema["output"], result)
 

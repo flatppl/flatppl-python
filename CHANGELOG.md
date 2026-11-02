@@ -5,6 +5,14 @@ tagged release.
 
 ## Unreleased
 
+### Added
+
+- `Module.compile(boxes=...)` binds black-box interface modules to
+  flatppl-bridge servers through `flatppl.Box`. Box queries run as
+  `jax.pure_callback` calls with custom derivatives, one broadcast request per
+  `jax.vmap` batch, per-row RNG states for sampling, and content-addressed
+  upload of large data. See the black-box guide.
+
 ### Changed
 
 - Python 3.15 is supported. Enzyme alpha 12 adds cp315 wheels for Linux

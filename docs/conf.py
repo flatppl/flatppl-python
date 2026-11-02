@@ -15,6 +15,15 @@ from sphinx_gallery.sorting import ExplicitOrder
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# XLA 1063956524 raised this threshold from 1024 to 1e9. XLA:CPU then compiles
+# a large while loop as one function, which triples the compile time of the
+# Belle II fit. jax.jit compiler_options cannot set it. See
+# https://github.com/openxla/xla/issues/52122.
+os.environ["XLA_FLAGS"] = (
+    os.environ.get("XLA_FLAGS", "")
+    + " --xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=1024"
+).strip()
+
 project = "FlatPPL for Python"
 release = importlib.metadata.version("flatppl")
 extensions = [

@@ -6,8 +6,8 @@ derivative rules for the imported program.
 
 ## Supported transformations
 
-The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.12` alpha wheels. See [installation](installation.md).
+The pinned dependency set is JAX/jaxlib 0.12.0.1 with our Enzyme
+`0.0.15+flatppl.13` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -139,7 +139,7 @@ Checks add no Python callbacks inside the compiled computation.
 Plain `jax.jit(select)` cannot stage an unhandled check. Queries without runtime
 checks keep their existing signature and need no `checkify` wrapper.
 
-JAX 0.11.2 cannot reduce errors from some empty nested maps when differentiation
+JAX 0.12.0.1 cannot reduce errors from some empty nested maps when differentiation
 encloses the map. Handle an empty batch before that composition, or map the
 differentiated function with `vmap(grad(function))`.
 
@@ -304,6 +304,13 @@ Sampling, data-dependent loops, and programs without a complete tensor batching
 path retain pointwise device loops. This fallback preserves each lane's semantics,
 including its RNG state. These cases can be slower than native JAX batching,
 especially on GPUs.
+
+## Compile large loops on CPU
+
+On CPU, if you wrap a large density in `jax.lax.scan` or `jax.lax.while_loop`,
+set `XLA_FLAGS=--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=1024`
+before JAX starts: JAX 0.12 can otherwise compile the loop many times slower,
+worst on x86 ([openxla/xla#52122](https://github.com/openxla/xla/issues/52122)).
 
 ## Shard calls across devices
 

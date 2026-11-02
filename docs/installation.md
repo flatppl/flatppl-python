@@ -5,14 +5,14 @@
 | Component | Qualified version or platform |
 | --- | --- |
 | Python | 3.12, 3.13, 3.14, 3.15 |
-| JAX and jaxlib | 0.11.2 |
-| Enzyme (`enzyme-ad`) | 0.0.15+flatppl.12, FlatPPL fork |
+| JAX and jaxlib | 0.12.0.1 |
+| Enzyme (`enzyme-ad`) | 0.0.15+flatppl.13, FlatPPL fork |
 | Linux x86-64 | glibc 2.35 or newer, such as Ubuntu 22.04 |
 | Linux ARM64 | glibc 2.28 or newer |
 | macOS | Apple silicon, macOS 14 or newer |
 
 The package pins JAX and Enzyme together. Enzyme wheels come from the
-[FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.12)
+[FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.13)
 and include shared forward work for values and gradients, stable real
 reciprocal-square-root derivatives, batching rules, and sharding support.
 Alpha 5 adds exact product-reduction derivatives at zero factors and
@@ -24,6 +24,7 @@ Alpha 9 fixes unsafe conversion folds and constant slice-index clamping on GPUs.
 Alpha 12 adds native matrix derivatives, preserves shared inputs during batching,
 and keeps broadcast residuals compact. Wheels also include Clang builtin headers
 for Enzyme's C++ interface.
+Alpha 13 requires JAX 0.12.0.1.
 These are alpha builds. Intel macOS and Windows are not packaged.
 Package metadata selects the Enzyme wheel by Python version and platform, with
 a pinned URL and SHA-256 hash. No separate constraints file is needed.
@@ -103,13 +104,13 @@ The adapter installs a prebuilt Enzyme wheel on that platform too.
 The A100 checks use JAX's CUDA 12 runtime:
 
 ```sh
-python -m pip install "jax[cuda12]==0.11.2"
+python -m pip install "jax[cuda12]==0.12.0.1"
 ```
 
 The GH200 ARM64 checks use CUDA 13:
 
 ```sh
-python -m pip install "jax[cuda13]==0.11.2"
+python -m pip install "jax[cuda13]==0.12.0.1"
 ```
 
 Follow the [JAX driver requirements](https://docs.jax.dev/en/latest/installation.html)

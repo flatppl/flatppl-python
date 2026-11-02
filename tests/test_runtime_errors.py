@@ -1,5 +1,7 @@
 """Device checks survive JAX transforms without accepting invalid query values."""
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -255,7 +257,7 @@ def test_mixture_sampling_checks_its_weights(lanes: str):
             state = rnginit(0)
             inputs = (state, w)
             outputs = rand({law}, state)
-        """).compile(autodiff=False)
+        """).compile(autodiff=False, checks="raise")
         checked = jax.jit(checkify.checkify(function))
         state = jnp.array([1729, 0], dtype=jnp.uint64)
         error, (value, _) = checked(state, jnp.array([0.0, 1.0], dtype=jnp.float32))
@@ -264,7 +266,194 @@ def test_mixture_sampling_checks_its_weights(lanes: str):
         assert np.all(np.asarray(value) > 0)
         for weights in ([0.0, 0.0], [-1.0, 2.0], [1.0, np.inf], [np.nan, 1.0]):
             error, _ = checked(state, jnp.array(weights, dtype=jnp.float32))
+            # Normalized weights are Categorical probabilities: a negative or
+            # infinite one is outside stdsimplex(n), a zero total is status 7.
             with pytest.raises(
-                checkify.JaxRuntimeError, match="categorical probabilities"
+                checkify.JaxRuntimeError,
+                match=r"categorical probabilities|outside its declared value set",
             ):
                 error.throw()
+
+
+def test_parameters_outside_their_sets_give_nan_by_default():
+    # Spec §08 declares sigma = elementof(posreals). By default a call outside the
+    # set returns NaN in the graph, so plain jax.jit needs no checkify.
+    function = flatppl("""
+        mu = external(reals)
+        sigma = external(reals)
+        x = external(reals)
+        inputs = (mu, sigma, x)
+        outputs = logdensityof(Normal(mu, sigma), x)
+    """).compile()
+    assert function.schema["runtime_status"]["codes"] == (9,)
+    value_and_grad = jax.jit(jax.value_and_grad(function, argnums=(0, 1)))
+    value, (d_mu, d_sigma) = value_and_grad(
+        jnp.float32(0.3), jnp.float32(1.2), jnp.float32(0.7)
+    )
+    # Independent closed form and its derivatives in mu and sigma.
+    z = (0.7 - 0.3) / 1.2
+    np.testing.assert_allclose(
+        value, -np.log(1.2) - 0.5 * np.log(2 * np.pi) - 0.5 * z * z, rtol=1e-6
+    )
+    np.testing.assert_allclose(d_mu, z / 1.2, rtol=1e-5)
+    np.testing.assert_allclose(d_sigma, (z * z - 1) / 1.2, rtol=1e-5)
+    for sigma in (0.0, -1.0):
+        value, _ = value_and_grad(
+            jnp.float32(0.3), jnp.float32(sigma), jnp.float32(0.7)
+        )
+        assert np.isnan(value)
+    mapped = jax.jit(jax.vmap(function, in_axes=(None, 0, None)))
+    values = mapped(
+        jnp.float32(0.3), jnp.array([1.2, -1.0], jnp.float32), jnp.float32(0.7)
+    )
+    assert np.isfinite(values[0]) and np.isnan(values[1])
+
+
+def test_other_checks_still_raise_by_default():
+    function = flatppl("""
+        sigma = external(reals)
+        k = external(integers)
+        w = external(cartpow(reals, 3))
+        inputs = (sigma, k, w)
+        outputs = logdensityof(Normal(0.0, sigma), get(w, k))
+    """).compile()
+    assert function.schema["runtime_status"]["codes"] == (1, 9)
+    checked = jax.jit(checkify.checkify(function))
+    point = jnp.array([0.1, 0.2, 0.3], dtype=jnp.float32)
+    error, value = checked(jnp.float32(-1.0), jnp.int32(2), point)
+    error.throw()
+    assert np.isnan(value)
+    error, _ = checked(jnp.float32(1.0), jnp.int32(4), point)
+    with pytest.raises(checkify.JaxRuntimeError, match="index out of range"):
+        error.throw()
+
+
+def test_raise_mode_reports_parameters_outside_their_sets():
+    # Spec §08 declares each parameter's value set, e.g. sigma = elementof(posreals).
+    function = flatppl("""
+        mu = external(reals)
+        sigma = external(reals)
+        x = external(reals)
+        inputs = (mu, sigma, x)
+        outputs = logdensityof(Normal(mu, sigma), x)
+    """).compile(checks="raise")
+    assert "runtime_status" in function.schema
+    checked = jax.jit(checkify.checkify(jax.value_and_grad(function, argnums=(0, 1))))
+    error, (value, (d_mu, d_sigma)) = checked(
+        jnp.float32(0.3), jnp.float32(1.2), jnp.float32(0.7)
+    )
+    error.throw()
+    # Independent closed form and its derivatives in mu and sigma.
+    z = (0.7 - 0.3) / 1.2
+    np.testing.assert_allclose(
+        value, -np.log(1.2) - 0.5 * np.log(2 * np.pi) - 0.5 * z * z, rtol=1e-6
+    )
+    np.testing.assert_allclose(d_mu, z / 1.2, rtol=1e-5)
+    np.testing.assert_allclose(d_sigma, (z * z - 1) / 1.2, rtol=1e-5)
+    for sigma in (0.0, -1.0):
+        error, _ = checked(jnp.float32(0.3), jnp.float32(sigma), jnp.float32(0.7))
+        with pytest.raises(
+            checkify.JaxRuntimeError, match="outside its declared value set"
+        ):
+            error.throw()
+    # NaN propagates without an error.
+    error, (value, _) = checked(jnp.float32(0.3), jnp.float32(np.nan), jnp.float32(0.7))
+    error.throw()
+    assert np.isnan(value)
+
+
+@pytest.mark.parametrize(
+    ("law", "variate", "valid", "invalid", "expected"),
+    [
+        ("Poisson(a)", "3", [2.5], [[-0.5]], 3 * np.log(2.5) - 2.5 - np.log(6)),
+        ("Bernoulli(a)", "1", [0.25], [[1.5], [-0.25]], np.log(0.25)),
+        (
+            "Categorical(v)",
+            "2",
+            [0.2, 0.3, 0.5],
+            [[0.5, 0.6, 0.1], [-0.2, 0.7, 0.5]],
+            np.log(0.3),
+        ),
+    ],
+    ids=["poisson", "bernoulli", "categorical"],
+)
+def test_vector_and_scalar_sets_match_oracles_and_raise(
+    law: str,
+    variate: str,
+    valid: list[float],
+    invalid: list[list[float]],
+    expected: float,
+):
+    declaration = (
+        "v = external(cartpow(reals, 3))" if "v" in law else "a = external(reals)"
+    )
+    name = "v" if "v" in law else "a"
+    function = flatppl(f"""
+        {declaration}
+        inputs = {name}
+        outputs = logdensityof({law}, {variate})
+    """).compile(autodiff=False, checks="raise")
+    checked = jax.jit(checkify.checkify(function))
+
+    def point(values: list[float]) -> jax.Array:
+        array = jnp.array(values, dtype=jnp.float32)
+        return array if name == "v" else array[0]
+
+    error, value = checked(point(valid))
+    error.throw()
+    np.testing.assert_allclose(value, expected, rtol=1e-6)
+    for values in invalid:
+        error, _ = checked(point(values))
+        with pytest.raises(
+            checkify.JaxRuntimeError, match="outside its declared value set"
+        ):
+            error.throw()
+    default = jax.jit(
+        flatppl(f"""
+        {declaration}
+        inputs = {name}
+        outputs = logdensityof({law}, {variate})
+    """).compile(autodiff=False)
+    )
+    np.testing.assert_allclose(default(point(valid)), expected, rtol=1e-6)
+    for values in invalid:
+        assert np.isnan(default(point(values)))
+
+
+def test_transforms_that_guarantee_the_set_add_no_check():
+    function = flatppl("""
+        a = external(reals)
+        x = external(reals)
+        inputs = (a, x)
+        outputs = logdensityof(Normal(0.0, exp(a)), x)
+    """).compile()
+    assert "runtime_status" not in function.schema
+
+
+def test_random_walk_rejects_proposals_outside_a_parameter_set():
+    import blackjax
+
+    function = flatppl("""
+        s = external(reals)
+        inputs = s
+        outputs = logdensityof(Normal(0.0, s), 0.3) + logdensityof(Normal(1.0, 1.0), s)
+    """).compile()
+    kernel = blackjax.additive_step_random_walk(
+        function, blackjax.mcmc.random_walk.normal(jnp.float32(1.5))
+    )
+    state = kernel.init(jnp.float32(0.5))
+
+    def step(state: Any, key: jax.Array) -> tuple[Any, Any]:
+        state, info = kernel.step(key, state)
+        return state, (state.position, info.acceptance_rate, info.is_accepted)
+
+    keys = jax.random.split(jax.random.key(0), 400)
+    _, (positions, rates, accepted) = jax.jit(lambda s: jax.lax.scan(step, s, keys))(
+        state
+    )
+    # Every s > 0 has positive density, so only a NaN proposal (s <= 0) has a
+    # zero acceptance probability.
+    outside = np.asarray(rates) == 0
+    assert outside.sum() > 0
+    assert not np.any(np.asarray(accepted)[outside])
+    assert np.all(np.asarray(positions) > 0)

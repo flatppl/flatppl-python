@@ -19,6 +19,13 @@ tagged release.
   x86-64, Linux ARM64 and Apple silicon macOS.
 - Mixtures now use `ksuperpose(K, weights, parameters...)`. Weights and
   parameters broadcast together; vector-valued parameters use nested vectors.
+- The bundled compiler checks distribution parameters against the value sets
+  the spec declares, such as `sigma = elementof(posreals)`. By default
+  (`compile(checks="nan")`) a call with a parameter outside its set returns NaN
+  results, needs no `checkify`, and an MCMC sampler rejects it as a proposal.
+  `compile(checks="raise")` reports it through `checkify` instead. NaN
+  parameters propagate. A constant, or a parameter that a transform such as
+  `exp` keeps in its set, needs no runtime check.
 - The bundled compiler samples `ksuperpose` mixtures directly. A `Categorical`
   sample with runtime probabilities, including a mixture's normalized weights,
   reports a device error for a negative or non-finite value or a zero total.

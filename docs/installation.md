@@ -153,7 +153,7 @@ git clone https://github.com/flatppl/flatppl-python.git
 cd flatppl-python
 python3.14 -m venv .venv
 . .venv/bin/activate
-python -m pip install "maturin==1.15.0"
+python -m pip install "maturin==1.16.0"
 maturin build --release --locked --interpreter python --out dist
 python -m pip install -r requirements.txt
 ```

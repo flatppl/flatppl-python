@@ -15,6 +15,8 @@ tagged release.
 
 ### Changed
 
+- JAX and jaxlib move to 0.12.0.1 with Enzyme alpha 13. Alpha 13 changes
+  only the JAX requirement of the alpha 12 wheels.
 - Python 3.15 is supported. Enzyme alpha 12 adds cp315 wheels for Linux
   x86-64, Linux ARM64 and Apple silicon macOS.
 - Mixtures now use `ksuperpose(K, weights, parameters...)`. Weights and
@@ -207,7 +209,7 @@ tagged release.
 
 ### Known limitations
 
-- JAX 0.11.2 and jaxlib 0.11.2 leak Unknown types into pyright through bare
+- JAX 0.12.0.1 and jaxlib 0.12.0.1 leak Unknown types into pyright through bare
   `Callable` parameters and the stubless `_jax` extension. Tests and examples
   turn off `reportUnknownMemberType`, `reportUnknownArgumentType`,
   `reportUnknownVariableType` and `reportUnknownLambdaType`, and the package

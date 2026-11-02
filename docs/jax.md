@@ -6,8 +6,8 @@ derivative rules for the imported program.
 
 ## Supported transformations
 
-The pinned dependency set is JAX/jaxlib 0.11.2 with our Enzyme
-`0.0.15+flatppl.12` alpha wheels. See [installation](installation.md).
+The pinned dependency set is JAX/jaxlib 0.12.0.1 with our Enzyme
+`0.0.15+flatppl.13` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -139,7 +139,7 @@ Checks add no Python callbacks inside the compiled computation.
 Plain `jax.jit(select)` cannot stage an unhandled check. Queries without runtime
 checks keep their existing signature and need no `checkify` wrapper.
 
-JAX 0.11.2 cannot reduce errors from some empty nested maps when differentiation
+JAX 0.12.0.1 cannot reduce errors from some empty nested maps when differentiation
 encloses the map. Handle an empty batch before that composition, or map the
 differentiated function with `vmap(grad(function))`.
 

@@ -50,10 +50,10 @@ def test_forward_optimization_preserves_values_and_shared_derivatives() -> None:
     np.testing.assert_allclose(function(x), module.compile()(x), rtol=2e-6)
     value, tangent = jax.jit(lambda x: jax.jvp(function, (x,), (jnp.float32(1),)))(x)
     np.testing.assert_allclose(
-        [value, tangent], [expected, 2 * x * expected], rtol=2e-6
+        [value, tangent], [expected, 2 * float(x) * expected], rtol=2e-6
     )
     joint = jax.jit(jax.value_and_grad(function)).lower(x).compile()
-    np.testing.assert_allclose(joint(x), [expected, 2 * x * expected], rtol=2e-6)
+    np.testing.assert_allclose(joint(x), [expected, 2 * float(x) * expected], rtol=2e-6)
     text = joint.as_text()
     assert text is not None
     assert len(re.findall(r"\bexponential\(", text)) == 1

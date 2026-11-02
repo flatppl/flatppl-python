@@ -243,3 +243,28 @@ def test_rnginit_checks_seed_range_and_preserves_integer_byte_equivalence(
             error, _ = checked(jnp.asarray(seed, dtype=jnp.int32))
             with pytest.raises(checkify.JaxRuntimeError, match="RNG seed"):
                 error.throw()
+
+
+@pytest.mark.parametrize("lanes", ["", ", 4"], ids=["single", "iid"])
+def test_mixture_sampling_checks_its_weights(lanes: str):
+    law = "normalize(ksuperpose(Normal, w, mu = [-3.0, 3.0], sigma = 1.0))"
+    law = f"iid({law}{lanes})" if lanes else law
+    with jax.enable_x64():
+        function = flatppl(f"""
+            w = external(cartpow(reals, 2))
+            state = rnginit(0)
+            inputs = (state, w)
+            outputs = rand({law}, state)
+        """).compile(autodiff=False)
+        checked = jax.jit(checkify.checkify(function))
+        state = jnp.array([1729, 0], dtype=jnp.uint64)
+        error, (value, _) = checked(state, jnp.array([0.0, 1.0], dtype=jnp.float32))
+        error.throw()
+        # A zero weight never selects its component.
+        assert np.all(np.asarray(value) > 0)
+        for weights in ([0.0, 0.0], [-1.0, 2.0], [1.0, np.inf], [np.nan, 1.0]):
+            error, _ = checked(state, jnp.array(weights, dtype=jnp.float32))
+            with pytest.raises(
+                checkify.JaxRuntimeError, match="categorical probabilities"
+            ):
+                error.throw()

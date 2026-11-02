@@ -9,6 +9,10 @@ tagged release.
 
 - Mixtures now use `ksuperpose(K, weights, parameters...)`. Weights and
   parameters broadcast together; vector-valued parameters use nested vectors.
+- The bundled compiler samples `ksuperpose` mixtures directly. A `Categorical`
+  sample with runtime probabilities, including a mixture's normalized weights,
+  reports a device error for a negative or non-finite value or a zero total.
+  Staged calls need JAX `checkify.checkify`.
 - Enzyme alpha 12 adds native matrix derivatives and preserves shared work in
   batched calls and pullbacks. Its wheels include Clang builtin headers.
 - The bundled compiler passes record elements whole to `scan`, `kscan` and

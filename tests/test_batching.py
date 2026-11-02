@@ -478,3 +478,27 @@ def test_vectorized_blackjax_steps_match_native_density() -> None:
 
     for actual, expected in zip(run(density), run(lambda x: -0.5 * x * x), strict=True):
         np.testing.assert_allclose(actual, expected, rtol=3e-6, atol=3e-6)
+
+
+def test_mapped_mixture_sampling_preserves_each_lane() -> None:
+    with jax.enable_x64():
+        draw = flatppl("""
+            w = external(cartpow(nonnegreals, 2))
+            state = rnginit(0)
+            inputs = (state, w)
+            outputs = rand(iid(normalize(ksuperpose(Normal, w, mu = [-3.0, 3.0], sigma = 1.0)), 5), state)
+        """).compile(autodiff=False)
+        state = jnp.array([1729, 0], dtype=jnp.uint64)
+        weights = jnp.array([[1.0, 0.0], [0.0, 1.0], [1.0, 3.0]], dtype=jnp.float32)
+        # The runtime weight check needs checkify under jit.
+        checked = jax.jit(checkify.checkify(jax.vmap(draw, in_axes=(None, 0))))
+        error, actual = checked(state, weights)
+        error.throw()
+        assert actual[0].shape == (3, 5)
+        per_lane = [draw(state, w) for w in weights]
+        expected = jax.tree.map(lambda *xs: jnp.stack(xs), *per_lane)
+        np.testing.assert_allclose(actual[0], expected[0], rtol=1e-6)
+        np.testing.assert_array_equal(actual[1], expected[1])
+        # Single-component weights select that component in every lane.
+        assert np.all(np.asarray(actual[0][0]) < 0)
+        assert np.all(np.asarray(actual[0][1]) > 0)

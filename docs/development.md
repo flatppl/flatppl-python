@@ -81,8 +81,8 @@ also execute the Normal and regression sampling scripts.
 
 CI builds the HTML with the executed gallery from the Linux x86-64 Python 3.14
 wheel that the same run built. It executes the documentation examples against
-the Linux x86-64 wheels for Python 3.12–3.14. The package's full runtime tests
-run on Python 3.12–3.14 for both wheel targets.
+the Linux x86-64 wheels for Python 3.12–3.15. The package's full runtime tests
+run on Python 3.12–3.15 for both wheel targets.
 After all checks pass on `main`, CI publishes the rendered site to
 [GitHub Pages](https://flatppl.org/flatppl-python/).
 Pull requests build the site and upload a preview artifact without deploying.

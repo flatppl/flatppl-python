@@ -30,7 +30,7 @@ type Batch = tuple[tuple[int, ...], Axes]
 type ExportBatch = Callable[[tuple[int, ...], Axes], Export]
 type _Call = Callable[..., tuple[jax.Array, ...]]
 
-# JAX 0.11.2 types its transforms with a bare Callable, and jaxlib 0.11.2 ships
+# JAX 0.12.0.1 types its transforms with a bare Callable, and jaxlib 0.12.0.1 ships
 # no stub for Device, so pyright sees Unknown at the JAX calls marked in this
 # module. Retry without the ignores after each JAX bump.
 
@@ -207,9 +207,9 @@ def _compiled_call(
             result = specialize((size, *shape), axes)(*args)
             return result, tuple(True for _ in result)
 
-        call = jax.custom_jvp(mapped)  # pyright: ignore[reportUnknownVariableType]
+        call = jax.custom_jvp(mapped)
 
-        @partial(call.defjvp, symbolic_zeros=True)  # pyright: ignore[reportUnknownMemberType]
+        @partial(call.defjvp, symbolic_zeros=True)
         def derivative(
             primals: tuple[jax.Array, ...], tangents: tuple[Any, ...]
         ) -> tuple[tuple[jax.Array, ...], tuple[jax.Array | NDArray[np.void], ...]]:

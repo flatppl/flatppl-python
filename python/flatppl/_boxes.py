@@ -22,9 +22,12 @@ from enzyme_ad.jax import hlo_call
 from jax.interpreters import mlir
 from numpy.typing import NDArray
 
-from ._box import Box
+from ._box import Box, describe_json
+from ._box import query as send
 
 TARGET = "flatppl.box"
+# jaxlib's MLIR bindings ship no stubs, so they are typed as Any here.
+ir: Any = mlir.ir
 _SSA = re.compile(r"%[\w$.\-]+(?:#\d+)?")
 
 type _Call = Callable[..., tuple[jax.Array, ...]]
@@ -120,11 +123,11 @@ def _shape(type_text: str) -> tuple[tuple[int, ...], np.dtype[Any]]:
 
 
 def _string(attribute: Any) -> str:
-    return mlir.ir.StringAttr(attribute).value
+    return ir.StringAttr(attribute).value
 
 
 def _query_of(op: Any, boxes: Mapping[str, Box]) -> _Query:
-    config = mlir.ir.DictAttr(op.attributes["backend_config"])
+    config = ir.DictAttr(op.attributes["backend_config"])
     name = _string(config["box"])
     box = next((b for b in boxes.values() if b.name == name), None)
     if box is None:
@@ -135,11 +138,11 @@ def _query_of(op: Any, boxes: Mapping[str, Box]) -> _Query:
     shapes = tuple(_shape(str(v.type)) for v in op.operands)
     rng = operation == "sample"
     first = 1 if rng else 0
-    arguments = []
-    for attribute in mlir.ir.ArrayAttr(config["arguments"]):
-        entry = mlir.ir.DictAttr(attribute)
+    arguments: list[_Argument] = []
+    for attribute in ir.ArrayAttr(config["arguments"]):
+        entry = ir.DictAttr(attribute)
         fields = (
-            tuple(_string(f) for f in mlir.ir.ArrayAttr(entry["fields"]))
+            tuple(_string(f) for f in ir.ArrayAttr(entry["fields"]))
             if "fields" in entry
             else None
         )
@@ -148,15 +151,16 @@ def _query_of(op: Any, boxes: Mapping[str, Box]) -> _Query:
             _Argument(
                 name=_string(entry["name"]),
                 valueset=_string(entry["valueset"]),
-                rowwise=mlir.ir.BoolAttr(entry["rowwise"]).value,
+                rowwise=ir.BoolAttr(entry["rowwise"]).value,
                 fields=fields,
                 leaves=tuple(range(first, first + count)),
             )
         )
         first += count
-    integers = lambda key: tuple(  # noqa: E731
-        mlir.ir.IntegerAttr(i).value for i in mlir.ir.ArrayAttr(config[key])
-    )
+
+    def integers(key: str) -> tuple[int, ...]:
+        return tuple(int(ir.IntegerAttr(i).value) for i in ir.ArrayAttr(config[key]))
+
     (result_shape, result_dtype) = _shape(str(op.results[0].type))
     return _Query(
         box=box,
@@ -211,7 +215,7 @@ def _request(
         ]
         varies = any(any(d != 1 for d in leaf.shape[: len(batch)]) for leaf in leaves)
         if broadcast and (argument.rowwise or varies or every_row):
-            per_row = []
+            per_row: list[NDArray[Any]] = []
             for leaf, cell in zip(leaves, cells, strict=True):
                 lead = leaf.shape[: len(batch)]
                 inner = leaf.shape[len(batch) :]
@@ -270,7 +274,7 @@ def _request(
         )
     lines.append(f"result = {term}")
     options = None if derivative is None else {"derivative": derivative}
-    reply = query.box._query("\n".join(lines) + "\n", parts, options)
+    reply = send(query.box, "\n".join(lines) + "\n", parts, options)
     return reply, rows
 
 
@@ -375,8 +379,11 @@ def _box_function(query: _Query) -> Callable[..., jax.Array]:
     result = jax.ShapeDtypeStruct(query.result_shape, query.result_dtype)
 
     def forward(*operands: jax.Array) -> jax.Array:
+        def host(*xs: Any) -> NDArray[Any]:
+            return _forward(query, *(np.asarray(x) for x in xs))
+
         return jax.pure_callback(  # pyright: ignore[reportUnknownMemberType]
-            lambda *xs: _forward(query, *map(np.asarray, xs)),
+            host,
             result,
             *operands,
             vmap_method="expand_dims",
@@ -409,8 +416,12 @@ def _box_function(query: _Query) -> Callable[..., jax.Array]:
             jax.ShapeDtypeStruct(s, d)
             for s, d in zip(query.operand_shapes, query.operand_dtypes, strict=True)
         )
+
+        def host(ct: Any, *xs: Any) -> tuple[NDArray[Any], ...]:
+            return _backward(query, np.asarray(ct), *(np.asarray(x) for x in xs))
+
         derivatives = jax.pure_callback(  # pyright: ignore[reportUnknownMemberType]
-            lambda ct, *xs: _backward(query, np.asarray(ct), *map(np.asarray, xs)),
+            host,
             shapes,
             cotangent,
             *operands,
@@ -423,8 +434,8 @@ def _box_function(query: _Query) -> Callable[..., jax.Array]:
             for i, d in enumerate(derivatives)
         )
 
-    call.defvjp(call_fwd, call_bwd)
-    return call
+    call.defvjp(call_fwd, call_bwd)  # pyright: ignore[reportUnknownMemberType]
+    return cast(Callable[..., jax.Array], call)
 
 
 # ---- the program -----------------------------------------------------------
@@ -456,18 +467,18 @@ def program(source: str, boxes: Mapping[str, Box]) -> _Call:
     batches the whole program, the box calls through their own rules.
     """
     with mlir.make_ir_context():
-        module = mlir.ir.Module.parse(source)
-        main = None
+        module: Any = ir.Module.parse(source)
+        main: Any = None
         others: list[str] = []
         for op in module.body.operations:
-            if mlir.ir.StringAttr(op.attributes["sym_name"]).value == "main":
+            if ir.StringAttr(op.attributes["sym_name"]).value == "main":
                 main = op
             else:
                 others.append(str(op))
         if main is None:
             raise ValueError("box program has no @main")
         block = main.regions[0].blocks[0]
-        state = mlir.ir.AsmState(main)
+        state = ir.AsmState(main)
         arguments = tuple(a.get_name(state) for a in block.arguments)
         types: dict[str, str] = {
             a.get_name(state): str(a.type) for a in block.arguments
@@ -484,8 +495,7 @@ def program(source: str, boxes: Mapping[str, Box]) -> _Call:
                 returned = tuple(v.get_name(state) for v in operation.operands)
                 continue
             if operation.name == "stablehlo.custom_call" and (
-                mlir.ir.StringAttr(operation.attributes["call_target_name"]).value
-                == TARGET
+                ir.StringAttr(operation.attributes["call_target_name"]).value == TARGET
             ):
                 if pending:
                     steps.append(_seal(pending))
@@ -603,9 +613,9 @@ def _render(
 
 def describe_bindings(boxes: Mapping[str, Box]) -> list[tuple[str, str, str]]:
     """The ``(alias, box, describe JSON)`` triples the compiler takes."""
-    out = []
+    out: list[tuple[str, str, str]] = []
     for alias, box in boxes.items():
         if not isinstance(box, Box):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError(f"boxes[{alias!r}] must be a flatppl.Box")
-        out.append((alias, box.name, box._describe_json()))
+        out.append((alias, box.name, describe_json(box)))
     return out

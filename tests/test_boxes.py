@@ -76,14 +76,18 @@ def test_an_hmc_style_gradient_loop_runs_under_jit(server: FakeBoxServer) -> Non
     with jax.enable_x64():
         density = model(POSTERIOR).compile(boxes=boxes(server), dtype="float64")
 
-        def leapfrog(state: tuple[jax.Array, jax.Array], _: None):
+        def leapfrog(
+            state: tuple[jax.Array, jax.Array], _: None
+        ) -> tuple[tuple[jax.Array, jax.Array], jax.Array]:
             q, p = state
             p = p + 0.05 * jax.grad(density)(q)
             q = q + 0.1 * p
             p = p + 0.05 * jax.grad(density)(q)
             return (q, p), density(q)
 
-        def expected(state: tuple[jax.Array, jax.Array], _: None):
+        def expected(
+            state: tuple[jax.Array, jax.Array], _: None
+        ) -> tuple[tuple[jax.Array, jax.Array], jax.Array]:
             q, p = state
             p = p + 0.05 * jax.grad(reference)(q)
             q = q + 0.1 * p

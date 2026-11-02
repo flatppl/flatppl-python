@@ -134,7 +134,7 @@ class FakeBoxServer:
         server = self
 
         class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args: Any) -> None:
+            def log_message(self, format: str, *args: Any) -> None:
                 pass
 
             def _send(self, status: int, body: bytes, content_type: str) -> None:
@@ -194,12 +194,12 @@ class FakeBoxServer:
                     + b"\r\n\r\n"
                     + body
                 )
-                parts = {
-                    p.get_param("name", header="content-disposition"): p.get_payload(
-                        decode=True
-                    )
-                    for p in message.iter_parts()
-                }
+                parts: dict[str, bytes] = {}
+                for p in message.iter_parts():
+                    name = p.get_param("name", header="content-disposition")
+                    payload = p.get_payload(decode=True)
+                    if isinstance(name, str) and isinstance(payload, bytes):
+                        parts[name] = payload
                 try:
                     reply = server.answer(parts)
                 except Problem as problem:
@@ -288,7 +288,7 @@ class FakeBoxServer:
             member, names = rest[0][2:], rest[1:]
         sizes = tuple(int(n) for n in names if n.isdigit())
         names = [n for n in names if not n.isdigit()]
-        values = {n: self._value(*data[n], broadcast) for n in names}
+        values = {n: self._value(data[n][0], data[n][1], broadcast) for n in names}
         rows = None
         if broadcast:
             rows = max(
@@ -315,9 +315,20 @@ class FakeBoxServer:
             return column
         return column[0]
 
-    def _evaluate(self, callee, member, values, sizes, seeds, rows, options, data):
+    def _evaluate(
+        self,
+        callee: str,
+        member: str,
+        values: dict[str, Any],
+        sizes: tuple[int, ...],
+        seeds: list[bytes],
+        rows: int | None,
+        options: dict[str, Any],
+        data: dict[str, Any],
+    ) -> dict[str, bytes]:
         derivative = options.get("derivative")
         out: dict[str, bytes] = {}
+        grads: dict[str, Any] = {}
         if callee == "builtin_sample":
             draws = []
             for i, seed in enumerate(seeds):

@@ -4,7 +4,7 @@
 
 | Component | Qualified version or platform |
 | --- | --- |
-| Python | 3.12, 3.13, 3.14 |
+| Python | 3.12, 3.13, 3.14, 3.15 |
 | JAX and jaxlib | 0.11.2 |
 | Enzyme (`enzyme-ad`) | 0.0.15+flatppl.12, FlatPPL fork |
 | Linux x86-64 | glibc 2.35 or newer, such as Ubuntu 22.04 |
@@ -88,8 +88,8 @@ python -m pip install -r requirements.txt
 | Linux x86-64 | `flatppl-python-ubuntu-24.04-py3.14` |
 | macOS ARM64 | `flatppl-python-macos-26-py3.14` |
 
-The table shows Python 3.14 artifacts. Choose the corresponding `py3.12` or
-`py3.13` artifact when using either earlier supported version.
+The table shows Python 3.14 artifacts. Choose the corresponding `py3.12`,
+`py3.13` or `py3.15` artifact for another supported version.
 
 Keep the extracted files together. The requirements file selects the local
 FlatPPL wheel, whose metadata supplies all runtime dependencies.

@@ -7,6 +7,8 @@ tagged release.
 
 ### Changed
 
+- Python 3.15 is supported. Enzyme alpha 12 adds cp315 wheels for Linux
+  x86-64, Linux ARM64 and Apple silicon macOS.
 - Mixtures now use `ksuperpose(K, weights, parameters...)`. Weights and
   parameters broadcast together; vector-valued parameters use nested vectors.
 - Enzyme alpha 12 adds native matrix derivatives and preserves shared work in

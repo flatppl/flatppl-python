@@ -18,8 +18,9 @@ arviz>=1.0
 optimistix>=0.0.10
 # Minuit(grad=, name=), minos and merrors of the iminuit 2 API.
 iminuit>=2
-# The first release that accepts ArviZ 1.
-nutpie>=0.16.9
+# The first release that accepts ArviZ 1. Nutpie has no Python 3.15 wheels and
+# its source build fails. Only the gallery imports it, and the gallery runs on 3.14.
+nutpie>=0.16.9 ; python_version < "3.15"
 # The interaction pages. Lower bounds name what each page needs.
 # Writing hist objects to ROOT files and to_hist() on reading.
 uproot>=5

@@ -32,7 +32,7 @@ complete four-chain workflow, diagnostics and prediction. The
 Models and queries use the same `Module` type. You choose their names and roles.
 Use `query.compile()` when you want the declared, constrained input interface.
 
-The alpha package supports Python 3.12–3.14 on Linux x86-64 and Apple silicon macOS.
+The alpha package supports Python 3.12–3.15 on Linux x86-64 and Apple silicon macOS.
 See [installation](installation.md) for the exact platform requirements and
 [JAX support](jax.md#supported-transformations) for differentiation limits.
 

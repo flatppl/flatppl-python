@@ -214,3 +214,7 @@ tagged release.
   turn off `reportUnknownMemberType`, `reportUnknownArgumentType`,
   `reportUnknownVariableType` and `reportUnknownLambdaType`, and the package
   marks its JAX call sites. The next JAX update should retry the full set.
+- JAX 0.12's XLA:CPU compiles large while loops several times slower
+  ([openxla/xla#52122](https://github.com/openxla/xla/issues/52122)). The
+  documentation build restores the earlier threshold through `XLA_FLAGS`, and
+  the JAX guide shows users the same flag.

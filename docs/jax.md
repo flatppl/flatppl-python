@@ -305,6 +305,13 @@ path retain pointwise device loops. This fallback preserves each lane's semantic
 including its RNG state. These cases can be slower than native JAX batching,
 especially on GPUs.
 
+## Compile large loops on CPU
+
+On CPU, if you wrap a large density in `jax.lax.scan` or `jax.lax.while_loop`,
+set `XLA_FLAGS=--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=1024`
+before JAX starts: JAX 0.12 can otherwise compile the loop many times slower,
+worst on x86 ([openxla/xla#52122](https://github.com/openxla/xla/issues/52122)).
+
 ## Shard calls across devices
 
 Use [JAX sharding](https://docs.jax.dev/en/latest/201/sharding.html) to choose

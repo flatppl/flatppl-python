@@ -22,7 +22,7 @@ jobs:
         os: [ubuntu-24.04, macos-26]
         python: ["3.12", "3.13", "3.14", "3.15"]
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
@@ -101,8 +101,8 @@ jobs:
     needs: wheel
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           repository: flatppl/flatppl-examples
           ref: 4e3fa5570e6ce095c58817c1174cb60a9789eb30

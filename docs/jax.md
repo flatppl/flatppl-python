@@ -347,6 +347,11 @@ set `XLA_FLAGS=--xla_backend_extra_options=xla_cpu_small_while_loop_byte_thresho
 before JAX starts: JAX 0.12 can otherwise compile the loop many times slower,
 worst on x86 ([openxla/xla#52122](https://github.com/openxla/xla/issues/52122)).
 
+Batched mixtures over small matrices can run faster on CPU, notably x86, with
+`XLA_FLAGS=--xla_cpu_experimental_ynn_fusion_type=-reduce`. The flag is
+experimental and affects the whole process, so measure your workload before you
+keep it.
+
 ## Shard calls across devices
 
 Use [JAX sharding](https://docs.jax.dev/en/latest/201/sharding.html) to choose

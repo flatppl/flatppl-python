@@ -889,6 +889,7 @@ class Module:
         optimize_forward: bool = False,
         target: Literal["cpu", "gpu"] | None = None,
         boxes: Mapping[str, Box] | None = None,
+        checks: Literal["nan", "raise"] = "nan",
     ) -> CompiledFunction:
         """Compile the module's ``inputs`` and ``outputs`` into a JAX function.
 
@@ -912,6 +913,13 @@ class Module:
             boxes: Black boxes for the module's interface modules, keyed by
                 the ``load_module`` alias that loads each interface. Box
                 queries run on the box server. See :doc:`/boxes`.
+            checks: How a distribution parameter outside its declared value
+                set, such as ``sigma <= 0`` for ``Normal``, reports. ``"nan"``
+                makes that call's floating-point results NaN, needs no
+                ``checkify``, and lets a sampler reject the point. ``"raise"``
+                reports it through ``checkify`` like the other runtime checks.
+                Index, solve and seed checks raise in both modes. See
+                :doc:`/jax`.
 
         Returns:
             The compiled function.
@@ -919,7 +927,8 @@ class Module:
         Raises:
             CompilationError: The module does not lower to a query.
             TypeError: ``integration`` is not an :class:`Integration`.
-            ValueError: The dtype is unsupported or needs JAX x64.
+            ValueError: The dtype is unsupported or needs JAX x64, or
+                ``checks`` is neither ``"nan"`` nor ``"raise"``.
 
         Example:
             >>> import jax
@@ -978,6 +987,7 @@ class Module:
             optimize_forward=optimize_forward,
             gradient=self._gradient,
             boxes=boxes,
+            checks=checks,
         )
 
     def compile_transformed(
@@ -989,6 +999,7 @@ class Module:
         integration: Integration | None = None,
         optimize_forward: bool = False,
         target: Literal["cpu", "gpu"] | None = None,
+        checks: Literal["nan", "raise"] = "nan",
     ) -> TransformedFunction:
         """Compile a query and canonical coordinate wrappers for its input.
 
@@ -1007,6 +1018,7 @@ class Module:
             integration: Numerical integration settings, as in :meth:`compile`.
             optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
             target: Lowering profile, as in :meth:`compile`.
+            checks: Parameter value-set reporting, as in :meth:`compile`.
 
         Returns:
             The original query, the unconstrained query, and both coordinate
@@ -1036,6 +1048,7 @@ class Module:
                 integration=integration,
                 optimize_forward=optimize_forward,
                 target=target,
+                checks=checks,
             )
 
         unconstrained, constrain, unconstrain = (

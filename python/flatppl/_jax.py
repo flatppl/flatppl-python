@@ -251,6 +251,52 @@ def _compiled_call(
     return specialize((), ((),) * count)
 
 
+#: Device status for a distribution parameter outside its declared value set.
+PARAMETER_OUTSIDE_SET = 9
+
+
+def _nan_where(invalid: jax.Array, leaf: jax.Array) -> jax.Array:
+    """``leaf`` with NaN in the calls ``invalid`` marks; other kinds unchanged."""
+    if not jnp.issubdtype(leaf.dtype, jnp.floating):
+        return leaf
+    mask = jnp.reshape(invalid, invalid.shape + (1,) * (leaf.ndim - invalid.ndim))
+    return jnp.where(mask, jnp.nan, leaf)
+
+
+def _check_status(error: jax.Array) -> None:
+    checkify.check(jnp.all(error != 1), "FlatPPL index out of range")  # pyright: ignore[reportUnknownMemberType]
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 2),
+        "FlatPPL integer conversion exceeds the target width",
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 3), "FlatPPL quantile probability must be in [0, 1]"
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 4),
+        "FlatPPL linear solve requires a nonsingular matrix",
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 5), "FlatPPL uniform variate must be in [0, 1]"
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 6), "FlatPPL RNG seed is outside its valid range"
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 7),
+        "FlatPPL categorical probabilities need finite, nonnegative values "
+        "with a positive total",
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != PARAMETER_OUTSIDE_SET),
+        "FlatPPL distribution parameter is outside its declared value set",
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all((error >= 0) & (error <= 7) | (error == PARAMETER_OUTSIDE_SET)),
+        "Unknown FlatPPL runtime error",
+    )
+
+
 @dataclass(frozen=True, eq=False, init=False)
 class CompiledFunction:
     """A compiled query as a JAX function.
@@ -258,8 +304,9 @@ class CompiledFunction:
     :meth:`flatppl.Module.compile` returns instances. Calls take the query's inputs
     and return its outputs as described in :doc:`/values`. The function works
     under ``jax.jit``, ``jax.grad``, ``jax.vmap`` and sharding; see
-    :doc:`/jax`. Queries with runtime checks require ``checkify.checkify``
-    around the staged computation before ``jax.jit``.
+    :doc:`/jax`. Queries with runtime checks other than parameter value sets
+    require ``checkify.checkify`` around the staged computation before
+    ``jax.jit``, as does ``checks="raise"``.
 
     Attributes:
         stablehlo: The emitted StableHLO text of the unbatched query.
@@ -278,6 +325,7 @@ class CompiledFunction:
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
     _gradient: bool = field(repr=False)
+    _checks: str = field(repr=False)
 
     def __init__(
         self,
@@ -288,7 +336,10 @@ class CompiledFunction:
         optimize_forward: bool = False,
         gradient: bool = False,
         boxes: Mapping[str, Any] | None = None,
+        checks: Literal["nan", "raise"] = "nan",
     ) -> None:
+        if checks not in ("nan", "raise"):
+            raise ValueError('checks must be "nan" or "raise"')
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
@@ -323,6 +374,7 @@ class CompiledFunction:
         object.__setattr__(self, "_input_count", len(inputs))
         object.__setattr__(self, "_requires_x64", requires_x64)
         object.__setattr__(self, "_gradient", gradient)
+        object.__setattr__(self, "_checks", checks)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Evaluate the query.
@@ -378,33 +430,21 @@ class CompiledFunction:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
         result = self._call(*leaves)
         if status := self.schema.get("runtime_status"):
-            error = _status_for_check(result[int(status["index"])])
-            checkify.check(jnp.all(error != 1), "FlatPPL index out of range")  # pyright: ignore[reportUnknownMemberType]
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all(error != 2),
-                "FlatPPL integer conversion exceeds the target width",
-            )
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all(error != 3), "FlatPPL quantile probability must be in [0, 1]"
-            )
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all(error != 4),
-                "FlatPPL linear solve requires a nonsingular matrix",
-            )
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all(error != 5), "FlatPPL uniform variate must be in [0, 1]"
-            )
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all(error != 6), "FlatPPL RNG seed is outside its valid range"
-            )
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all(error != 7),
-                "FlatPPL categorical probabilities need finite, nonnegative values "
-                "with a positive total",
-            )
-            checkify.check(  # pyright: ignore[reportUnknownMemberType]
-                jnp.all((error >= 0) & (error <= 7)), "Unknown FlatPPL runtime error"
-            )
+            index = int(status["index"])
+            error = _status_for_check(result[index])
+            codes = set(status.get("codes", range(1, 10)))
+            if self._checks == "nan" and PARAMETER_OUTSIDE_SET in codes:
+                # A parameter outside its value set makes the call's results NaN,
+                # which an MCMC sampler rejects as a proposal.
+                invalid = result[index] == PARAMETER_OUTSIDE_SET
+                result = tuple(
+                    leaf if i == index else _nan_where(invalid, leaf)
+                    for i, leaf in enumerate(result)
+                )
+                error = jnp.where(error == PARAMETER_OUTSIDE_SET, 0, error)
+                codes.discard(PARAMETER_OUTSIDE_SET)
+            if codes:
+                _check_status(error)
         return _unpack(self.schema["output"], result)
 
     def stats(self) -> Mapping[str, int]:

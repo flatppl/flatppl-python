@@ -105,6 +105,40 @@ seeds on the device. Invalid values raise descriptive errors on direct calls.
 A valid density of `-inf` remains a normal result. Quantiles propagate NaN
 probabilities; inverse-uniform transports reject NaN uniform variates.
 
+Queries also check each distribution parameter against the value set the spec
+declares for it, such as `sigma = elementof(posreals)` for `Normal`. The
+`checks` option of {meth}`~flatppl.Module.compile` selects how a parameter
+outside its set reports:
+
+- `checks="nan"` (the default) makes that call's floating-point results NaN.
+  It needs no `checkify`, and an MCMC sampler rejects the point as a proposal.
+- `checks="raise"` reports it through `checkify` like the other checks.
+
+NaN parameters propagate in both modes. A parameter that a transform keeps in
+its set, such as `exp(a)` for a scale, or a constant needs no runtime check.
+
+```{testcode}
+import jax
+from flatppl import flatppl
+from jax.experimental import checkify
+
+normal = flatppl(r"""
+    sigma = external(reals)
+    x = external(reals)
+    inputs = (sigma, x)
+    outputs = logdensityof(Normal(0.0, sigma), x)
+""")
+print(float(jax.jit(normal.compile())(-1.0, 0.5)))
+checked = jax.jit(checkify.checkify(normal.compile(checks="raise")))
+error, _ = checked(-1.0, 0.5)
+print("outside its declared value set" in error.get())
+```
+
+```{testoutput}
+nan
+True
+```
+
 Before `jax.jit`, wrap the whole computation with JAX's
 [`checkify.checkify`](https://docs.jax.dev/en/latest/debugging/checkify_guide.html).
 It carries errors as device values. Raise the error once, after the compiled call:
@@ -137,7 +171,8 @@ call `error.throw()` after it returns. Do not consume outputs from a failed call
 Checks add no Python callbacks inside the compiled computation.
 
 Plain `jax.jit(select)` cannot stage an unhandled check. Queries without runtime
-checks keep their existing signature and need no `checkify` wrapper.
+checks, or whose only checks are parameter value sets in the default
+`checks="nan"` mode, need no `checkify` wrapper.
 
 JAX 0.12.0.1 cannot reduce errors from some empty nested maps when differentiation
 encloses the map. Handle an empty batch before that composition, or map the

@@ -328,6 +328,28 @@ def test_other_checks_still_raise_by_default():
         error.throw()
 
 
+def test_bincounts_checks_that_input_edges_strictly_increase():
+    function = flatppl("""
+        edges = external(cartpow(reals, 3))
+        x = external(cartpow(reals, 4))
+        inputs = (edges, x)
+        outputs = sum(bincounts(edges, x))
+    """).compile(autodiff=False)
+    assert 8 in function.schema["runtime_status"]["codes"]
+    checked = jax.jit(checkify.checkify(function))
+    x = jnp.array([0.5, 1.5, 2.0, 3.0], dtype=jnp.float32)
+    error, count = checked(jnp.array([0.0, 1.0, 2.0], dtype=jnp.float32), x)
+    error.throw()
+    # The last bin is closed, so 2.0 counts and 3.0 does not.
+    assert count == 3
+    for edges in ([0.0, 2.0, 1.0], [0.0, 1.0, 1.0], [0.0, np.nan, 2.0]):
+        error, _ = checked(jnp.array(edges, dtype=jnp.float32), x)
+        with pytest.raises(checkify.JaxRuntimeError, match="bin edges"):
+            error.throw()
+    with pytest.raises(checkify.JaxRuntimeError, match="bin edges"):
+        function(jnp.array([0.0, 2.0, 1.0], dtype=jnp.float32), x)
+
+
 def test_raise_mode_reports_parameters_outside_their_sets():
     # Spec §08 declares each parameter's value set, e.g. sigma = elementof(posreals).
     function = flatppl("""

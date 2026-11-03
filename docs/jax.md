@@ -100,8 +100,8 @@ with finite static interval bounds and fixed finite bin edges.
 ## Runtime checks
 
 Queries check dynamic indices, real-to-integer conversions, quantile
-probabilities, singular linear solves, inverse-uniform transport inputs and RNG
-seeds on the device. Invalid values raise descriptive errors on direct calls.
+probabilities, singular linear solves, inverse-uniform transport inputs, RNG
+seeds and `bincounts` bin edges, which must be strictly increasing, on the device. Invalid values raise descriptive errors on direct calls.
 A valid density of `-inf` remains a normal result. Quantiles propagate NaN
 probabilities; inverse-uniform transports reject NaN uniform variates.
 

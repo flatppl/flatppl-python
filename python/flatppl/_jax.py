@@ -288,11 +288,14 @@ def _check_status(error: jax.Array) -> None:
         "with a positive total",
     )
     checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 8), "FlatPPL bin edges must be strictly increasing"
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
         jnp.all(error != PARAMETER_OUTSIDE_SET),
         "FlatPPL distribution parameter is outside its declared value set",
     )
     checkify.check(  # pyright: ignore[reportUnknownMemberType]
-        jnp.all((error >= 0) & (error <= 7) | (error == PARAMETER_OUTSIDE_SET)),
+        jnp.all((error >= 0) & (error <= 8) | (error == PARAMETER_OUTSIDE_SET)),
         "Unknown FlatPPL runtime error",
     )
 

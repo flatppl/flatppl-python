@@ -364,6 +364,81 @@ def test_cartesian_membership_checks_each_closed_interval() -> None:
         assert bool(function(point)) == expected
 
 
+def test_special_functions_error_functions_values_and_gradients() -> None:
+    # mpmath at 40 digits, computed outside the engine. Columns: erf, erfc,
+    # erfcx and their derivatives, 2/sqrt(pi)*exp(-x^2) and 2x*erfcx(x) - 2/sqrt(pi).
+    oracle = {
+        -1.3: (
+            (-0.93400794494065244, 1.9340079449406524, 10.481318741176322),
+            (0.20820798679606968, -0.20820798679606968, -28.37980789415395),
+        ),
+        0.0: (
+            (0.0, 1.0, 1.0),
+            (1.1283791670955126, -1.1283791670955126, -1.1283791670955126),
+        ),
+        0.7: (
+            (0.67780119383741847, 0.32219880616258153, 0.52593033734944094),
+            (0.69127486041053857, -0.69127486041053857, -0.39207669480629526),
+        ),
+        # erfcx switches to its continued fraction at 2.5.
+        3.0: (
+            (0.99997790950300141, 2.2090496998585441e-5, 0.17900115118138995),
+            (1.3925305194674785e-4, -1.3925305194674785e-4, -0.054372260007172871),
+        ),
+        # 1 - erf(10) is 0, so erfc must not be lowered through erf.
+        10.0: (
+            (1.0, 2.0884875837625448e-45, 0.056140992743822586),
+            (4.1976562313544169e-44, -4.1976562313544169e-44, -0.0055593122190608567),
+        ),
+    }
+    check_special_functions("(sf.erf(x), sf.erfc(x), sf.erfcx(x))", oracle)
+
+
+def test_special_functions_polygammas_values_and_gradients() -> None:
+    # mpmath at 40 digits, computed outside the engine. Columns: digamma,
+    # polygamma(1, x), polygamma(2, x) and their derivatives in x, polygamma(1..3, x).
+    oracle = {
+        0.3: (
+            (-3.502524222200133, 12.24536454610773, -75.272536588726031),
+            (12.24536454610773, -75.272536588726031, 743.14176465504967),
+        ),
+        1.7: (
+            (0.20854787487349396, 0.79323283016399838, -0.60408908410345899),
+            (0.79323283016399838, -0.60408908410345899, 0.88956200662431632),
+        ),
+        5.0: (
+            (1.5061176684318005, 0.22132295573711533, -0.048789732245114497),
+            (0.22132295573711533, -0.048789732245114497, 0.021427828192755075),
+        ),
+        100.0: (
+            (4.6001618527380874, 0.010050166663333571, -0.00010100499983335),
+            (0.010050166663333571, -0.00010100499983335, 2.030199990001333e-6),
+        ),
+    }
+    check_special_functions(
+        "(sf.digamma(x), sf.polygamma(1, x), sf.polygamma(2, x))", oracle
+    )
+
+
+def check_special_functions(
+    outputs: str,
+    oracle: dict[float, tuple[tuple[float, ...], tuple[float, ...]]],
+) -> None:
+    with jax.enable_x64():
+        function = flatppl(f"""
+            sf = standard_module("special-functions", "0.1")
+            x = elementof(reals)
+            inputs = x
+            outputs = {outputs}
+        """).compile(dtype="float64")
+        evaluate = jax.jit(function)
+        derivative = jax.jit(jax.jacfwd(function))
+        for x, (values, gradients) in oracle.items():
+            point = jnp.asarray(x, dtype=jnp.float64)
+            np.testing.assert_allclose(evaluate(point), values, rtol=1e-14, atol=0)
+            np.testing.assert_allclose(derivative(point), gradients, rtol=1e-14, atol=0)
+
+
 def test_complex_interference_values_and_gradient() -> None:
     function = flatppl("""
         x = elementof(reals)

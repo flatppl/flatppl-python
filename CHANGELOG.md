@@ -12,9 +12,28 @@ tagged release.
   `jax.pure_callback` calls with custom derivatives, one broadcast request per
   `jax.vmap` batch, per-row RNG states for sampling, and content-addressed
   upload of large data. See the black-box guide.
+- `standard_module("special-functions", "0.1")` `erf`, `erfc`, `digamma` and
+  `polygamma(n, x)` compile, with gradients in `x`. They used to fail with
+  "has no lowering to FlatPDL base operations". The new member
+  `erfcx(x) = exp(x^2)*erfc(x)` compiles too, and stays finite where
+  `exp(x^2)*erfc(x)` overflows or underflows.
+- A Normal likelihood whose mean has an Exponential prior marginalizes in
+  closed form, as the exponentially modified Gaussian. It used to need
+  `integration=` and ran as quadrature.
 
 ### Changed
 
+- `cumsum`, `cumprod`, `cummax` and `cummin` compile inside a broadcast, and
+  so does the dotted spelling `cumsum.(v)`. They used to fail with "must be a
+  statically-sized rank-1 array".
+- On the GPU target, a `scan` with an integer running count runs as a
+  log-depth doubling scan instead of a loop, and so do the cumulative
+  functions.
+- Dirichlet and LKJCholesky draws compile to the same program size at any
+  dimension. The same key now gives different Dirichlet, LKJ and LKJCholesky
+  draws than before.
+- On the GPU target, Multinomial draws count their trials without a loop. The
+  draws do not change.
 - Discrete draws are integers. Sampling queries over Bernoulli, Binomial,
   Categorical, Geometric, NegativeBinomial, Poisson and the other discrete
   distributions used to fail to compile with "emitted result type disagrees

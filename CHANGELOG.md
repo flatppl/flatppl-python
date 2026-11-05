@@ -15,6 +15,27 @@ tagged release.
 
 ### Changed
 
+- Discrete draws are integers. Sampling queries over Bernoulli, Binomial,
+  Categorical, Geometric, NegativeBinomial, Poisson and the other discrete
+  distributions used to fail to compile with "emitted result type disagrees
+  with the query schema". They now return `int32` draws under float32 and
+  `int64` draws under float64.
+- `jax.vmap` runs more queries as one batched program instead of a loop over
+  the batch, including queries with Cholesky factors and triangular solves.
+- Long `markovchain` and `kscan` chains and `BinnedPoissonProcess` densities
+  compile to the same program size at any length, instead of one unrolled
+  term per step or bin.
+- On the GPU target, a `scan` whose carry is affine runs as a log-depth
+  doubling scan instead of a loop.
+- `value_and_grad` through `reduce` over six or more items no longer fails
+  with "WhileOp does not have induction variable for cache removal".
+- A Poisson log density takes one logarithm per element, and its gradient no
+  longer overflows for tiny rates and large counts.
+- More pushforwards compile: a scalar-scaled affine map over an array
+  variate, with a same-shape shift spelled `+` or `.+`; a pushforward over a
+  matrix-variate `iid`; a pushforward in a lambda or named-function kernel
+  body; and a `bijection` with a scalar log-volume. A truncation or bin edge
+  that is infinite only at run time no longer gives a NaN scale gradient.
 - `bincounts` edges must be strictly increasing. Edges given as inputs are
   checked on the device, and calls with invalid edges raise "FlatPPL bin edges
   must be strictly increasing".

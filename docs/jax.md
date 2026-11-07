@@ -498,22 +498,28 @@ query's precision. Use matching JAX dtypes to avoid conversions on repeated call
 ## Pass a FlatPPL random state
 
 FlatPPL random states use `uint64[2]`, so they require JAX x64 even when sampled
-values use float32. Carry the returned state into the next call:
+values use float32. The state layout is internal to the engine. Create a state
+with an `rnginit` query, and carry the returned state into the next call:
 
 ```{testcode}
 with jax.enable_x64():
+    seed_state = flatppl(r"""
+        seed = external(nonnegintegers)
+        inputs = seed
+        outputs = rnginit(seed)
+    """).compile(autodiff=False)
     draw = flatppl(r"""
         s = rnginit(0)
         inputs = s
         outputs = rand(Normal(mu = 0.0, sigma = 1.0), s)
     """).compile(autodiff=False)
-    state = jnp.array([1729, 0], dtype=jnp.uint64)
-    value, state = draw(state)
-    print(str(value.dtype), state.tolist())
+    state = seed_state(1729)
+    value, next_state = draw(state)
+    print(str(value.dtype), str(next_state.dtype), next_state.shape)
 ```
 
 ```{testoutput}
-float32 [1729, 1]
+float32 uint64 (2,)
 ```
 
 `LKJ(n, eta)` draws a full correlation matrix. Keep `n` fixed in the query and
@@ -533,8 +539,7 @@ with jax.enable_x64():
         inputs = (state, eta)
         outputs = rand(LKJ(n, eta), state)
     """).compile(autodiff=False)
-    state = jnp.array([1729, 0], dtype=jnp.uint64)
-    correlation, state = draw_correlation(state, jnp.float32(2))
+    correlation, state = draw_correlation(seed_state(1729), jnp.float32(2))
     print(correlation.shape)
 ```
 

@@ -58,6 +58,9 @@ tagged release.
 - `bincounts` edges must be strictly increasing. Edges given as inputs are
   checked on the device, and calls with invalid edges raise "FlatPPL bin edges
   must be strictly increasing".
+- Enzyme moves to alpha 14: upstream Enzyme-JAX through 2cc7c1bb, with integer
+  inputs kept constant in forward mode. Linux x86-64 now needs glibc 2.28 or
+  newer instead of 2.35.
 - JAX and jaxlib move to 0.12.0.1 with Enzyme alpha 13. Alpha 13 changes
   only the JAX requirement of the alpha 12 wheels.
 - Python 3.15 is supported. Enzyme alpha 12 adds cp315 wheels for Linux

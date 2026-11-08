@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.12.0.1 with our Enzyme
-`0.0.15+flatppl.13` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.14` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |

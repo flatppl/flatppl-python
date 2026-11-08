@@ -2,10 +2,24 @@
   <title>FlatPPL</title>
   <defs><mask id="histogram-envelope" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256" style="mask-type:luminance">
       <path d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176L237 178H20Z" fill="white"/>
-      <path d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176" fill="none" stroke="black" stroke-width="12.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </mask><clipPath id="plot-baseline" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="256" height="178"/></clipPath></defs>
-  <circle cx="128" cy="128" r="128" fill="#224535"/>
-  <g fill="#ffffff" transform="translate(128 128) scale(0.96) translate(-128.5 -123.5)">
+      <path d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176" fill="none" stroke="black" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask><marker id="arrowhead" viewBox="0 -8 14 16" refX="0" refY="0" markerWidth="14" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
+      <path d="M0 -8L14 0L0 8Z" fill="#ffffff"/>
+    </marker></defs>
+  <path d="M256 128L255.9 161.5L255.7 173.6L255.4 182.5L254.9 189.9L254.3 196.3L253.5 201.9L252.6 206.9L251.6 211.5L250.4 215.7L249 219.6L247.6 223.2L245.9 226.6L244.1 229.7L242.2 232.6L240 235.2L237.7 237.7L235.2 240L232.6 242.2L229.7 244.1L226.6 245.9L223.2 247.6L219.6 249L215.7 250.4L211.5 251.6L206.9 252.6L201.9 253.5L196.3 254.3L189.9 254.9L182.5 255.4L173.6 255.7L161.5 255.9L128 256L94.5 255.9L82.4 255.7L73.5 255.4L66.1 254.9L59.7 254.3L54.1 253.5L49.1 252.6L44.5 251.6L40.3 250.4L36.4 249L32.8 247.6L29.4 245.9L26.3 244.1L23.4 242.2L20.8 240L18.3 237.7L16 235.2L13.8 232.6L11.9 229.7L10.1 226.6L8.4 223.2L7 219.6L5.6 215.7L4.4 211.5L3.4 206.9L2.5 201.9L1.7 196.3L1.1 189.9L0.6 182.5L0.3 173.6L0.1 161.5L0 128L0.1 94.5L0.3 82.4L0.6 73.5L1.1 66.1L1.7 59.7L2.5 54.1L3.4 49.1L4.4 44.5L5.6 40.3L7 36.4L8.4 32.8L10.1 29.4L11.9 26.3L13.8 23.4L16 20.8L18.3 18.3L20.8 16L23.4 13.8L26.3 11.9L29.4 10.1L32.8 8.4L36.4 7L40.3 5.6L44.5 4.4L49.1 3.4L54.1 2.5L59.7 1.7L66.1 1.1L73.5 0.6L82.4 0.3L94.5 0.1L128 0L161.5 0.1L173.6 0.3L182.5 0.6L189.9 1.1L196.3 1.7L201.9 2.5L206.9 3.4L211.5 4.4L215.7 5.6L219.6 7L223.2 8.4L226.6 10.1L229.7 11.9L232.6 13.8L235.2 16L237.7 18.3L240 20.8L242.2 23.4L244.1 26.3L245.9 29.4L247.6 32.8L249 36.4L250.4 40.3L251.6 44.5L252.6 49.1L253.5 54.1L254.3 59.7L254.9 66.1L255.4 73.5L255.7 82.4L255.9 94.5Z" fill="#224535"/>
+  <g fill="#ffffff" transform="translate(128 128) scale(.88) translate(-128 -98)"><g id="graph-nodes">
+      <circle cx="32" cy="37" r="18.5"/>
+      <circle cx="130" cy="37" r="18.5"/>
+      <circle cx="226" cy="37" r="18.5"/>
+      <circle cx="32" cy="126" r="18.5"/>
+      <circle cx="226" cy="126" r="18.5"/>
+    </g><g id="graph-arrows" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="butt" marker-end="url(#arrowhead)">
+      <path d="M57.5 37L90.5 37"/>
+      <path d="M155.5 37L186.5 37"/>
+      <path d="M226 62.5L226 86.5"/>
+      <path d="M50.8772 108.8564L100.7589 63.5557"/>
+      <path d="M148.7001 54.3366L197.0332 99.1453"/>
+    </g><g id="plot-layer">
     <g id="histogram" mask="url(#histogram-envelope)">
       <rect x="55" y="162" width="17" height="16"/>
       <rect x="79" y="131" width="19" height="47"/>
@@ -14,6 +28,6 @@
       <rect x="158" y="132" width="19" height="46"/>
       <rect x="184" y="162" width="18" height="16"/>
     </g>
-    <path id="bell-curve" clip-path="url(#plot-baseline)" d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176" fill="none" stroke="#ffffff" stroke-width="10.4" stroke-linecap="round"/>
-    </g>
+    <path id="bell-curve" d="M20 176C55 174 75 154 92 116C107 83 116 69 130 69C145 69 154 92 167 122C184 160 206 172 237 176" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/>
+    </g></g>
 </svg>

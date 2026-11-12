@@ -20,9 +20,18 @@ tagged release.
 - A Normal likelihood whose mean has an Exponential prior marginalizes in
   closed form, as the exponentially modified Gaussian. It used to need
   `integration=` and ran as quadrature.
+- More sampling queries compile: `joint`, `jointchain`, and draws that read
+  earlier draws directly or through a derived value.
 
 ### Changed
 
+- A `#` comment and a `%` doc line now end only at a line break (spec §05).
+  A `;` inside one is comment text: `x = 1.0  # one; y = 2.0` binds only `x`.
+- `scan`, `markovchain` and the other callback combinators take one optional
+  final parameter, passed whole (spec §04). Pack several parameters into one
+  record: `scan(step, init, xs, (mu = mu, phi = phi))`.
+- `flatppl.pyhf.from_pyhf` emits `ContinuedPoisson` for every channel. Values
+  do not change, but a converted channel no longer samples.
 - `cumsum`, `cumprod`, `cummax` and `cummin` compile inside a broadcast, and
   so does the dotted spelling `cumsum.(v)`. They used to fail with "must be a
   statically-sized rank-1 array".

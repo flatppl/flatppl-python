@@ -111,6 +111,7 @@ type _ExportKey = tuple[
     str,
     Batch | None,
     tuple[tuple[str, str, str], ...],
+    bool,
 ]
 
 
@@ -880,6 +881,40 @@ class Module:
         native = native_call(self._context._native.set, self._native, values)  # pyright: ignore[reportPrivateUsage]
         return self._derived_module(native)
 
+    def prepare_likelihood(
+        self, *data_inputs: str
+    ) -> tuple[Module, Module, tuple[str, ...]]:
+        """Split a likelihood query into data preparation and repeated scoring.
+
+        Compile both returned modules with the same dtype. Run preparation
+        once per data binding. Pass its outputs as the appended score inputs,
+        in the returned summary-name order. Data needed by other outputs
+        remains a score input. Unsupported factors retain their ordinary form.
+
+        Args:
+            *data_inputs: Declared query inputs that stay fixed while scoring.
+
+        Returns:
+            The preparation module, score module, and ordered summary names.
+
+        Raises:
+            CompilationError: No supported reduction exists, or a named data
+                input is absent from the query signature.
+            ValueError: The query requests gradients instead of a scalar score.
+        """
+        if self._gradient:
+            raise ValueError("prepare the scalar query before requesting gradients")
+        preparation, score, names = native_call(
+            self._context._native.prepare_likelihood,  # pyright: ignore[reportPrivateUsage]
+            self._native,
+            list(data_inputs),
+        )
+        return (
+            Module(preparation, self._context),
+            Module(score, self._context),
+            tuple(names),
+        )
+
     def compile(
         self,
         *,
@@ -890,6 +925,7 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         boxes: Mapping[str, Box] | None = None,
         checks: Literal["nan", "raise"] = "nan",
+        sufficient_statistics: bool = True,
     ) -> CompiledFunction:
         """Compile the module's ``inputs`` and ``outputs`` into a JAX function.
 
@@ -913,6 +949,10 @@ class Module:
             boxes: Black boxes for the module's interface modules, keyed by
                 the ``load_module`` alias that loads each interface. Box
                 queries run on the box server. See :doc:`/boxes`.
+            sufficient_statistics: Reduce independent likelihood factors to
+                data-only summaries. ``False`` keeps ordinary factor scoring.
+                Runtime data requires :meth:`prepare_likelihood` to retain
+                summaries across score calls.
             checks: How a distribution parameter outside its declared value
                 set, such as ``sigma <= 0`` for ``Normal``, reports. ``"nan"``
                 makes that call's floating-point results NaN, needs no
@@ -960,7 +1000,15 @@ class Module:
         bound = tuple(describe_bindings(boxes or {}))
 
         def export(batch: Batch | None = None) -> Export:
-            key = (dtype_name, autodiff, settings, target_name, batch, bound)
+            key = (
+                dtype_name,
+                autodiff,
+                settings,
+                target_name,
+                batch,
+                bound,
+                sufficient_statistics,
+            )
             if key not in self._exports:
                 self._exports[key] = json.loads(
                     native_call(
@@ -971,6 +1019,7 @@ class Module:
                         batch,
                         target_name,
                         list(bound) or None,
+                        sufficient_statistics,
                     )
                 )
             return self._exports[key]
@@ -1000,6 +1049,7 @@ class Module:
         optimize_forward: bool = False,
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
+        sufficient_statistics: bool = True,
     ) -> TransformedFunction:
         """Compile a query and canonical coordinate wrappers for its input.
 
@@ -1019,6 +1069,7 @@ class Module:
             optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
             target: Lowering profile, as in :meth:`compile`.
             checks: Parameter value-set reporting, as in :meth:`compile`.
+            sufficient_statistics: Likelihood reduction, as in :meth:`compile`.
 
         Returns:
             The original query, the unconstrained query, and both coordinate
@@ -1049,6 +1100,7 @@ class Module:
                 optimize_forward=optimize_forward,
                 target=target,
                 checks=checks,
+                sufficient_statistics=sufficient_statistics,
             )
 
         unconstrained, constrain, unconstrain = (

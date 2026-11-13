@@ -35,7 +35,7 @@ def test_reduction_switch_reaches_plain_and_transformed_exports():
             )
 
 
-def test_prepared_normal_reuses_summaries_for_parameter_scores_and_new_data(dtype):
+def test_prepared_normal_reuses_summaries_for_parameter_scores_and_new_data(dtype: str):
     query = flatppl("""
         mu = elementof(reals)
         sigma = elementof(posreals)
@@ -82,7 +82,7 @@ def test_prepared_normal_reuses_summaries_for_parameter_scores_and_new_data(dtyp
         np.testing.assert_array_equal(score(0.3, 1.7, *prepare(y)), expected)
 
 
-def test_skew_gamma_and_beta_keep_the_full_score_near_the_data(dtype):
+def test_skew_gamma_and_beta_keep_the_full_score_near_the_data(dtype: str):
     rate = 1e8 if dtype == "float32" else 1e16
     for family, expected in [
         ("Gamma", 2 * (math.log(rate) - 1.5)),
@@ -103,7 +103,7 @@ def test_skew_gamma_and_beta_keep_the_full_score_near_the_data(dtype):
             np.testing.assert_allclose(score(1.0, rate), expected, atol=1e-5, rtol=3e-7)
 
 
-def test_prepared_lognormal_keeps_support_after_target_rounding(dtype):
+def test_prepared_lognormal_keeps_support_after_target_rounding(dtype: str):
     query = flatppl("""
         mu = elementof(reals)
         sigma = elementof(posreals)

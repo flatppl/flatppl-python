@@ -477,3 +477,18 @@ def test_complex_interference_values_and_gradient() -> None:
         actual = jax.jit(jax.value_and_grad(function))(x)
         expected = jax.value_and_grad(oracle)(x)
         np.testing.assert_allclose(actual, expected, atol=3e-6)
+
+
+def test_empty_selection_in_scan_preserves_values_and_batched_gradients() -> None:
+    function = flatppl("""
+        x = elementof(reals)
+        empty = filter(value -> false, [x])
+        step(state, value) = record(memory = state.memory, total = state.total + value)
+        states = scan(step, record(memory = empty, total = x*x), [1.0, 2.0])
+        inputs = x
+        outputs = sum(states.total) + lengthof(empty) + sum(indicesof(empty))
+    """).compile()
+    points = jnp.array([-0.5, 2.0])
+    values, gradients = jax.jit(jax.vmap(jax.value_and_grad(function)))(points)
+    np.testing.assert_allclose(values, 2 * points**2 + 4, atol=1e-6)
+    np.testing.assert_allclose(gradients, 4 * points, atol=1e-6)

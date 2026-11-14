@@ -25,6 +25,9 @@ tagged release.
 
 ### Changed
 
+- Tall QR queries use less memory and have faster gradients on CPU and GPU.
+  Large CPU `logabsdet` queries avoid unnecessary pivot searches and swaps.
+
 - Matrix exponentials use solve-free polynomials with faster gradients and
   GPU squaring stages. Values, gradients, batching and inference are checked
   on CPU and GPU in both precisions.

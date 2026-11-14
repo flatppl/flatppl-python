@@ -25,6 +25,8 @@ tagged release.
 
 ### Changed
 
+- Fixed selections can produce empty vectors during compilation, including shape observers and scan carries.
+
 - A `#` comment and a `%` doc line now end only at a line break (spec §05).
   A `;` inside one is comment text: `x = 1.0  # one; y = 2.0` binds only `x`.
 - `scan`, `markovchain` and the other callback combinators take one optional

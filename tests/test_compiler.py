@@ -28,7 +28,7 @@ def test_matrix_exponential_zero_and_noncommuting_derivatives() -> None:
     error.throw()
     np.testing.assert_allclose(
         gradients,
-        [np.ones((2, 2)), [[1, math.e - 1], [math.e - 1, math.e]]],
+        np.array([[[1, 1], [1, 1]], [[1, math.e - 1], [math.e - 1, math.e]]]),
         rtol=2e-6,
     )
 

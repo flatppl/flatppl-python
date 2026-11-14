@@ -170,6 +170,12 @@ For BlackJAX, wrap the function containing initialization and all steps, then
 call `error.throw()` after it returns. Do not consume outputs from a failed call.
 Checks add no Python callbacks inside the compiled computation.
 
+For batched BlackJAX chains, checkify each complete chain before mapping:
+`jax.jit(jax.vmap(checkify.checkify(run_chain)))`. NUTS contains `while` loops,
+which checkify cannot enclose after batching. Call `error.throw()` on the returned
+error after the compiled call, as in the
+[complete regression workflow](examples/regression_workflow.rst).
+
 Plain `jax.jit(select)` cannot stage an unhandled check. Queries without runtime
 checks, or whose only checks are parameter value sets in the default
 `checks="nan"` mode, need no `checkify` wrapper.

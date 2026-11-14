@@ -21,6 +21,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import polars as pl
+from jax.experimental import checkify
 
 from flatppl import load
 
@@ -79,11 +80,15 @@ np.testing.assert_allclose(
 # Batch candidate points
 # ----------------------
 # ``jax.vmap`` maps the density over a leading axis of every field.
+# Checkify carries the density's linear-solve checks through compiled maps and
+# sampling loops. Raise their errors after each compiled call.
 candidates = {
     "alpha": jnp.array([-0.5, 0.0, 0.6, 1.0]),
     "beta": jnp.array([0.5, 1.0, 1.4, 2.0]),
 }
-print(np.asarray(jax.jit(jax.vmap(density.fn))(candidates)).round(3))
+error, candidate_values = jax.jit(checkify.checkify(jax.vmap(density.fn)))(candidates)
+error.throw()
+print(np.asarray(candidate_values).round(3))
 
 # %%
 # The exact posterior and its normalization
@@ -102,9 +107,11 @@ sd = np.sqrt(np.diag(covariance))
 axes = [
     np.linspace(m - 8 * s, m + 8 * s, 401) for m, s in zip(exact_mean, sd, strict=True)
 ]
-grid = jax.vmap(
+grid_density = jax.vmap(
     lambda a: jax.vmap(lambda b: density({"alpha": a, "beta": b}))(jnp.asarray(axes[1]))
-)(jnp.asarray(axes[0]))
+)
+error, grid = jax.jit(checkify.checkify(grid_density))(jnp.asarray(axes[0]))
+error.throw()
 total = np.trapezoid(
     np.trapezoid(np.exp(np.asarray(grid, dtype=np.float64)), axes[1], axis=1), axes[0]
 )
@@ -140,9 +147,12 @@ starts = {
     "alpha": jnp.array([-1.0, 0.0, 1.0, 2.0]),
     "beta": jnp.array([-2.0, -0.5, 0.5, 2.0]),
 }
-samples, divergent = jax.jit(jax.vmap(run_chain))(
+# Check each complete chain before mapping: checkify cannot enclose batched
+# NUTS while-loops.
+error, (samples, divergent) = jax.jit(jax.vmap(checkify.checkify(run_chain)))(
     jax.random.split(jax.random.key(827), chains), starts
 )
+error.throw()
 print("divergences:", int(divergent.sum()))
 
 # %%

@@ -1,6 +1,7 @@
 """Compiler regressions checked through executed values and independent JAX oracles."""
 
 import math
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -36,7 +37,7 @@ def test_matrix_exponential_zero_and_noncommuting_derivatives() -> None:
 @pytest.mark.parametrize("dtype,tolerance", [("float32", 2e-5), ("float64", 2e-12)])
 @pytest.mark.parametrize("target", ["cpu", "gpu"])
 def test_matrix_exponential_nilpotent_adjoint(
-    dtype: str, tolerance: float, target: str
+    dtype: str, tolerance: float, target: Literal["cpu", "gpu"]
 ) -> None:
     with jax.enable_x64():
         function = flatppl("""

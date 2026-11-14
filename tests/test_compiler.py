@@ -1,6 +1,7 @@
 """Compiler regressions checked through executed values and independent JAX oracles."""
 
 import math
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -31,6 +32,38 @@ def test_matrix_exponential_zero_and_noncommuting_derivatives() -> None:
         np.array([[[1, 1], [1, 1]], [[1, math.e - 1], [math.e - 1, math.e]]]),
         rtol=2e-6,
     )
+
+
+@pytest.mark.parametrize("dtype,tolerance", [("float32", 2e-5), ("float64", 2e-12)])
+@pytest.mark.parametrize("target", ["cpu", "gpu"])
+def test_matrix_exponential_nilpotent_adjoint(
+    dtype: str, tolerance: float, target: Literal["cpu", "gpu"]
+) -> None:
+    with jax.enable_x64():
+        function = flatppl("""
+            e = standard_module("ext-linear-algebra", "0.1")
+            A = external(cartpow(reals, [6, 6]))
+            inputs = A
+            outputs = e.matexp(A)
+        """).compile(dtype=dtype, target=target)
+        # N^6=0 gives finite exact series for exp(N) and its full adjoint.
+        point = np.diag(np.arange(1, 6) / 2, k=1)
+        cotangent = np.arange(36).reshape(6, 6) / 36 - 0.5
+        powers = [np.linalg.matrix_power(point, k) for k in range(6)]
+        expected = sum(power / math.factorial(k) for k, power in enumerate(powers))
+        expected_gradient = sum(
+            left.T @ cotangent @ right.T / math.factorial(i + j + 1)
+            for i, left in enumerate(powers)
+            for j, right in enumerate(powers)
+        )
+        x = jnp.asarray(point, dtype=dtype)
+        g = jnp.asarray(cotangent, dtype=dtype)
+        values = jax.jit(function)(x)
+        gradient = jax.jit(jax.grad(lambda a: jnp.sum(function(a) * g)))(x)
+        np.testing.assert_allclose(values, expected, rtol=tolerance, atol=tolerance)
+        np.testing.assert_allclose(
+            gradient, expected_gradient, rtol=tolerance, atol=tolerance
+        )
 
 
 def test_uniform_unitinterval_scores_boundaries_and_batches() -> None:

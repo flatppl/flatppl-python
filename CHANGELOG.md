@@ -25,6 +25,10 @@ tagged release.
 
 ### Changed
 
+- Matrix exponentials use solve-free polynomials with faster gradients and
+  GPU squaring stages. Values, gradients, batching and inference are checked
+  on CPU and GPU in both precisions.
+
 - Fixed selections can produce empty vectors during compilation, including shape observers and scan carries.
 
 - A `#` comment and a `%` doc line now end only at a line break (spec §05).

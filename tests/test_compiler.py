@@ -10,6 +10,29 @@ import pytest
 from flatppl import CompilationError, flatppl
 
 
+def test_matrix_exponential_zero_and_noncommuting_derivatives() -> None:
+    from jax.experimental import checkify
+
+    function = flatppl("""
+        e = standard_module("ext-linear-algebra", "0.1")
+        A = external(cartpow(reals, [2, 2]))
+        inputs = A
+        outputs = e.matexp(A)
+    """).compile()
+    points = jnp.array([[[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 1.0]]])
+    error, values = jax.jit(checkify.checkify(jax.vmap(function)))(points)
+    error.throw()
+    np.testing.assert_allclose(values, [np.eye(2), np.diag([1.0, math.e])], rtol=2e-6)
+    gradient = jax.grad(lambda a: jnp.sum(function(a)))
+    error, gradients = jax.jit(checkify.checkify(jax.vmap(gradient)))(points)
+    error.throw()
+    np.testing.assert_allclose(
+        gradients,
+        np.array([[[1, 1], [1, 1]], [[1, math.e - 1], [math.e - 1, math.e]]]),
+        rtol=2e-6,
+    )
+
+
 def test_uniform_unitinterval_scores_boundaries_and_batches() -> None:
     function = flatppl("""
         point = external(reals)

@@ -1,6 +1,6 @@
 """Device checks survive JAX transforms without accepting invalid query values."""
 
-from typing import Any
+from typing import Any, Literal
 
 import jax
 import jax.numpy as jnp
@@ -182,22 +182,30 @@ def test_order_statistics_preserve_values_and_gradients_and_check_probability():
             error.throw()
 
 
-def test_linear_solve_preserves_values_and_gradients_and_checks_singularity():
-    function = flatppl("""
-        A = external(cartpow(reals, [2, 2]))
-        b = external(cartpow(reals, 2))
+@pytest.mark.parametrize("target,n", [("cpu", 2), ("gpu", 8)])
+def test_linear_solve_preserves_values_and_gradients_and_checks_singularity(
+    target: Literal["cpu", "gpu"], n: int
+):
+    function = flatppl(f"""
+        A = external(cartpow(reals, [{n}, {n}]))
+        b = external(cartpow(reals, {n}))
         inputs = (A, b)
         outputs = sum(linsolve(A, b))
-    """).compile()
+    """).compile(target=target)
     checked = jax.jit(checkify.checkify(jax.value_and_grad(function, argnums=1)))
-    right = jnp.array([5.0, 7.0])
-    error, (value, gradient) = checked(jnp.array([[2.0, 1.0], [1.0, 3.0]]), right)
+    matrix = np.eye(n, dtype=np.float32)
+    matrix[:2, :2] = [[2, 1], [1, 3]]
+    right = np.zeros(n, dtype=np.float32)
+    right[:2] = [5, 7]
+    error, (value, gradient) = checked(matrix, right)
     error.throw()
     np.testing.assert_allclose(value, 3.4, rtol=2e-6)
-    np.testing.assert_allclose(gradient, [0.4, 0.2], rtol=2e-6)
-    error, _ = checked(jnp.array([[1.0, 2.0], [2.0, 4.0]]), right)
-    with pytest.raises(checkify.JaxRuntimeError, match="nonsingular matrix"):
-        error.throw()
+    np.testing.assert_allclose(gradient, np.r_[0.4, 0.2, np.ones(n - 2)], rtol=2e-6)
+    for block in ([[1, 2], [2, 4]], [[np.inf, 1], [1, 3]]):
+        matrix[:2, :2] = block
+        error, _ = checked(matrix, right)
+        with pytest.raises(checkify.JaxRuntimeError, match="nonsingular matrix"):
+            error.throw()
 
 
 def test_inverse_uniform_transport_checks_probability_and_keeps_endpoints():

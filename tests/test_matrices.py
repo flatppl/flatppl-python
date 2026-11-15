@@ -7,9 +7,76 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax.experimental import checkify
 from numpy.typing import NDArray
 
 from flatppl import flatppl
+
+
+@pytest.mark.parametrize("target", ["cpu", "gpu"])
+def test_linear_solve_matrix_gradients_and_shared_rhs(
+    target: Literal["cpu", "gpu"],
+) -> None:
+    solve = flatppl("""
+        A = external(cartpow(reals, [8, 8]))
+        b = external(cartpow(reals, 8))
+        inputs = (A, b)
+        outputs = linsolve(A, b)
+    """).compile(target=target)
+    u = np.arange(1, 9, dtype=np.float32) / 8
+    matrix = np.roll(np.eye(8) + np.outer(u, u), 1, axis=0)
+    # Sherman-Morrison gives (I + uu')^-1; the row permutation forces pivoting.
+    inverse = np.roll(np.eye(8) - np.outer(u, u) / (1 + u @ u), 1, axis=1)
+    rhs = np.linspace(-0.5, 1, 8, dtype=np.float32)
+    weights = np.linspace(0.2, 0.9, 8, dtype=np.float32)
+    expected = inverse @ rhs
+    adjoint = inverse.T @ weights
+
+    def loss(a: jax.Array, b: jax.Array) -> jax.Array:
+        return jnp.sum(solve(a, b) * weights)
+
+    error, (value, (ga, gb)) = jax.jit(
+        checkify.checkify(jax.value_and_grad(loss, argnums=(0, 1)))
+    )(matrix, rhs)
+    error.throw()
+    np.testing.assert_allclose(value, expected @ weights, rtol=6e-6, atol=1e-7)
+    np.testing.assert_allclose(ga, -np.outer(adjoint, expected), rtol=6e-6, atol=1e-7)
+    np.testing.assert_allclose(gb, adjoint, rtol=6e-6, atol=1e-7)
+    da = np.arange(64, dtype=np.float32).reshape(8, 8) / 128 - 0.25
+    db = np.linspace(-0.2, 0.3, 8, dtype=np.float32)
+    dx = inverse @ (db - da @ expected)
+    d_adjoint = -inverse.T @ da.T @ adjoint
+    error, hvp = jax.jit(
+        checkify.checkify(
+            lambda a, b, da, db: jax.jvp(
+                jax.grad(loss, argnums=(0, 1)), (a, b), (da, db)
+            )[1]
+        )
+    )(matrix, rhs, da, db)
+    error.throw()
+    np.testing.assert_allclose(
+        hvp[0],
+        -np.outer(d_adjoint, expected) - np.outer(adjoint, dx),
+        rtol=2e-5,
+        atol=2e-7,
+    )
+    np.testing.assert_allclose(hvp[1], d_adjoint, rtol=2e-5, atol=2e-7)
+    scales = np.array([0.5, 1, 2], dtype=np.float32)
+    right = scales[:, None] * rhs
+    mapped = jax.vmap(solve, in_axes=(None, 0))
+    error, values = jax.jit(checkify.checkify(mapped))(matrix, right)
+    error.throw()
+    np.testing.assert_allclose(values, scales[:, None] * expected, rtol=6e-6, atol=1e-7)
+    error, mapped_gradient = jax.jit(
+        checkify.checkify(jax.grad(lambda a: jnp.sum(mapped(a, right) * weights)))
+    )(matrix)
+    error.throw()
+    np.testing.assert_allclose(
+        mapped_gradient,
+        -scales.sum() * np.outer(adjoint, expected),
+        rtol=6e-6,
+        atol=2e-7,
+    )
 
 
 @pytest.mark.parametrize("target,n", [("cpu", 9), ("gpu", 4)])

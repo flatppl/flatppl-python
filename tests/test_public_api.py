@@ -125,7 +125,11 @@ def test_call_arguments_bind_by_position_or_name() -> None:
 def test_compiled_function_is_exported_without_importing_jax() -> None:
     assert isinstance(flatppl(SOURCE).compile(), CompiledFunction)
     imported = subprocess.run(
-        [sys.executable, "-c", "import flatppl, sys; print('jax' in sys.modules)"],
+        [
+            sys.executable,
+            "-c",
+            "import flatppl, sys; flatppl.flatppl('a=elementof(reals)\\ninputs=a\\noutputs=a').analyze(); print('jax' in sys.modules)",
+        ],
         capture_output=True,
         text=True,
         check=True,

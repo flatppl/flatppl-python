@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- `Module.analyze(...)` exposes immutable Rust dependency, term, Normal-coordinate
+  and reduction reports. Inspect ordinary compilation or explicit preparation,
+  including disabled reductions, summary names and preparation refusals.
+
 - `Module.prepare_incremental_score(...)` exposes Rust term queries and their
   original-order combiner. Compiled plans create explicit executors with typed
   input snapshots, checked cache revisions, record-field updates and complete

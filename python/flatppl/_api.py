@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     import jax.typing
     from jax.typing import DTypeLike
 
+    from ._analysis import ModelAnalysis
     from ._graph import Graph
     from ._incremental import IncrementalScore
     from ._jax import Batch, CompiledFunction
@@ -884,6 +885,48 @@ class Module:
         )
         native = native_call(self._context._native.set, self._native, values)  # pyright: ignore[reportPrivateUsage]
         return self._derived_module(native)
+
+    def analyze(
+        self,
+        *data_inputs: str,
+        prepare: bool = False,
+        sufficient_statistics: bool = True,
+    ) -> ModelAnalysis:
+        """Inspect shared Rust query analysis without changing the query.
+
+        Args:
+            *data_inputs: Distinct declared inputs classified as data.
+            prepare: Inspect explicit likelihood preparation instead of the
+                ordinary compilation pass. Include summary names or a refusal.
+            sufficient_statistics: Enable reductions, or report them disabled.
+
+        Returns:
+            Immutable terms, dependency paths, components, Normal candidates
+            and decisions from the actual selected reduction pass.
+
+        Raises:
+            CompilationError: The query cannot lower, a data input is invalid,
+                or fixed file data cannot load. Preparation refusal is reported
+                as metadata, rather than replacing the authored function.
+            ValueError: The query requests a gradient instead of a scalar value.
+
+        Notes:
+            Components do not prove statistical independence. Recognized sums
+            alone receive reduction decisions. Fixed file data may be read.
+            Analysis imports no JAX and creates no execution cache.
+        """
+        from ._analysis import analysis
+
+        if self._gradient:
+            raise ValueError("analyze the scalar query before requesting gradients")
+        value = native_call(
+            self._context._native.analyze,  # pyright: ignore[reportPrivateUsage]
+            self._native,
+            list(data_inputs),
+            prepare,
+            sufficient_statistics,
+        )
+        return analysis(json.loads(value))
 
     def prepare_likelihood(
         self, *data_inputs: str

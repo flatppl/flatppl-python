@@ -62,6 +62,7 @@ autodoc_typehints_description_target = "documented_params"
 # Names the package imports only for type checking.
 autodoc_type_aliases = {
     "CompiledFunction": "flatppl.CompiledFunction",
+    "ModelAnalysis": "flatppl.ModelAnalysis",
     # Sphinx evaluates overload return aliases twice. Keep these unqualified:
     # _api.flatppl is the source constructor, not the package namespace.
     "TransformedFunction": "TransformedFunction",
@@ -126,6 +127,11 @@ _NO_SIGNATURE = {
     "flatppl.Module",
     "flatppl.CompiledFunction",
     "flatppl.TransformedFunction",
+    "flatppl.ModelAnalysis",
+    "flatppl.AnalysisTerm",
+    "flatppl.NormalCoordinate",
+    "flatppl.ReductionDecision",
+    "flatppl.GroupPartition",
     "flatppl.NormalTransformedFunction",
     "flatppl.CoordinateFunction",
     "flatppl.IncrementalScore",

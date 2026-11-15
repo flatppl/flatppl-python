@@ -141,6 +141,17 @@ whose names start with an underscore, is private.
 ## Query analysis
 
 ```{eval-rst}
+.. autoclass:: flatppl.ModelAnalysis
+   :members:
+
+.. autoclass:: flatppl.AnalysisTerm
+
+.. autoclass:: flatppl.NormalCoordinate
+
+.. autoclass:: flatppl.ReductionDecision
+
+.. autoclass:: flatppl.GroupPartition
+
 .. autoclass:: flatppl.IncrementalScore
    :members:
 

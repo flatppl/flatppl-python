@@ -138,6 +138,24 @@ whose names start with an underscore, is private.
 .. autoclass:: flatppl.Integration
 ```
 
+## Query analysis
+
+```{eval-rst}
+.. autoclass:: flatppl.IncrementalScore
+   :members:
+
+.. autoclass:: flatppl.CompiledIncrementalScore
+   :members:
+
+.. autoclass:: flatppl.ScoreExecutor
+   :members:
+
+.. autoclass:: flatppl.NormalTransformedFunction
+
+.. autoclass:: flatppl.CoordinateFunction
+   :members:
+```
+
 ## Diagnostics
 
 ```{eval-rst}

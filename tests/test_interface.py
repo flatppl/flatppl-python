@@ -325,13 +325,13 @@ def test_imported_law_products_are_independent_and_record_law_is_shared() -> Non
     )
 
 
-def test_promoted_bindings_replace_only_their_named_values() -> None:
+def test_promoted_derived_values_keep_distinct_input_positions() -> None:
     function = flatppl(r"""
         origin = 1.0
-        a = origin
-        b = origin
+        a = origin + 0.0
+        b = origin + 0.0
         record_origin = record(x = 5.0)
-        p = record_origin
+        p = record(x = record_origin.x)
         data = external(reals)
         derived = data + 1.0
         inputs = (a, b, p, derived)
@@ -340,6 +340,13 @@ def test_promoted_bindings_replace_only_their_named_values() -> None:
     """).compile()
     expected = [2, 7, 1, 11, 5, 13, -math.log(2 * math.pi) / 2 - 121 / 2]
     np.testing.assert_allclose(function(2.0, 7.0, {"x": 11.0}, 13.0), expected)
+
+
+def test_promoted_alias_updates_every_name_of_its_object() -> None:
+    function = flatppl(
+        "origin=1.0\nalias=origin\ninputs=alias\noutputs=[alias,origin]"
+    ).compile()
+    np.testing.assert_allclose(function(2.0), [2.0, 2.0])
 
 
 def test_nested_record_joint_density() -> None:

@@ -25,8 +25,13 @@ from .formula import from_formula
 from .pyhf import from_pyhf
 
 if TYPE_CHECKING:
+    from ._incremental import CompiledIncrementalScore, IncrementalScore, ScoreExecutor
     from ._jax import CompiledFunction
-    from ._transforms import TransformedFunction
+    from ._transforms import (
+        CoordinateFunction,
+        NormalTransformedFunction,
+        TransformedFunction,
+    )
 
 __all__ = [
     "Binding",
@@ -34,15 +39,20 @@ __all__ = [
     "BoxError",
     "CompilationError",
     "CompiledFunction",
+    "CompiledIncrementalScore",
     "Context",
+    "CoordinateFunction",
     "Fixed",
     "Graph",
+    "IncrementalScore",
     "Integration",
     "Location",
     "Module",
+    "NormalTransformedFunction",
     "Parameter",
     "Parameters",
     "Reference",
+    "ScoreExecutor",
     "TransformedFunction",
     "flatppl",
     "from_formula",
@@ -61,4 +71,23 @@ def __getattr__(name: str) -> object:
         from ._transforms import TransformedFunction
 
         return TransformedFunction
+    if name in ("IncrementalScore", "CompiledIncrementalScore", "ScoreExecutor"):
+        from ._incremental import (
+            CompiledIncrementalScore,
+            IncrementalScore,
+            ScoreExecutor,
+        )
+
+        return {
+            "IncrementalScore": IncrementalScore,
+            "CompiledIncrementalScore": CompiledIncrementalScore,
+            "ScoreExecutor": ScoreExecutor,
+        }[name]
+    if name in ("CoordinateFunction", "NormalTransformedFunction"):
+        from ._transforms import CoordinateFunction, NormalTransformedFunction
+
+        return {
+            "CoordinateFunction": CoordinateFunction,
+            "NormalTransformedFunction": NormalTransformedFunction,
+        }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

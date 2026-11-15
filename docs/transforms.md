@@ -94,3 +94,29 @@ precision. See [JAX support](jax.md) for batching, sharding and device setup.
 The transforms and density correction execute inside StableHLO. No Python
 callbacks run during sampling. The package supplies no sampler and does not
 choose priors or change the model's target.
+
+## One conditional Normal coordinate
+
+Select a scalar Normal input or a real record field in the authored query:
+
+```python
+normal = query.compile_transformed(
+    normal_coordinate=("point", "group", "theta"),
+    logdensity=True,
+)
+```
+
+This returns a `NormalTransformedFunction` with `original`, `score`, `forward`,
+`inverse` and `log_jacobian` functions. The selected field holds `z` in score
+arguments, with `theta = mu + sigma*z`. Forward and inverse return the whole
+record. Siblings keep their supplied values, domains and coordinates. This
+conditional map does not compose their standard domain charts.
+
+Rust requires the selected field's declared domain to be `reals` and excludes it
+from the location and scale dependencies. Finite inputs, positive finite scale,
+safe scale arithmetic and a precision-specific pointwise round trip must pass.
+Invalid charts raise an error instead of becoming zero target probability.
+Use `checkify.checkify` before `jax.jit`, as for native index checks. Each
+function's `raw` callable exposes the separate `(value, valid)` outputs.
+These checks do not prove a global floating-point bijection. Retained automatic
+callbacks require explicit boundaries before preparing this map.

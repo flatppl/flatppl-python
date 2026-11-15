@@ -7,6 +7,15 @@ tagged release.
 
 ### Added
 
+- `Module.prepare_incremental_score(...)` exposes Rust term queries and their
+  original-order combiner. Compiled plans create explicit executors with typed
+  input snapshots, checked cache revisions, record-field updates and complete
+  gradients of selected real inputs. Ordinary compiled calls remain pure.
+- `Module.compile_transformed(normal_coordinate=...)` selects one conditional
+  Normal input or record field. Its companion bundle includes the original
+  query, conditional score, forward/inverse maps and log Jacobian. Every map checks
+  validity. Sibling inputs keep their original coordinates and domains.
+
 - `Module.compile(boxes=...)` binds black-box interface modules to
   flatppl-bridge servers through `flatppl.Box`. Box queries run as
   `jax.pure_callback` calls with custom derivatives, one broadcast request per

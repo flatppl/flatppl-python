@@ -76,7 +76,12 @@ def _leaves(schema: Schema) -> Iterator[TensorSchema]:
 
 
 def _pack(
-    schema: Schema, value: Any, leaves: list[jax.Array | None], path: str
+    schema: Schema,
+    value: Any,
+    leaves: list[jax.Array | None],
+    path: str,
+    *,
+    copy_host: bool = False,
 ) -> None:
     if schema["kind"] == "tensor":
         dtype = jnp.dtype(schema["dtype"])
@@ -102,6 +107,10 @@ def _pack(
             jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(value)
         ):
             raise TypeError(f"{path} requires real values")
+        if copy_host and not any(
+            isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
+        ):
+            value = np.array(value, copy=True)
         array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)  # pyright: ignore[reportUnknownMemberType]
         if dtype.kind in "biu" and array.dtype != dtype:
             raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
@@ -119,7 +128,7 @@ def _pack(
         for index, (child, item) in enumerate(
             zip(schema["items"], components, strict=True)
         ):
-            _pack(child, item, leaves, f"{path}[{index}]")
+            _pack(child, item, leaves, f"{path}[{index}]", copy_host=copy_host)
     else:
         if not isinstance(value, Mapping):
             columns = table_columns(value)
@@ -134,7 +143,21 @@ def _pack(
             raise TypeError(f"{path} requires fields {sorted(names)}")
         for item in schema["fields"]:
             name = item["name"]
-            _pack(item["value"], value[name], leaves, f"{path}.{name}")
+            _pack(
+                item["value"],
+                value[name],
+                leaves,
+                f"{path}.{name}",
+                copy_host=copy_host,
+            )
+
+
+def snapshot_value(schema: Schema, value: Any, path: str) -> Any:
+    """Validate and bind one immutable input, copying host buffers once."""
+    size = max(leaf["index"] for leaf in _leaves(schema)) + 1
+    leaves: list[jax.Array | None] = [None] * size
+    _pack(schema, value, leaves, path, copy_host=True)
+    return _unpack(schema, cast(tuple[jax.Array, ...], tuple(leaves)))
 
 
 def _unpack(schema: Schema, leaves: tuple[jax.Array, ...]) -> Any:

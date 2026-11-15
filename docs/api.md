@@ -163,6 +163,8 @@ whose names start with an underscore, is private.
 
 .. autoclass:: flatppl.NormalTransformedFunction
 
+.. autoclass:: flatppl.NormalCoordinatesFunction
+
 .. autoclass:: flatppl.CoordinateFunction
    :members:
 ```

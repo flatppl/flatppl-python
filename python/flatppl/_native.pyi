@@ -78,6 +78,14 @@ class Context:
     def transform(
         self, module: Module, logdensity: bool
     ) -> tuple[Module, Module, Module]: ...
+    def normal_coordinates(
+        self,
+        module: Module,
+        data_inputs: Sequence[str],
+        parameters: Sequence[Sequence[str]],
+        logdensity: bool,
+        dtype: str,
+    ) -> tuple[Module, Module, Module, Module, list[str], list[list[str]]]: ...
 
 @final
 class FormulaModel:

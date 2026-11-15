@@ -59,6 +59,26 @@ class NormalTransformedFunction:
 
 
 @dataclass(frozen=True)
+class NormalCoordinatesFunction:
+    """A joint triangular Normal score and its checked coordinate maps.
+
+    Argument names and order stay unchanged. Selected real leaves hold free
+    coordinates. Maps return selected roots in ``coordinate_inputs`` order,
+    preserving unselected siblings. One root returns its value; several return
+    a tuple. ``paths`` gives the actual dependency order. Other input roots and
+    constrained siblings keep their original coordinates and domains.
+    """
+
+    original: CompiledFunction
+    score: CoordinateFunction
+    forward: CoordinateFunction
+    inverse: CoordinateFunction
+    log_jacobian: CoordinateFunction
+    coordinate_inputs: tuple[str, ...]
+    paths: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
 class TransformedFunction:
     """A query in constrained and unconstrained coordinates.
 

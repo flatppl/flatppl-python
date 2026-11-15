@@ -120,3 +120,36 @@ Use `checkify.checkify` before `jax.jit`, as for native index checks. Each
 function's `raw` callable exposes the separate `(value, valid)` outputs.
 These checks do not prove a global floating-point bijection. Retained automatic
 callbacks require explicit boundaries before preparing this map.
+
+## Joint Normal coordinates
+
+Use `normal_coordinates=(("point", "a"), ("point", "b"))` to select several
+real fields, or `normal_coordinates=("a", "b")` for scalar argument roots.
+Rust orders compatible maps by their location and scale dependencies. Selected
+cycles, duplicate paths and ambiguous direct factors refuse. Unselected inputs
+stay in their original coordinates and domains.
+
+The returned `NormalCoordinatesFunction` retains the original argument names
+and order. Selected leaves hold free coordinates in score, forward and Jacobian
+calls. The inverse takes original model coordinates. Forward and inverse return
+selected roots in `coordinate_inputs` order; one root returns one value, several
+return a tuple. Record siblings keep their supplied values. `paths` records the
+actual topological order, which may differ from argument order.
+
+With `logdensity=True`, the score adds the triangular map's log Jacobian once.
+Every companion checks local maps and both complete coordinate round trips;
+parent rounding amplified by a child can invalidate a joint map. Invalid maps
+raise checked errors. Raw calls still expose `(value, valid)` separately.
+Generated captures that cross a retained `functionof` graph cut refuse, including
+through promoted derived inputs. Original callback reification stays unchanged.
+
+Checked sampling loops also check tentative proposals that the sampler later
+rejects. Narrow conditional scales can therefore abort warmup on round-trip
+checks. Select another coordinate configuration in that case; converting chart
+invalidity to zero probability would change the target.
+
+Prepare data first when useful: call `prepare_likelihood`, then select Normal
+coordinates on its scalar score module. Bind its summary inputs explicitly.
+The prepared scalar score also supports `prepare_incremental_score` separately.
+The checked coordinate score's tuple-valued raw output is not itself a scalar
+incremental query.

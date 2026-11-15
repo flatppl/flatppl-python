@@ -1,14 +1,79 @@
 """Matrix values and first derivatives against independent linear algebra."""
 
 from math import lgamma
-from typing import Any
+from typing import Any, Literal
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
 from flatppl import flatppl
+
+
+@pytest.mark.parametrize("target,n", [("cpu", 9), ("gpu", 4)])
+def test_thin_qr_native_batches_and_factor_gradients(
+    target: Literal["cpu", "gpu"], n: int
+) -> None:
+    function = flatppl(f"""
+        A = external(cartpow(cartpow(reals, [96, {n}]), 3))
+        getq(a) = qr(a).Q
+        getr(a) = qr(a).R
+        inputs = A
+        outputs = (getq.(A), getr.(A))
+    """).compile(target=target)
+    rng = np.random.default_rng(491)
+    matrices = rng.normal(size=(3, 96, n)).astype(np.float32)
+    mixed = matrices.copy()
+    mixed[1] = 0
+    mixed[2, :, 0] = 0
+    mixed[2, :, -1] = mixed[2, :, 1]
+    forward = jax.jit(function)
+    for points in (matrices, mixed):
+        q, r = forward(points)
+        q, r = np.asarray(q, dtype=np.float64), np.asarray(r, dtype=np.float64)
+        np.testing.assert_allclose(
+            q.swapaxes(-1, -2) @ q, np.broadcast_to(np.eye(n), (3, n, n)), atol=3e-6
+        )
+        # QR has a normwise backward-error bound, including rank-deficient inputs.
+        residual = np.linalg.norm(q @ r - points, axis=(-2, -1))
+        scale = np.maximum(1, np.linalg.norm(points, axis=(-2, -1)))
+        np.testing.assert_allclose(residual / scale, 0, atol=3e-6)
+
+    # The first unpivoted Q column is -a/||a|| when its first entry is positive.
+    matrices[:, 0, 0] = np.abs(matrices[:, 0, 0]) + 1
+    weights = jnp.asarray(rng.normal(size=(3, 96)), dtype=jnp.float32)
+    gradient = jax.jit(jax.grad(lambda a: jnp.sum(function(a)[0][:, :, 0] * weights)))(
+        matrices
+    )
+    a = matrices[:, :, 0].astype(np.float64)
+    norm = np.linalg.norm(a, axis=1, keepdims=True)
+    expected = np.zeros_like(matrices)
+    expected[:, :, 0] = (
+        -weights / norm + a * np.sum(a * weights, axis=1, keepdims=True) / norm**3
+    )
+    np.testing.assert_allclose(gradient, expected, rtol=2e-5, atol=3e-7)
+
+
+@pytest.mark.parametrize("target", ["cpu", "gpu"])
+def test_large_logabsdet_pivoting_and_gradients(target: Literal["cpu", "gpu"]) -> None:
+    function = flatppl("""
+        A = external(cartpow(cartpow(reals, [32, 32]), 2))
+        inputs = A
+        outputs = logabsdet.(A)
+    """).compile(target=target)
+    # Row permutations require pivoting. I + uu' has det 1 + u'u.
+    u = np.arange(32, dtype=np.float32) / 32
+    matrix = np.eye(32, dtype=np.float32) + np.outer(u, u)
+    matrices = np.stack([np.roll(matrix, 1, axis=0), matrix])
+    expected = np.log1p(u @ u)
+    inverse = np.eye(32) - np.outer(u, u) / (1 + u @ u)
+    value, gradient = jax.jit(jax.value_and_grad(lambda a: function(a).sum()))(matrices)
+    np.testing.assert_allclose(value, 2 * expected, rtol=3e-6)
+    np.testing.assert_allclose(
+        gradient, [np.roll(inverse, 1, axis=0), inverse], rtol=3e-5, atol=2e-7
+    )
 
 
 def test_inverse_values_and_asymmetric_cotangents() -> None:

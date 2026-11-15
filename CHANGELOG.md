@@ -25,6 +25,9 @@ tagged release.
 
 ### Changed
 
+- Linear solves use faster GPU back substitution. CPU solves and inverses
+  read elimination rows and columns directly. Nonfinite solve pivots now
+  raise the existing runtime error.
 - Tall QR queries use less memory and have faster gradients on CPU and GPU.
   Large CPU `logabsdet` queries avoid unnecessary pivot searches and swaps.
 

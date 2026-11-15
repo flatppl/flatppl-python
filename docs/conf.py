@@ -67,7 +67,8 @@ autodoc_type_aliases = {
     # _api.flatppl is the source constructor, not the package namespace.
     "TransformedFunction": "TransformedFunction",
     "NormalTransformedFunction": "NormalTransformedFunction",
-    "_TransformedResult": "flatppl.TransformedFunction | flatppl.NormalTransformedFunction",
+    "NormalCoordinatesFunction": "NormalCoordinatesFunction",
+    "_TransformedResult": "flatppl.TransformedFunction | flatppl.NormalTransformedFunction | flatppl.NormalCoordinatesFunction",
     "IncrementalScore": "flatppl.IncrementalScore",
     "CompiledIncrementalScore": "flatppl.CompiledIncrementalScore",
     "ScoreExecutor": "flatppl.ScoreExecutor",
@@ -133,6 +134,7 @@ _NO_SIGNATURE = {
     "flatppl.ReductionDecision",
     "flatppl.GroupPartition",
     "flatppl.NormalTransformedFunction",
+    "flatppl.NormalCoordinatesFunction",
     "flatppl.CoordinateFunction",
     "flatppl.IncrementalScore",
     "flatppl.CompiledIncrementalScore",

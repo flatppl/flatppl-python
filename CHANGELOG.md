@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- `compile_transformed(normal_coordinates=...)` composes selected scalar Normal
+  maps in dependency order, preserving argument names and record siblings.
+  Companions check both complete round trips. Crossed callback captures refuse.
+
 - `Module.analyze(...)` exposes immutable Rust dependency, term, Normal-coordinate
   and reduction reports. Inspect ordinary compilation or explicit preparation,
   including disabled reductions, summary names and preparation refusals.

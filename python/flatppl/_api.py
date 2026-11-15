@@ -27,12 +27,18 @@ if TYPE_CHECKING:
     from ._incremental import IncrementalScore
     from ._jax import Batch, CompiledFunction
     from ._schema import BindingInfo, Export, MathRow
-    from ._transforms import NormalTransformedFunction, TransformedFunction
+    from ._transforms import (
+        NormalCoordinatesFunction,
+        NormalTransformedFunction,
+        TransformedFunction,
+    )
     from .formula import FormulaView
     from .inference import LogDensity
     from .pyhf import PyhfView
 
-    type _TransformedResult = TransformedFunction | NormalTransformedFunction
+    type _TransformedResult = (
+        TransformedFunction | NormalTransformedFunction | NormalCoordinatesFunction
+    )
 
 
 _NO_PYHF = "the module has no pyhf settings record; convert it with from_pyhf"
@@ -1137,6 +1143,7 @@ class Module:
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
         normal_coordinate: None = None,
+        normal_coordinates: None = None,
         data_inputs: Sequence[str] = (),
     ) -> TransformedFunction: ...
 
@@ -1153,8 +1160,26 @@ class Module:
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
         normal_coordinate: str | Sequence[str],
+        normal_coordinates: None = None,
         data_inputs: Sequence[str] = (),
     ) -> NormalTransformedFunction: ...
+
+    @overload
+    def compile_transformed(
+        self,
+        *,
+        logdensity: bool = False,
+        dtype: jax.typing.DTypeLike = "float32",
+        autodiff: bool = True,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+        target: Literal["cpu", "gpu"] | None = None,
+        checks: Literal["nan", "raise"] = "nan",
+        sufficient_statistics: bool = True,
+        normal_coordinate: None = None,
+        normal_coordinates: Sequence[str | Sequence[str]],
+        data_inputs: Sequence[str] = (),
+    ) -> NormalCoordinatesFunction: ...
 
     def compile_transformed(
         self,
@@ -1168,6 +1193,7 @@ class Module:
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
         normal_coordinate: str | Sequence[str] | None = None,
+        normal_coordinates: Sequence[str | Sequence[str]] | None = None,
         data_inputs: Sequence[str] = (),
     ) -> _TransformedResult:
         """Compile a query and canonical coordinate wrappers for its input.
@@ -1197,6 +1223,12 @@ class Module:
                 Select a record field with a tuple such as
                 ``("point", "group", "theta")``. Its forward and inverse maps
                 return the whole record and preserve all sibling fields.
+            normal_coordinates: Select several root names or record-field paths
+                for a joint triangular map. Reject cycles and ambiguous factors.
+                Return a NormalCoordinatesFunction whose maps preserve siblings
+                and return selected roots in original argument order. Validity
+                checks both complete coordinate round trips. Use a tuple of
+                tuples for record fields, such as (("p", "x"), ("p", "y")).
             data_inputs: Explicit data inputs for Normal coordinate analysis.
 
         Returns:
@@ -1215,23 +1247,59 @@ class Module:
         from ._jax import float_dtype
         from ._transforms import (
             CoordinateFunction,
+            NormalCoordinatesFunction,
             NormalTransformedFunction,
             TransformedFunction,
         )
 
         if self._gradient:
             raise ValueError("transform the scalar query before requesting gradients")
-        if normal_coordinate is not None:
-            native_normal = native_call(
-                self._context._native.normal_coordinate,  # pyright: ignore[reportPrivateUsage]
-                self._native,
-                list(data_inputs),
-                [normal_coordinate]
-                if isinstance(normal_coordinate, str)
-                else list(normal_coordinate),
-                logdensity,
-                float_dtype(dtype),
-            )
+        if normal_coordinate is not None and normal_coordinates is not None:
+            raise ValueError("select singular or joint Normal coordinates")
+        if isinstance(normal_coordinates, str):
+            raise ValueError("normal_coordinates requires a sequence of input paths")
+        if normal_coordinate is not None or normal_coordinates is not None:
+            metadata: str | tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]
+            if normal_coordinates is not None:
+                joint_native = native_call(
+                    self._context._native.normal_coordinates,  # pyright: ignore[reportPrivateUsage]
+                    self._native,
+                    list(data_inputs),
+                    [
+                        ([path] if isinstance(path, str) else list(path))
+                        for path in normal_coordinates
+                    ],
+                    logdensity,
+                    float_dtype(dtype),
+                )
+                native_modules = (
+                    joint_native[0],
+                    joint_native[1],
+                    joint_native[2],
+                    joint_native[3],
+                )
+                metadata = (
+                    tuple(joint_native[4]),
+                    tuple(tuple(path) for path in joint_native[5]),
+                )
+            else:
+                single_native = native_call(
+                    self._context._native.normal_coordinate,  # pyright: ignore[reportPrivateUsage]
+                    self._native,
+                    list(data_inputs),
+                    [normal_coordinate]
+                    if isinstance(normal_coordinate, str)
+                    else list(normal_coordinate or ()),
+                    logdensity,
+                    float_dtype(dtype),
+                )
+                native_modules = (
+                    single_native[0],
+                    single_native[1],
+                    single_native[2],
+                    single_native[3],
+                )
+                metadata = single_native[4]
 
             def checked(module: _native.Module) -> CoordinateFunction:
                 return CoordinateFunction(
@@ -1246,24 +1314,35 @@ class Module:
                     )
                 )
 
+            original = self.compile(
+                dtype=dtype,
+                autodiff=autodiff,
+                integration=integration,
+                optimize_forward=optimize_forward,
+                target=target,
+                checks=checks,
+                sufficient_statistics=sufficient_statistics,
+            )
+            if not isinstance(metadata, str):
+                return NormalCoordinatesFunction(
+                    original,
+                    checked(native_modules[0]),
+                    checked(native_modules[1]),
+                    checked(native_modules[2]),
+                    checked(native_modules[3]),
+                    metadata[0],
+                    metadata[1],
+                )
             return NormalTransformedFunction(
-                original=self.compile(
-                    dtype=dtype,
-                    autodiff=autodiff,
-                    integration=integration,
-                    optimize_forward=optimize_forward,
-                    target=target,
-                    checks=checks,
-                    sufficient_statistics=sufficient_statistics,
-                ),
-                score=checked(native_normal[0]),
-                forward=checked(native_normal[1]),
-                inverse=checked(native_normal[2]),
-                log_jacobian=checked(native_normal[3]),
-                coordinate_input=native_normal[4],
+                original=original,
+                score=checked(native_modules[0]),
+                forward=checked(native_modules[1]),
+                inverse=checked(native_modules[2]),
+                log_jacobian=checked(native_modules[3]),
+                coordinate_input=metadata,
             )
         if data_inputs:
-            raise ValueError("data_inputs requires normal_coordinate")
+            raise ValueError("data_inputs requires a Normal coordinate selection")
         native = native_call(
             self._context._native.transform,  # pyright: ignore[reportPrivateUsage]
             self._native,

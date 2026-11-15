@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from ._jax import CompiledFunction
     from ._transforms import (
         CoordinateFunction,
+        NormalCoordinatesFunction,
         NormalTransformedFunction,
         TransformedFunction,
     )
@@ -59,6 +60,7 @@ __all__ = [
     "ModelAnalysis",
     "Module",
     "NormalCoordinate",
+    "NormalCoordinatesFunction",
     "NormalTransformedFunction",
     "Parameter",
     "Parameters",
@@ -105,11 +107,20 @@ def __getattr__(name: str) -> object:
             "CompiledIncrementalScore": CompiledIncrementalScore,
             "ScoreExecutor": ScoreExecutor,
         }[name]
-    if name in ("CoordinateFunction", "NormalTransformedFunction"):
-        from ._transforms import CoordinateFunction, NormalTransformedFunction
+    if name in (
+        "CoordinateFunction",
+        "NormalTransformedFunction",
+        "NormalCoordinatesFunction",
+    ):
+        from ._transforms import (
+            CoordinateFunction,
+            NormalCoordinatesFunction,
+            NormalTransformedFunction,
+        )
 
         return {
             "CoordinateFunction": CoordinateFunction,
+            "NormalCoordinatesFunction": NormalCoordinatesFunction,
             "NormalTransformedFunction": NormalTransformedFunction,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

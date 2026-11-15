@@ -57,6 +57,7 @@ pyhf
 :caption: Reference
 
 transforms
+incremental
 inference
 modules
 values

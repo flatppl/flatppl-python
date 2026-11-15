@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType, NotImplementedType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -19,15 +19,19 @@ from ._box import Box
 from ._frozen import freeze
 
 if TYPE_CHECKING:
+    import jax.typing
     from jax.typing import DTypeLike
 
     from ._graph import Graph
+    from ._incremental import IncrementalScore
     from ._jax import Batch, CompiledFunction
     from ._schema import BindingInfo, Export, MathRow
-    from ._transforms import TransformedFunction
+    from ._transforms import NormalTransformedFunction, TransformedFunction
     from .formula import FormulaView
     from .inference import LogDensity
     from .pyhf import PyhfView
+
+    type _TransformedResult = TransformedFunction | NormalTransformedFunction
 
 
 _NO_PYHF = "the module has no pyhf settings record; convert it with from_pyhf"
@@ -1039,6 +1043,76 @@ class Module:
             checks=checks,
         )
 
+    def prepare_incremental_score(self, *data_inputs: str) -> IncrementalScore:
+        """Prepare scalar term queries and their original-order combiner.
+
+        Rust discovers dependencies. The original query stays unchanged.
+        Compile the plan before creating an explicit executor. Ordinary query
+        compilation and calls remain pure and keep their original interface.
+
+        Args:
+            *data_inputs: Query inputs classified as data instead of parameters.
+
+        Returns:
+            Term queries, dependency metadata and their combiner.
+
+        Raises:
+            ValueError: The query requests gradients instead of a scalar score.
+            CompilationError: The query cannot form a scalar incremental plan.
+        """
+        from ._incremental import IncrementalScore
+
+        if self._gradient:
+            raise ValueError("prepare the scalar query before requesting gradients")
+        native = native_call(
+            self._context._native.prepare_incremental_score,  # pyright: ignore[reportPrivateUsage]
+            self._native,
+            list(data_inputs),
+        )
+        terms = native.terms()
+        return IncrementalScore(
+            original=self,
+            terms=tuple(Module(term[0], self._context) for term in terms),
+            combine=Module(native.combine(), self._context),
+            dependencies=tuple(tuple(term[1]) for term in terms),
+            cache_inputs=tuple(term[2] for term in terms),
+            inputs=tuple(native.inputs()),
+            input_paths=tuple(tuple(tuple(path) for path in term[3]) for term in terms),
+            _native=native,
+        )
+
+    @overload
+    def compile_transformed(
+        self,
+        *,
+        logdensity: bool = False,
+        dtype: jax.typing.DTypeLike = "float32",
+        autodiff: bool = True,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+        target: Literal["cpu", "gpu"] | None = None,
+        checks: Literal["nan", "raise"] = "nan",
+        sufficient_statistics: bool = True,
+        normal_coordinate: None = None,
+        data_inputs: Sequence[str] = (),
+    ) -> TransformedFunction: ...
+
+    @overload
+    def compile_transformed(
+        self,
+        *,
+        logdensity: bool = False,
+        dtype: jax.typing.DTypeLike = "float32",
+        autodiff: bool = True,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+        target: Literal["cpu", "gpu"] | None = None,
+        checks: Literal["nan", "raise"] = "nan",
+        sufficient_statistics: bool = True,
+        normal_coordinate: str | Sequence[str],
+        data_inputs: Sequence[str] = (),
+    ) -> NormalTransformedFunction: ...
+
     def compile_transformed(
         self,
         *,
@@ -1050,13 +1124,17 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
-    ) -> TransformedFunction:
+        normal_coordinate: str | Sequence[str] | None = None,
+        data_inputs: Sequence[str] = (),
+    ) -> _TransformedResult:
         """Compile a query and canonical coordinate wrappers for its input.
 
-        The query must have one continuous ``elementof`` input, which may be
-        a record or array of parameters. Bind fixed data before compiling.
+        By default, the query must have one continuous ``elementof`` input,
+        which may be a record or array of parameters. Bind fixed data first.
         Rust chooses the transforms from the declared domains and emits them
         with the query into StableHLO. No Python callback runs during execution.
+        Select ``normal_coordinate`` to transform one scalar input or record
+        field conditionally, preserving all other input coordinates and domains.
 
         Args:
             logdensity: Add the change-of-variables correction to a scalar
@@ -1070,22 +1148,79 @@ class Module:
             target: Lowering profile, as in :meth:`compile`.
             checks: Parameter value-set reporting, as in :meth:`compile`.
             sufficient_statistics: Likelihood reduction, as in :meth:`compile`.
+            normal_coordinate: Select one unconstrained scalar query input for
+                a conditional Normal map. Returns a Normal companion bundle.
+                Other inputs keep their original coordinates and domains.
+                Select a record field with a tuple such as
+                ``("point", "group", "theta")``. Its forward and inverse maps
+                return the whole record and preserve all sibling fields.
+            data_inputs: Explicit data inputs for Normal coordinate analysis.
 
         Returns:
             The original query, the unconstrained query, and both coordinate
             transforms. Use ``unconstrain`` for initial values and ``constrain``
             for retained draws. See :doc:`/examples/formula` for a BlackJAX example.
+            With ``normal_coordinate``, return the conditional Normal score,
+            forward map, inverse map and log Jacobian instead.
 
         Raises:
             CompilationError: The input has no supported continuous chart,
-                sizes or bounds are unresolved, the query has several inputs,
+                sizes or bounds are unresolved, the default chart has several inputs,
                 or log-density mode receives a non-scalar output.
             ValueError: The query requests a gradient instead of a scalar value.
         """
-        from ._transforms import TransformedFunction
+        from ._jax import float_dtype
+        from ._transforms import (
+            CoordinateFunction,
+            NormalTransformedFunction,
+            TransformedFunction,
+        )
 
         if self._gradient:
             raise ValueError("transform the scalar query before requesting gradients")
+        if normal_coordinate is not None:
+            native_normal = native_call(
+                self._context._native.normal_coordinate,  # pyright: ignore[reportPrivateUsage]
+                self._native,
+                list(data_inputs),
+                [normal_coordinate]
+                if isinstance(normal_coordinate, str)
+                else list(normal_coordinate),
+                logdensity,
+                float_dtype(dtype),
+            )
+
+            def checked(module: _native.Module) -> CoordinateFunction:
+                return CoordinateFunction(
+                    Module(module, self._context).compile(
+                        dtype=dtype,
+                        autodiff=autodiff,
+                        integration=integration,
+                        optimize_forward=optimize_forward,
+                        target=target,
+                        checks=checks,
+                        sufficient_statistics=sufficient_statistics,
+                    )
+                )
+
+            return NormalTransformedFunction(
+                original=self.compile(
+                    dtype=dtype,
+                    autodiff=autodiff,
+                    integration=integration,
+                    optimize_forward=optimize_forward,
+                    target=target,
+                    checks=checks,
+                    sufficient_statistics=sufficient_statistics,
+                ),
+                score=checked(native_normal[0]),
+                forward=checked(native_normal[1]),
+                inverse=checked(native_normal[2]),
+                log_jacobian=checked(native_normal[3]),
+                coordinate_input=native_normal[4],
+            )
+        if data_inputs:
+            raise ValueError("data_inputs requires normal_coordinate")
         native = native_call(
             self._context._native.transform,  # pyright: ignore[reportPrivateUsage]
             self._native,

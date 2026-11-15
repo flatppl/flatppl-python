@@ -1,5 +1,15 @@
 # Incremental query execution
 
+`analyze` returns immutable Rust facts and leaves the query unchanged. Without
+`prepare=True`, decisions follow ordinary default compilation, including its
+passes before and after fixed file loading. That pass may reduce expressions
+without creating a reusable preparation ABI. Explicit preparation reports
+summary names or a refusal; honor the overall refusal even if a local rewrite
+was possible. `sufficient_statistics=False` reports disabled candidates.
+Unrecognized expressions have no decision. Components describe structural
+incidence, not a proof of posterior independence. File data may be read and
+cached with the same snapshot rules as ordinary compilation.
+
 Write the density in FlatPPL and prepare that query:
 
 ```python
@@ -12,6 +22,9 @@ y = external(reals)
 inputs = (a, b, y)
 outputs = logdensityof(Normal(a, 1.0), y) + logdensityof(Normal(b, 2.0), y)
 ''')
+report = query.analyze("y", prepare=True)
+print(report.reductions)
+print(report.summaries, report.preparation_refusal)
 plan = query.prepare_incremental_score("y")
 compiled = plan.compile(gradient_inputs=("a", "b"))
 state = compiled.executor()

@@ -25,6 +25,13 @@ from .formula import from_formula
 from .pyhf import from_pyhf
 
 if TYPE_CHECKING:
+    from ._analysis import (
+        AnalysisTerm,
+        GroupPartition,
+        ModelAnalysis,
+        NormalCoordinate,
+        ReductionDecision,
+    )
     from ._incremental import CompiledIncrementalScore, IncrementalScore, ScoreExecutor
     from ._jax import CompiledFunction
     from ._transforms import (
@@ -34,6 +41,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "AnalysisTerm",
     "Binding",
     "Box",
     "BoxError",
@@ -44,13 +52,17 @@ __all__ = [
     "CoordinateFunction",
     "Fixed",
     "Graph",
+    "GroupPartition",
     "IncrementalScore",
     "Integration",
     "Location",
+    "ModelAnalysis",
     "Module",
+    "NormalCoordinate",
     "NormalTransformedFunction",
     "Parameter",
     "Parameters",
+    "ReductionDecision",
     "Reference",
     "ScoreExecutor",
     "TransformedFunction",
@@ -63,6 +75,16 @@ __all__ = [
 
 def __getattr__(name: str) -> object:
     # Importing the package stays free of JAX until a query compiles.
+    if name in (
+        "AnalysisTerm",
+        "GroupPartition",
+        "ModelAnalysis",
+        "NormalCoordinate",
+        "ReductionDecision",
+    ):
+        from . import _analysis
+
+        return getattr(_analysis, name)
     if name == "CompiledFunction":
         from ._jax import CompiledFunction
 

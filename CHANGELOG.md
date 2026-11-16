@@ -42,6 +42,9 @@ tagged release.
 
 ### Changed
 
+- The package pins Enzyme alpha 16 and the current Rust compiler. Implicit
+  solve derivatives share LU factors across forward and reverse scan passes.
+
 - Linear solves use faster GPU back substitution. CPU solves and inverses
   read elimination rows and columns directly. Nonfinite solve pivots now
   raise the existing runtime error.

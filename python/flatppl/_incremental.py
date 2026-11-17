@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from . import _native  # pyright: ignore[reportMissingModuleSource]
     from ._api import Module
     from ._jax import CompiledFunction
+    from ._schema import Schema
 
 
 @dataclass(frozen=True)
@@ -336,12 +337,9 @@ class ScoreExecutor:
                 raise ValueError("ScoreExecutor is host-only")
             # Native shape validation must precede JAX scatter, which otherwise
             # accepts out-of-range coordinates by dropping updates.
-            if any(
-                not isinstance(index, int) or isinstance(index, bool)
-                for index in cell.indices
-            ):
+            if any(type(index) is not int for index in cell.indices):
                 raise TypeError("array cell indices must be Python integers")
-            indices = tuple(int.__index__(index) for index in cell.indices)
+            indices = tuple(cell.indices)
             cell = InputCell(cell.path, indices)
             self._compiled.plan.affected_cells(cell)
             schema = next(
@@ -350,12 +348,14 @@ class ScoreExecutor:
                 if item["name"] == path[0]
             )
 
-            def replace(current: Any, schema: Any, fields: tuple[str, ...]) -> Any:
+            def replace(current: Any, schema: Schema, fields: tuple[str, ...]) -> Any:
                 if not fields:
-                    scalar = snapshot_value(
-                        {**schema, "shape": []}, value, ".".join(path)
-                    )
+                    assert schema["kind"] == "tensor"
+                    scalar_schema = schema.copy()
+                    scalar_schema["shape"] = []
+                    scalar = snapshot_value(scalar_schema, value, ".".join(path))
                     return current.at[indices].set(scalar)
+                assert schema["kind"] == "record"
                 child = next(
                     item for item in schema["fields"] if item["name"] == fields[0]
                 )

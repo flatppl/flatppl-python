@@ -42,8 +42,9 @@ tagged release.
 
 ### Changed
 
-- The package pins Enzyme alpha 16 and the current Rust compiler. Implicit
-  solve derivatives share LU factors across forward and reverse scan passes.
+- The package pins Enzyme alpha 17 and the current matrix compiler. Checkpointed
+  solves preserve higher derivatives. Determinant queries use native LU with
+  portable singular-cofactor fallbacks. Uniform GPU branches batch together.
 
 - Linear solves use faster GPU back substitution. CPU solves and inverses
   read elimination rows and columns directly. Nonfinite solve pivots now

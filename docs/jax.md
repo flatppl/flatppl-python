@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.12.0.1 with our Enzyme
-`0.0.15+flatppl.16` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.17` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -19,6 +19,7 @@ The pinned dependency set is JAX/jaxlib 0.12.0.1 with our Enzyme
 | `jax.pmap` | Compatible; prefer `shard_map` for new code |
 | Second derivatives | Tested for scalar programs and nested scans through the fork's joint derivative path |
 | Gradients through multiple outputs | Tested for pure static tensor programs |
+| `jax.checkpoint` | Tested through matrix solves, determinant queries and higher derivatives |
 | GPU execution | Tested on NVIDIA A100 with CUDA 12, and GH200 and GB10 with CUDA 13 |
 
 Support also depends on the operations in the query. The default
@@ -445,6 +446,13 @@ and support native FlatPPL broadcasts. Inverse and log-determinant gradients req
 invertible matrix. `det` also supports first derivatives at singular matrices,
 using complete pivoting to preserve the cofactor gradient. Rank decisions use
 exact zero pivots. A singular `logabsdet` returns `-inf`; its gradient is undefined.
+
+Eligible determinant queries use native LU through Enzyme. The emitted StableHLO
+keeps a portable decomposition. Singular `det` gradients retain its cofactor
+fallback; higher derivatives at singular matrices retain that fallback's limits.
+On GPUs, mapped queries with uniform branch choices execute one batched branch.
+Mixed choices preserve lazy evaluation. CPU queries with such branches keep
+the pointwise path.
 
 `linsolve(A, b)` solves `A x = b` for a vector `b` and supports first derivatives
 with respect to both inputs. Singular systems raise a runtime error; wrap JIT

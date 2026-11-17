@@ -212,6 +212,164 @@ def test_distributional_formula_scores_gradients_and_saved_prediction_means() ->
             )
 
 
+def test_nonlinear_gaussian_scores_and_predicts_new_rows() -> None:
+    model = from_formula(
+        "y ~ a * exp(b * x)",
+        {"x": [0.0, 1.0, 2.0, None], "y": [2.2, 3.8, 8.5, 0.0]},
+        nlpars={"a": "a ~ 1", "b": "b ~ 1"},
+        priors=[
+            {"class": "b", "nlpar": "a", "prior": "normal(1, 2)"},
+            {"class": "b", "nlpar": "b", "prior": "normal(0, 2)"},
+            {"class": "sigma", "prior": "normal(0, 1)"},
+        ],
+    )
+    assert model.formula.rows == (0, 1, 2)
+    assert set(model.formula.info["nlpars"]) == {"a", "b"}
+    prediction = model.formula.prepare({"x": [3.0, -1.0]}).set(y_data=[16.0, 1.0])
+    model.context.register("growth.flatppl", model)
+    model.context.register("growth_prediction.flatppl", prediction)
+    score = flatppl(
+        """
+        m = load_module("growth.flatppl")
+        p = elementof(cartprod(temp_Intercept_nl_a=reals, temp_Intercept_nl_b=reals, sigma=posreals))
+        inputs = p
+        outputs = logdensityof(m.Pi_post, p)
+        """,
+        context=model.context,
+    ).compile()
+    point = {
+        "temp_Intercept_nl_a": 2.0,
+        "temp_Intercept_nl_b": math.log(2),
+        "sigma": 0.5,
+    }
+    value, gradient = jax.jit(jax.value_and_grad(score))(point)
+    np.testing.assert_allclose(value, -5.09739346484792, atol=1e-5)
+    np.testing.assert_allclose(
+        [gradient[key] for key in point], [6.95, 28.626713204860014, -3.86], atol=1e-5
+    )
+    heldout = flatppl(
+        """
+        m = load_module("growth_prediction.flatppl")
+        p = elementof(cartprod(temp_Intercept_nl_a=reals, temp_Intercept_nl_b=reals, sigma=posreals))
+        inputs = p
+        outputs = m.log_lik(p)
+        """,
+        context=model.context,
+    ).compile(autodiff=False)
+    # At x=3 and -1 the fitted growth curve gives means 16 and 1.
+    np.testing.assert_allclose(
+        heldout(point), [-math.log(0.5 * math.sqrt(2 * math.pi))] * 2
+    )
+
+
+def test_weighted_nonlinear_gaussian_division_scores_and_differentiates() -> None:
+    x = np.array([0.5, 1.5, 3.0])
+    y = np.array([-0.3, -0.6, -0.8])
+    weights = np.array([2.0, 0.0, 0.7])
+    model = from_formula(
+        "y | weights(w) ~ -log(a^2 + x) / exp(b)",
+        {"x": x, "y": y, "w": weights},
+        nlpars={"a": "a ~ 1", "b": "b ~ 1"},
+        dpars={"sigma": {"formula": "sigma ~ 1", "link": "log"}},
+        priors=[
+            {"class": "b", "nlpar": "a", "prior": "normal(0, 1)"},
+            {"class": "b", "nlpar": "b", "prior": "normal(0, 1)"},
+            {"class": "Intercept", "dpar": "sigma", "prior": "normal(0, 1)"},
+        ],
+    )
+    model.context.register("weighted.flatppl", model)
+    score = flatppl(
+        """
+        m = load_module("weighted.flatppl")
+        p = elementof(cartprod(temp_Intercept_nl_a=reals, temp_Intercept_nl_b=reals,
+                              temp_Intercept_sigma=reals))
+        inputs = p
+        outputs = logdensityof(m.Pi_post, p)
+        """,
+        context=model.context,
+    ).compile()
+    a, b, log_sigma = -1.2, 0.25, -0.1
+    point = {
+        "temp_Intercept_nl_a": a,
+        "temp_Intercept_nl_b": b,
+        "temp_Intercept_sigma": log_sigma,
+    }
+    value, gradient = jax.jit(jax.value_and_grad(score))(point)
+    variance = math.exp(2 * log_sigma)
+    mean = -np.log(a**2 + x) * math.exp(-b)
+    residual = y - mean
+    prior = -0.5 * sum(v**2 + math.log(2 * math.pi) for v in point.values())
+    expected = prior - 0.5 * (
+        weights @ (residual**2 / variance + math.log(2 * math.pi * variance))
+    )
+    mean_score = weights * residual / variance
+    expected_gradient = [
+        mean_score @ (-2 * a * math.exp(-b) / (a**2 + x)) - a,
+        mean_score @ -mean - b,
+        weights @ (residual**2 / variance - 1) - log_sigma,
+    ]
+    np.testing.assert_allclose(value, expected, atol=3e-6)
+    np.testing.assert_allclose(
+        [gradient[key] for key in point], expected_gradient, atol=3e-6
+    )
+
+
+def test_nonlinear_2pl_scores_and_preserves_prediction_level_order() -> None:
+    model = from_formula(
+        "y ~ exp(ld) * (theta - difficulty)",
+        {
+            "person": ["p1", "p1", "p2", "p2"],
+            "item": ["i1", "i2", "i1", "i2"],
+            "y": [1, 0, 0, 1],
+        },
+        family="bernoulli",
+        nlpars={
+            "theta": "theta ~ 0 + person",
+            "difficulty": "difficulty ~ 0 + item",
+            "ld": "ld ~ 0 + item",
+        },
+        priors=[
+            {"class": "b", "nlpar": "theta", "prior": "normal(0, 1)"},
+            {"class": "b", "nlpar": "difficulty", "prior": "normal(0, 1)"},
+            {"class": "b", "nlpar": "ld", "prior": "normal(0, 0.5)"},
+        ],
+    )
+    point = {
+        "b_nl_theta": np.array([0.8, -0.4]),
+        "b_nl_difficulty": np.array([0.2, -0.6]),
+        "b_nl_ld": np.log([1.5, 0.5]),
+    }
+    prediction = model.formula.prepare({"person": ["p2", "p1"], "item": ["i2", "i1"]})
+    prediction = prediction.set(y_data=[1, 1])
+    model.context.register("irt.flatppl", model)
+    model.context.register("irt_prediction.flatppl", prediction)
+    inputs = "p = elementof(cartprod(b_nl_theta=cartpow(reals,2), b_nl_difficulty=cartpow(reals,2), b_nl_ld=cartpow(reals,2)))"
+    score = flatppl(
+        f'm = load_module("irt.flatppl")\n{inputs}\ninputs = p\noutputs = sum(m.log_lik(p))',
+        context=model.context,
+    ).compile()
+    value, gradient = jax.jit(jax.value_and_grad(score))(point)
+    # Logits 0.9, 0.7, -0.9, 0.1. Each derivative is y - logistic(logit)
+    # times the derivative of that logit.
+    np.testing.assert_allclose(value, -2.429890458423204, atol=2e-6)
+    np.testing.assert_allclose(
+        gradient["b_nl_theta"], [0.09948185997841091, -0.19606533980196394], atol=2e-6
+    )
+    np.testing.assert_allclose(
+        gradient["b_nl_difficulty"], [0, 0.09658347982355303], atol=2e-6
+    )
+    np.testing.assert_allclose(
+        gradient["b_nl_ld"], [0.5202908952749928, -0.4202293592656103], atol=2e-6
+    )
+    heldout = flatppl(
+        f'm = load_module("irt_prediction.flatppl")\n{inputs}\ninputs = p\noutputs = m.log_lik(p)',
+        context=model.context,
+    ).compile(autodiff=False)
+    np.testing.assert_allclose(
+        heldout(point), -np.logaddexp(0, [-0.1, -0.9]), atol=2e-6
+    )
+
+
 def test_ordered_factors_and_observed_preparation_keep_training_defaults() -> None:
     data = pd.DataFrame(
         {

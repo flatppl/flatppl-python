@@ -29,6 +29,7 @@ def from_formula(
     *,
     link: str | None = None,
     dpars: Mapping[str, Mapping[str, object]] | None = None,
+    nlpars: Mapping[str, str] | None = None,
     context: Context | None = None,
     name: str | None = None,
     **options: object,
@@ -55,6 +56,9 @@ def from_formula(
         dpars: Formulas for family parameters, for example
             ``{"sigma": {"formula": "sigma ~ x", "link": "log"}}``.
             Rust validates each predictor and chooses any omitted link.
+        nlpars: Formulas for named nonlinear parameters, for example
+            ``{"a": "a ~ 1", "b": "b ~ 1"}`` with ``"y ~ a * exp(b * x)"``.
+            Provide an explicit coefficient prior for each parameter.
         context: The owning context. The default creates a new one.
         name: The registry path that relative registry imports start from.
         **options: Rust converter options, such as ``center`` and ``contrasts``.
@@ -78,6 +82,8 @@ def from_formula(
         spec["link"] = link
     if dpars is not None:
         spec["dpars"] = {name: dict(predictor) for name, predictor in dpars.items()}
+    if nlpars is not None:
+        spec["nlpars"] = dict(nlpars)
     if context is None:
         context = Context()
     source = json.dumps(spec, allow_nan=False)

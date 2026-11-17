@@ -262,6 +262,58 @@ def test_nonlinear_gaussian_scores_and_predicts_new_rows() -> None:
     )
 
 
+def test_weighted_nonlinear_gaussian_division_scores_and_differentiates() -> None:
+    x = np.array([0.5, 1.5, 3.0])
+    y = np.array([-0.3, -0.6, -0.8])
+    weights = np.array([2.0, 0.0, 0.7])
+    model = from_formula(
+        "y | weights(w) ~ -log(a^2 + x) / exp(b)",
+        {"x": x, "y": y, "w": weights},
+        nlpars={"a": "a ~ 1", "b": "b ~ 1"},
+        dpars={"sigma": {"formula": "sigma ~ 1", "link": "log"}},
+        priors=[
+            {"class": "b", "nlpar": "a", "prior": "normal(0, 1)"},
+            {"class": "b", "nlpar": "b", "prior": "normal(0, 1)"},
+            {"class": "Intercept", "dpar": "sigma", "prior": "normal(0, 1)"},
+        ],
+    )
+    model.context.register("weighted.flatppl", model)
+    score = flatppl(
+        """
+        m = load_module("weighted.flatppl")
+        p = elementof(cartprod(temp_Intercept_nl_a=reals, temp_Intercept_nl_b=reals,
+                              temp_Intercept_sigma=reals))
+        inputs = p
+        outputs = logdensityof(m.Pi_post, p)
+        """,
+        context=model.context,
+    ).compile()
+    a, b, log_sigma = -1.2, 0.25, -0.1
+    point = {
+        "temp_Intercept_nl_a": a,
+        "temp_Intercept_nl_b": b,
+        "temp_Intercept_sigma": log_sigma,
+    }
+    value, gradient = jax.jit(jax.value_and_grad(score))(point)
+    variance = math.exp(2 * log_sigma)
+    mean = -np.log(a**2 + x) * math.exp(-b)
+    residual = y - mean
+    prior = -0.5 * sum(v**2 + math.log(2 * math.pi) for v in point.values())
+    expected = prior - 0.5 * (
+        weights @ (residual**2 / variance + math.log(2 * math.pi * variance))
+    )
+    mean_score = weights * residual / variance
+    expected_gradient = [
+        mean_score @ (-2 * a * math.exp(-b) / (a**2 + x)) - a,
+        mean_score @ -mean - b,
+        weights @ (residual**2 / variance - 1) - log_sigma,
+    ]
+    np.testing.assert_allclose(value, expected, atol=3e-6)
+    np.testing.assert_allclose(
+        [gradient[key] for key in point], expected_gradient, atol=3e-6
+    )
+
+
 def test_nonlinear_2pl_scores_and_preserves_prediction_level_order() -> None:
     model = from_formula(
         "y ~ exp(ld) * (theta - difficulty)",

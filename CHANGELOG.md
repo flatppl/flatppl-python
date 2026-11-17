@@ -50,6 +50,9 @@ tagged release.
 
 ### Changed
 
+- The package pins Enzyme alpha 20. CPU solves avoid redundant result masks
+  when the caller already guards every use with the same pivot validity check.
+
 - The package pins Enzyme alpha 18 and the current matrix compiler. Checkpointed
   solves preserve higher derivatives. Determinant queries use native LU with
   portable singular-cofactor fallbacks. Uniform GPU branches batch together.

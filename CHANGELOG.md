@@ -50,8 +50,11 @@ tagged release.
 
 ### Changed
 
-- The package pins Enzyme alpha 20. CPU solves avoid redundant result masks
-  when the caller already guards every use with the same pivot validity check.
+- The package pins Enzyme alpha 21, which reuses one batched LU factorization
+  in `vmap(value_and_grad)` for linear solves.
+
+- CPU solves avoid redundant result masks when the caller already guards
+  every use with the same pivot validity check.
 
 - The package pins Enzyme alpha 18 and the current matrix compiler. Checkpointed
   solves preserve higher derivatives. Determinant queries use native LU with

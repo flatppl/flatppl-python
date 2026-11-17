@@ -1386,7 +1386,12 @@ class Module:
         integration: Integration | None = None,
         optimize_forward: bool = False,
     ) -> LogDensity:
-        """Prepare a log density for a sampler or an optimiser.
+        """Construct a log-density convenience object for inference.
+
+        This method uses :meth:`compile_transformed` on a query's declared
+        inputs and outputs. A named measure or likelihood first becomes a
+        FlatPPL query. The result bundles the compiled density and coordinate
+        maps with sampler and optimiser setup.
 
         ``measure`` names a binding of this module:
 

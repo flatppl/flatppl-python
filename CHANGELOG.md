@@ -7,6 +7,9 @@ tagged release.
 
 ### Added
 
+- Enzyme alpha 18 lowers small static float32 CPU matrix products after
+  differentiation, reducing setup costs in solve and covariance gradients.
+
 - `compile_transformed(normal_coordinates=...)` composes selected scalar Normal
   maps in dependency order, preserving argument names and record siblings.
   Companions check both complete round trips. Crossed callback captures refuse.

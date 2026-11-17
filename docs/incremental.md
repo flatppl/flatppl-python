@@ -48,7 +48,26 @@ state.update(("point", "group", "theta"), new_theta)
 value = state.value()
 ```
 
-Each path component names one record field. Arrays remain whole leaves.
+Each path component names one record field. Use a separate cell selector for
+scalar array edits:
+
+```python
+from flatppl import InputCell
+
+cell = InputCell(("point", "values"), (0, 2))
+print(plan.affected_cells(cell))
+state.update_cell(cell, new_value)
+value = state.value()
+```
+
+Coordinates are zero-based and include every array axis. Rust recognizes fixed
+scalar-cell reads through `get` and `get0`. Dynamic indices, slices and opaque
+array uses retain whole-array dependencies. Reports separate `input_cells`
+from whole `input_paths` and describe static dimensions in `input_arrays`.
+Cell reads do not split parameter blocks or prove independent coordinates.
+Changing one simplex coordinate can still violate its joint constraint.
+The immutable cell update may copy the array buffer.
+
 Changes invalidate overlapping prefixes and whole-record readers. Unknown paths
 fail before any revision changes. Supplying a whole record through `value`
 invalidates its dependent terms. No array-identity comparison infers freshness.

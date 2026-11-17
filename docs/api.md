@@ -146,6 +146,10 @@ whose names start with an underscore, is private.
 
 .. autoclass:: flatppl.AnalysisTerm
 
+.. autoclass:: flatppl.InputArray
+
+.. autoclass:: flatppl.InputCell
+
 .. autoclass:: flatppl.NormalCoordinate
 
 .. autoclass:: flatppl.ReductionDecision

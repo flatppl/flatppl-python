@@ -318,7 +318,18 @@ def _check_status(error: jax.Array) -> None:
         "FlatPPL distribution parameter is outside its declared value set",
     )
     checkify.check(  # pyright: ignore[reportUnknownMemberType]
-        jnp.all((error >= 0) & (error <= 8) | (error == PARAMETER_OUTSIDE_SET)),
+        jnp.all(error != 10), "FlatPPL numerical algorithm did not converge"
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 11),
+        "FlatPPL eigenvalue extrema require a nonempty real spectrum",
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all(error != 12),
+        "FlatPPL numeric function arguments are outside their declared domain",
+    )
+    checkify.check(  # pyright: ignore[reportUnknownMemberType]
+        jnp.all((error >= 0) & (error <= 12)),
         "Unknown FlatPPL runtime error",
     )
 

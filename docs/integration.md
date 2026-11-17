@@ -177,7 +177,7 @@ probability once and retains each observation's coefficient and support.
 For one vector Gaussian latent and one affine Gaussian child, `lawof(child)`
 uses the exact Gaussian marginal. `disintegrate` also exposes its conditional:
 
-```flatppl
+```text
 z ~ MvNormal([1., -2.], rowstack([[2., 1.], [1., 3.]]))
 y ~ MvNormal(rowstack([[1., 2.]]) * z + [.5], rowstack([[4.]]))
 posterior, predictive = disintegrate("z", lawof((z=z, y=y)))

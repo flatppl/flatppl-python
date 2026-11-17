@@ -6,13 +6,13 @@
 | --- | --- |
 | Python | 3.12, 3.13, 3.14, 3.15 |
 | JAX and jaxlib | 0.12.0.1 |
-| Enzyme (`enzyme-ad`) | 0.0.15+flatppl.18, FlatPPL fork |
+| Enzyme (`enzyme-ad`) | 0.0.15+flatppl.19, FlatPPL fork |
 | Linux x86-64 | glibc 2.28 or newer |
 | Linux ARM64 | glibc 2.28 or newer |
 | macOS | Apple silicon, macOS 14 or newer |
 
 The package pins JAX and Enzyme together. Enzyme wheels come from the
-[FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.18)
+[FlatPPL fork](https://github.com/BJMCox/Enzyme-JAX/releases/tag/flatppl-alpha.19)
 and include shared forward work for values and gradients, stable real
 reciprocal-square-root derivatives, batching rules, and sharding support.
 Alpha 5 adds exact product-reduction derivatives at zero factors and
@@ -29,6 +29,8 @@ Alpha 16 adds implicit solve derivatives and shares LU factors across forward
 and reverse scan passes, including higher derivatives.
 Alpha 17 adds checkpoint support, native determinant derivatives and lazy
 conditional batching on GPUs.
+Alpha 19 extends bounded float32 CPU product lowering to batches, shared
+operands and multidimensional contractions.
 These are alpha builds. Intel macOS and Windows are not packaged.
 Package metadata selects the Enzyme wheel by Python version and platform, with
 a pinned URL and SHA-256 hash. No separate constraints file is needed.

@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- Exact shared Beta and Dirichlet marginals preserve observation dependence and
+  coefficients. Affine Gaussian queries support exact marginal scoring and
+  conditional scoring and sampling through `disintegrate`.
+
 - `InputCell` and `InputArray` expose scalar array reads and static dimensions.
   `ScoreExecutor.update_cell(...)` preserves unrelated term caches and complete
   gradients, with explicit zero-based coordinates and native shape validation.

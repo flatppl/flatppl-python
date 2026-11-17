@@ -7,12 +7,15 @@ from dataclasses import dataclass, field
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from ._analysis import InputCell
+
 if TYPE_CHECKING:
     from jax.typing import DTypeLike
 
     from . import _native  # pyright: ignore[reportMissingModuleSource]
     from ._api import Module
     from ._jax import CompiledFunction
+    from ._schema import Schema
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,7 @@ class IncrementalScore:
     cache_inputs: tuple[str, ...]
     inputs: tuple[str, ...]
     input_paths: tuple[tuple[tuple[str, ...], ...], ...]
+    input_cells: tuple[tuple[InputCell, ...], ...]
     _native: _native.IncrementalPlan = field(repr=False)
 
     def affected_terms(self, *changed: str) -> tuple[int, ...]:
@@ -39,6 +43,12 @@ class IncrementalScore:
     def affected_paths(self, *changed: tuple[str, ...]) -> tuple[int, ...]:
         """Return affected terms for explicit root/record-field paths."""
         return tuple(self._native.affected_paths(changed))
+
+    def affected_cells(self, *changed: InputCell) -> tuple[int, ...]:
+        """Return affected terms for full-rank zero-based array cell edits."""
+        return tuple(
+            self._native.affected_cells([(cell.path, cell.indices) for cell in changed])
+        )
 
     def compile(
         self,
@@ -305,6 +315,59 @@ class ScoreExecutor:
             if any(isinstance(leaf, Tracer) for leaf in jax.tree.leaves(root)):
                 raise ValueError("ScoreExecutor is host-only")
             self._revisions.invalidate_paths([path])
+            self._inputs[path[0]] = root
+
+    def update_cell(self, cell: InputCell, value: Any) -> None:
+        """Replace one array cell and invalidate its readers.
+
+        Bind the root input first. Coordinates are zero-based and include every
+        axis. The immutable array update may copy its buffer. This method does
+        not enforce joint parameter constraints such as a simplex sum.
+        """
+        import jax
+        from jax.core import Tracer
+
+        from ._jax import snapshot_value
+
+        with self._lock:
+            path = cell.path
+            if not path or path[0] not in self._inputs:
+                raise ValueError("bind the root input before updating its cells")
+            if any(isinstance(leaf, Tracer) for leaf in jax.tree.leaves(value)):
+                raise ValueError("ScoreExecutor is host-only")
+            # Native shape validation must precede JAX scatter, which otherwise
+            # accepts out-of-range coordinates by dropping updates.
+            if any(type(index) is not int for index in cell.indices):
+                raise TypeError("array cell indices must be Python integers")
+            indices = tuple(cell.indices)
+            cell = InputCell(cell.path, indices)
+            self._compiled.plan.affected_cells(cell)
+            schema = next(
+                item["value"]
+                for item in self._compiled.full.schema["inputs"]
+                if item["name"] == path[0]
+            )
+
+            def replace(current: Any, schema: Schema, fields: tuple[str, ...]) -> Any:
+                if not fields:
+                    assert schema["kind"] == "tensor"
+                    scalar_schema = schema.copy()
+                    scalar_schema["shape"] = []
+                    scalar = snapshot_value(scalar_schema, value, ".".join(path))
+                    return current.at[indices].set(scalar)
+                assert schema["kind"] == "record"
+                child = next(
+                    item for item in schema["fields"] if item["name"] == fields[0]
+                )
+                return {
+                    **current,
+                    fields[0]: replace(current[fields[0]], child["value"], fields[1:]),
+                }
+
+            root = replace(self._inputs[path[0]], schema, path[1:])
+            if any(isinstance(leaf, Tracer) for leaf in jax.tree.leaves(root)):
+                raise ValueError("ScoreExecutor is host-only")
+            self._revisions.invalidate_cells([(cell.path, cell.indices)])
             self._inputs[path[0]] = root
 
     def value_and_grad(self, **changed: Any) -> tuple[Any, dict[str, Any]]:

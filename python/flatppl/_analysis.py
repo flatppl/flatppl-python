@@ -7,14 +7,39 @@ from typing import Any, Literal
 
 
 @dataclass(frozen=True)
+class InputCell:
+    """One scalar array cell, with a record path and zero-based Python integers.
+
+    Cell dependencies describe reads. They do not imply independent parameters
+    or admissible separate moves within a constrained array.
+    """
+
+    path: tuple[str, ...]
+    indices: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class InputArray:
+    """Static scalar-array dimensions without enumerating its cells."""
+
+    path: tuple[str, ...]
+    shape: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class AnalysisTerm:
-    """One additive term, with its original sign, multiplicity and input paths."""
+    """One additive term, with signs, multiplicity and read dependencies.
+
+    Whole input/record/array reads appear in ``input_paths``. Precise array
+    reads appear separately in ``input_cells``.
+    """
 
     sign: int
     multiplicity: int
     parameters: tuple[str, ...]
     data: tuple[str, ...]
     input_paths: tuple[tuple[str, ...], ...]
+    input_cells: tuple[InputCell, ...]
 
 
 @dataclass(frozen=True)
@@ -63,7 +88,7 @@ class ModelAnalysis:
     """Structural query facts and decisions from a selected reduction pass.
 
     Components describe parameter/term incidence. They do not prove posterior
-    independence, propriety or removable normalizers. Arrays remain whole leaves.
+    independence, propriety or removable normalizers. Parameter blocks remain whole.
     Enabled preparation includes summary names or an explicit refusal reason.
     The authored query and ordinary compilation remain unchanged.
     """
@@ -74,6 +99,7 @@ class ModelAnalysis:
     components: tuple[tuple[str, ...], ...]
     unused_parameters: tuple[str, ...]
     input_paths: tuple[tuple[str, ...], ...]
+    input_arrays: tuple[InputArray, ...]
     normal_coordinates: tuple[NormalCoordinate, ...]
     reductions: tuple[ReductionDecision, ...]
     summaries: tuple[str, ...]
@@ -91,6 +117,10 @@ def analysis(value: dict[str, Any]) -> ModelAnalysis:
             tuple(term["parameters"]),
             tuple(term["data"]),
             tuple(tuple(path) for path in term["input_paths"]),
+            tuple(
+                InputCell(tuple(path), tuple(indices))
+                for path, indices in term["input_cells"]
+            ),
         )
         for term in value["terms"]
     )
@@ -125,6 +155,10 @@ def analysis(value: dict[str, Any]) -> ModelAnalysis:
         tuple(tuple(component) for component in value["components"]),
         tuple(value["unused_parameters"]),
         tuple(tuple(path) for path in value["input_paths"]),
+        tuple(
+            InputArray(tuple(array["path"]), tuple(array["shape"]))
+            for array in value["input_arrays"]
+        ),
         coordinates,
         reductions,
         tuple(value["summaries"]),

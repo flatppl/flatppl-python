@@ -32,11 +32,6 @@ tagged release.
   query, conditional score, forward/inverse maps and log Jacobian. Every map checks
   validity. Sibling inputs keep their original coordinates and domains.
 
-- `Module.compile(boxes=...)` binds black-box interface modules to
-  flatppl-bridge servers through `flatppl.Box`. Box queries run as
-  `jax.pure_callback` calls with custom derivatives, one broadcast request per
-  `jax.vmap` batch, per-row RNG states for sampling, and content-addressed
-  upload of large data. See the black-box guide.
 - `standard_module("special-functions", "0.1")` `erf`, `erfc`, `digamma` and
   `polygamma(n, x)` compile, with gradients in `x`. They used to fail with
   "has no lowering to FlatPDL base operations". The new member

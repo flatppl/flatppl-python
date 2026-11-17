@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import pytest
 from jax.experimental import checkify
 
-from flatppl._jax import _check_status
+from flatppl._jax import _check_status  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize(

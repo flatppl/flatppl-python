@@ -193,6 +193,55 @@ are `temp_Intercept_sigma` and `b_sigma`; `b_Intercept_sigma` reports the
 intercept on the original predictor scale. Inspect `formula.info["parameters"]`
 for the complete binding map.
 
+## Model a nonlinear predictor
+
+Pass one ordinary formula per nonlinear parameter. The response expression
+combines their fitted values with numeric data columns.
+
+```python
+model = from_formula(
+    "y ~ a * exp(b * x)",
+    {"x": [0.0, 1.0, 2.0], "y": [2.2, 3.8, 8.5]},
+    nlpars={"a": "a ~ 1", "b": "b ~ 1"},
+    priors=[
+        {"class": "b", "nlpar": "a", "prior": "normal(1, 2)"},
+        {"class": "b", "nlpar": "b", "prior": "normal(0, 2)"},
+    ],
+)
+prediction = model.formula.prepare({"x": [3.0, -1.0]})
+```
+
+Gaussian and Bernoulli formulas support this option. The family link applies
+to the full expression. This 2PL model fixes the ability prior to the standard
+Normal and estimates a positive item discrimination through `exp(ld)`.
+
+```python
+irt = from_formula(
+    "y ~ exp(ld) * (theta - difficulty)",
+    {
+        "person": ["p1", "p1", "p2", "p2"],
+        "item": ["i1", "i2", "i1", "i2"],
+        "y": [1, 0, 0, 1],
+    },
+    family="bernoulli",
+    nlpars={
+        "theta": "theta ~ 0 + person",
+        "difficulty": "difficulty ~ 0 + item",
+        "ld": "ld ~ 0 + item",
+    },
+    priors=[
+        {"class": "b", "nlpar": "theta", "prior": "normal(0, 1)"},
+        {"class": "b", "nlpar": "difficulty", "prior": "normal(0, 1)"},
+        {"class": "b", "nlpar": "ld", "prior": "normal(0, 0.5)"},
+    ],
+)
+```
+
+Each population coefficient needs an explicit prior scoped by `nlpar`.
+Intercepts use class `b` and keep their original scale. Group effects remain
+independent across nonlinear predictors. Inspect `model.formula.info["nlpars"]`
+for the designs and use `prepare` to reuse them on new rows.
+
 ## Supported formulas and families
 
 The current core supports numeric, logical and factor predictors; intercept
@@ -425,7 +474,7 @@ sampled as a prior source. The posterior can still be proper.
 
 ## Current limits
 
-Monotonic terms, nonlinear formulas, other response families, and response
+Monotonic terms, nonlinear predictors for other families, and response
 additions other than `trials`, `weights` and `se` are not implemented.
 `center=False` is not supported; use `0 + Intercept + ...` for an uncentred
 intercept, or keep the default centred intercept. Arbitrary R function calls are

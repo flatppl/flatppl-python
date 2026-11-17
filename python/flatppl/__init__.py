@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from ._analysis import (
         AnalysisTerm,
         GroupPartition,
+        InputArray,
+        InputCell,
         ModelAnalysis,
         NormalCoordinate,
         ReductionDecision,
@@ -55,6 +57,8 @@ __all__ = [
     "Graph",
     "GroupPartition",
     "IncrementalScore",
+    "InputArray",
+    "InputCell",
     "Integration",
     "Location",
     "ModelAnalysis",
@@ -80,6 +84,8 @@ def __getattr__(name: str) -> object:
     if name in (
         "AnalysisTerm",
         "GroupPartition",
+        "InputArray",
+        "InputCell",
         "ModelAnalysis",
         "NormalCoordinate",
         "ReductionDecision",

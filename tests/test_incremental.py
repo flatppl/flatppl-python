@@ -3,7 +3,54 @@ import numpy as np
 import pytest
 from jax.experimental import checkify
 
-from flatppl import flatppl
+from flatppl import InputCell, flatppl
+
+
+def test_cell_updates_preserve_sibling_scores_and_full_array_gradients():
+    query = flatppl(
+        "p=elementof(cartprod(v=cartpow(reals,[2,3]),other=reals))\ninputs=p\noutputs=get(p.v,1,1)*get(p.v,1,1)+get0(p.v,1,2)+sum(p.v)+p.other"
+    )
+    plan = query.prepare_incremental_score()
+    cell = InputCell(("p", "v"), (0, 0))
+    assert plan.input_cells[0] == (cell,)
+    assert plan.affected_cells(cell) == (0, 2)
+    assert plan.affected_paths(("p", "v")) == (0, 1, 2)
+    executor = plan.compile(dtype="float64", gradient_inputs=("p",)).executor()
+    p = dict(v=np.arange(1.0, 7.0).reshape(2, 3), other=7.0)
+    value, gradient = executor.value_and_grad(p=p)
+    assert float(value) == 35.0
+    executor.update_cell(cell, 4.0)
+    value, gradient = executor.value_and_grad()
+    assert float(value) == 53.0
+    assert executor.last_evaluated_terms == (0, 2)
+    np.testing.assert_allclose(gradient["p"]["v"], [[9.0, 1.0, 1.0], [1.0, 1.0, 2.0]])
+    assert float(gradient["p"]["other"]) == 1.0
+    for invalid in [
+        InputCell(("p", "v"), (2, 0)),
+        InputCell(("p", "v"), (True, 0)),
+        InputCell(("p", "v"), (np.bool_(True), 0)),  # pyright: ignore[reportArgumentType]
+    ]:
+        with pytest.raises((ValueError, OverflowError, TypeError)):
+            executor.update_cell(invalid, 99.0)
+    assert float(executor.value()) == 53.0
+    assert executor.last_evaluated_terms == ()
+
+
+def test_unread_cell_edits_and_failed_scalar_shapes_leave_cache_sound():
+    plan = flatppl(
+        "v=external(cartpow(reals,3))\ninputs=v\noutputs=v[1]*v[1]"
+    ).prepare_incremental_score("v")
+    executor = plan.compile(dtype="float64", gradient_inputs=("v",)).executor()
+    assert float(executor.value(v=np.array([2.0, 3.0, 4.0]))) == 4.0
+    executor.update_cell(InputCell(("v",), (2,)), 8.0)
+    value, gradient = executor.value_and_grad()
+    assert float(value) == 4.0
+    assert executor.last_evaluated_terms == ()
+    np.testing.assert_allclose(gradient["v"], [4.0, 0.0, 0.0])
+    with pytest.raises((ValueError, TypeError)):
+        executor.update_cell(InputCell(("v",), (0,)), [5.0, 6.0])
+    assert float(executor.value()) == 4.0
+    assert executor.last_evaluated_terms == ()
 
 
 @pytest.fixture(autouse=True)

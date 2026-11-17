@@ -1,6 +1,20 @@
 import numpy as np
 
-from flatppl import flatppl
+from flatppl import InputCell, flatppl
+
+
+def test_array_read_facts_normalize_coordinates_without_splitting_parameters():
+    query = flatppl(
+        "p=elementof(cartprod(v=cartpow(reals,[2,3]),spare=reals))\ninputs=p\noutputs=get(p.v,2,3)*get0(p.v,1,2)+sum(p.v)"
+    )
+    report = query.analyze()
+    assert report.components == (("p",),)
+    assert report.input_arrays[0].path == ("p", "v")
+    assert report.input_arrays[0].shape == (2, 3)
+    assert report.terms[0].input_cells == (InputCell(("p", "v"), (1, 2)),)
+    assert not report.terms[0].input_paths
+    assert report.terms[1].input_paths == (("p", "v"),)
+    assert not report.terms[1].input_cells
 
 
 def test_structural_report_keeps_signs_multiplicity_paths_and_unused_inputs():

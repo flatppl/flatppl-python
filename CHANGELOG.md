@@ -10,6 +10,10 @@ tagged release.
 - Enzyme alpha 18 lowers small static float32 CPU matrix products after
   differentiation, reducing setup costs in solve and covariance gradients.
 
+- `InputCell` and `InputArray` expose scalar array reads and static dimensions.
+  `ScoreExecutor.update_cell(...)` preserves unrelated term caches and complete
+  gradients, with explicit zero-based coordinates and native shape validation.
+
 - `compile_transformed(normal_coordinates=...)` composes selected scalar Normal
   maps in dependency order, preserving argument names and record siblings.
   Companions check both complete round trips. Crossed callback captures refuse.

@@ -1109,6 +1109,7 @@ class Module:
             ValueError: The query requests gradients instead of a scalar score.
             CompilationError: The query cannot form a scalar incremental plan.
         """
+        from ._analysis import InputCell
         from ._incremental import IncrementalScore
 
         if self._gradient:
@@ -1127,6 +1128,12 @@ class Module:
             cache_inputs=tuple(term[2] for term in terms),
             inputs=tuple(native.inputs()),
             input_paths=tuple(tuple(tuple(path) for path in term[3]) for term in terms),
+            input_cells=tuple(
+                tuple(
+                    InputCell(tuple(path), tuple(indices)) for path, indices in term[4]
+                )
+                for term in terms
+            ),
             _native=native,
         )
 

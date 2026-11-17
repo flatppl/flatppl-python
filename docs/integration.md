@@ -169,6 +169,27 @@ Explicit `kchain(prior, kernel)` uses the same integral for one scalar prior
 and one explicit kernel input. Exact rules still run first. Runtime Uniform
 interval bounds support values and first derivatives.
 
+Exact conjugate queries also need no `Integration()`. Bernoulli and Binomial
+fields can share a Beta probability. Categorical, Categorical0 and Multinomial
+fields can share a Dirichlet probability. The compiler integrates the shared
+probability once and retains each observation's coefficient and support.
+
+For one vector Gaussian latent and one affine Gaussian child, `lawof(child)`
+uses the exact Gaussian marginal. `disintegrate` also exposes its conditional:
+
+```text
+z ~ MvNormal([1., -2.], rowstack([[2., 1.], [1., 3.]]))
+y ~ MvNormal(rowstack([[1., 2.]]) * z + [.5], rowstack([[4.]]))
+posterior, predictive = disintegrate("z", lawof((z=z, y=y)))
+outputs = logdensityof(posterior(y=[1.5]), [.5, -.25])
+```
+
+The conditional supports scoring and `rand` with explicit RNG state. Static
+dimensions are required. Reconstruction supports at most 64 latent dimensions.
+Rectangular and rank-deficient affine maps are supported when both source
+covariances are positive definite. Additional uncarried random parameters and
+several children sharing a vector latent remain unsupported.
+
 Finite scalar latents use an exact sum without `Integration()`. This covers
 Bernoulli, Categorical, Categorical0 and Binomial, with at most 256 atoms.
 Categorical probability vectors may be runtime inputs with fixed length.

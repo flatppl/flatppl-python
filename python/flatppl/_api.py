@@ -15,7 +15,6 @@ import numpy.typing as npt
 
 # The native module ships compiled in the wheel, with a stub in the source tree.
 from . import _native  # pyright: ignore[reportMissingModuleSource]
-from ._box import Box
 from ._frozen import freeze
 
 if TYPE_CHECKING:
@@ -121,7 +120,6 @@ type _ExportKey = tuple[
     tuple[float, float, int] | None,
     str,
     Batch | None,
-    tuple[tuple[str, str, str], ...],
     bool,
 ]
 
@@ -976,7 +974,6 @@ class Module:
         integration: Integration | None = None,
         optimize_forward: bool = False,
         target: Literal["cpu", "gpu"] | None = None,
-        boxes: Mapping[str, Box] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
     ) -> CompiledFunction:
@@ -999,9 +996,6 @@ class Module:
             target: The ``"cpu"`` or ``"gpu"`` lowering profile. The default
                 follows ``jax.default_backend()``. Both run on any backend and
                 give the same values.
-            boxes: Black boxes for the module's interface modules, keyed by
-                the ``load_module`` alias that loads each interface. Box
-                queries run on the box server. See :doc:`/boxes`.
             sufficient_statistics: Reduce independent likelihood factors to
                 data-only summaries. ``False`` keeps ordinary factor scoring.
                 Runtime data requires :meth:`prepare_likelihood` to retain
@@ -1048,10 +1042,6 @@ class Module:
             else (integration.rtol, integration.atol, integration.max_intervals)
         )
 
-        from ._boxes import describe_bindings
-
-        bound = tuple(describe_bindings(boxes or {}))
-
         def export(batch: Batch | None = None) -> Export:
             key = (
                 dtype_name,
@@ -1059,7 +1049,6 @@ class Module:
                 settings,
                 target_name,
                 batch,
-                bound,
                 sufficient_statistics,
             )
             if key not in self._exports:
@@ -1071,8 +1060,7 @@ class Module:
                         settings,
                         batch,
                         target_name,
-                        list(bound) or None,
-                        sufficient_statistics,
+                        sufficient_statistics=sufficient_statistics,
                     )
                 )
             return self._exports[key]
@@ -1088,7 +1076,6 @@ class Module:
             export_batch=export_batch,
             optimize_forward=optimize_forward,
             gradient=self._gradient,
-            boxes=boxes,
             checks=checks,
         )
 

@@ -123,15 +123,6 @@ whose names start with an underscore, is private.
 .. autoclass:: flatppl.inference.FlatLogDensity
 ```
 
-## Black boxes
-
-```{eval-rst}
-.. autoclass:: flatppl.Box
-   :members: describe
-
-.. autoexception:: flatppl.BoxError
-```
-
 ## Integration
 
 ```{eval-rst}

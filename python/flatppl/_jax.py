@@ -372,7 +372,6 @@ class CompiledFunction:
         export_batch: ExportBatch,
         optimize_forward: bool = False,
         gradient: bool = False,
-        boxes: Mapping[str, Any] | None = None,
         checks: Literal["nan", "raise"] = "nan",
     ) -> None:
         if checks not in ("nan", "raise"):
@@ -396,14 +395,7 @@ class CompiledFunction:
                 "enable JAX x64 to represent this query's 64-bit ABI values"
             )
 
-        from ._boxes import has_boxes, program
-
-        if has_boxes(source):
-            # Box queries batch and differentiate through their own JAX rules,
-            # so the program never asks Rust for a batched export.
-            call = program(source, boxes or {})
-        else:
-            call = _compiled_call(exported, export_batch, autodiff, optimize_forward)
+        call = _compiled_call(exported, export_batch, autodiff, optimize_forward)
 
         object.__setattr__(self, "stablehlo", source)
         object.__setattr__(self, "schema", schema)

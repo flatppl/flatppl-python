@@ -7,9 +7,6 @@ tagged release.
 
 ### Added
 
-- Enzyme alpha 18 lowers small static float32 CPU matrix products after
-  differentiation, reducing setup costs in solve and covariance gradients.
-
 - `InputCell` and `InputArray` expose scalar array reads and static dimensions.
   `ScoreExecutor.update_cell(...)` preserves unrelated term caches and complete
   gradients, with explicit zero-based coordinates and native shape validation.
@@ -49,9 +46,10 @@ tagged release.
 
 ### Changed
 
-- The package pins Enzyme alpha 17 and the current matrix compiler. Checkpointed
+- The package pins Enzyme alpha 18 and the current matrix compiler. Checkpointed
   solves preserve higher derivatives. Determinant queries use native LU with
   portable singular-cofactor fallbacks. Uniform GPU branches batch together.
+  Small static float32 CPU products avoid native dot setup after differentiation.
 
 - Linear solves use faster GPU back substitution. CPU solves and inverses
   read elimination rows and columns directly. Nonfinite solve pivots now

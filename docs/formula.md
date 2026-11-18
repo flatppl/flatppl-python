@@ -390,9 +390,16 @@ irt = from_formula(
 )
 ```
 
+For a binary 3PL model, set `link="identity"` because the expression returns
+a response probability. Use
+`0.25 + 0.75 * inv_logit(exp(ld) * (theta - difficulty))` for a known guessing
+probability of 0.25. To estimate guessing by item, use
+`inv_logit(g) + (1 - inv_logit(g)) * inv_logit(exp(ld) * (theta - difficulty))`
+and add an item predictor and prior for `g`.
+
 Each population coefficient needs an explicit prior scoped by `nlpar`.
-Intercepts use class `b` and keep their original scale. Group effects remain
-independent across nonlinear predictors. Inspect `model.formula.info["nlpars"]`
+Intercepts use class `b` and keep their original scale. Shared group IDs can
+correlate effects across nonlinear predictors. Inspect `model.formula.info["nlpars"]`
 for the designs and use `prepare` to reuse them on new rows.
 
 ## Supported formulas and families
@@ -472,6 +479,12 @@ order. Its normalization adds `log(m!)` to the brms target for `m` thresholds;
 `Intercept[1]`, `Intercept[2]`, etc. to the centred thresholds, while derived
 `b_Intercept` reports them on the original predictor scale. Unequal threshold
 priors, removing the intercept and other ordinal links are not supported.
+
+For a graded-response model with varying item discrimination, set
+`dpars={"disc": {"formula": "disc ~ 1 + (1 | item)"}}`.
+Discrimination multiplies each threshold minus the location predictor.
+The default log link keeps it positive. With no `disc` predictor,
+discrimination equals one.
 
 Categorical responses accept factors, logical values or numeric labels. The
 first retained level is the reference category, with logit zero. Each other

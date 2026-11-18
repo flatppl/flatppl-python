@@ -743,6 +743,27 @@ Historical anchors must use fitted predictor and random-effect levels.
 `allow_new_levels=True` still permits new random-effect levels in future
 data. Use `sample_new_groups` to expand draws for those levels.
 
+## Higher-order Gaussian dependence
+
+Use `y | ar(time=t, group=site, p=2) ~ x` for AR(2),
+`y | ma(time=t, group=site, q=2) ~ x` for MA(2), or
+`y | arma(time=t, group=site, p=2, q=1) ~ x` for ARMA(2,1).
+Each group needs consecutive integer times. The recurrence starts with zero
+residuals and innovations before the first row of each group. It uses
+`sigma` as the innovation standard deviation.
+Orders `p=1, q=0` use the stationary AR(1) model described above.
+
+The `ar` and `ma` vectors list coefficients from lag one onward. Each
+coefficient defaults to an independent standard Normal prior. A prior of class
+`ar` or `ma` specifies the scalar prior for every coefficient of that class.
+These conditional models do not constrain stationarity or invertibility.
+
+To forecast, pass the contiguous observed history to `prepare(..., history=...)`.
+Future times in each group start one step after its last historical observation.
+Groups absent from history start with zero residuals and innovations.
+`expected_response` forecasts with zero future innovations.
+`posterior_predict` draws a joint trajectory using fresh innovations.
+
 ## Select priors and bounds
 
 Prior text is a FlatPPL measure expression. Both native names such as

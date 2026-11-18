@@ -15,7 +15,7 @@ crate-type = ["rlib", "cdylib"]
 extension = ["dep:pyo3", "dep:flatppl-python-api", "flatppl-python-api/extension"]
 
 [dependencies]
-flatppl-python-api = { git = "https://github.com/flatppl/flatppl-rust", rev = "88c8d6936c616e649b89f18f20666bfae5f34d0c", optional = true }
+flatppl-python-api = { git = "https://github.com/flatppl/flatppl-rust", rev = "1cd9f4bee641958ce0435c26632883934604168c", optional = true }
 pyo3 = { version = "0.30", optional = true }
 
 [profile.release]

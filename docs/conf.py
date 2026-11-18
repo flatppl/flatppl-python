@@ -93,7 +93,7 @@ sphinx_gallery_conf = {
     "reset_argv": "_gallery.reset_argv",
     "reset_modules": ("_gallery.enforce_budget",),
     "reset_modules_order": "both",
-    "image_scrapers": (),
+    "image_scrapers": ("matplotlib",),
     "min_reported_time": 0,
     "within_subsection_order": ExplicitOrder(
         [
@@ -108,6 +108,7 @@ sphinx_gallery_conf = {
             "formula.py",
             "regression_workflow.py",
             "belle2.py",
+            "amplitude_fit.py",
             "regression.py",
             "zip_map.py",
             "uproot_hist.py",

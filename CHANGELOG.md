@@ -7,6 +7,9 @@ tagged release.
 
 ### Added
 
+- Finite two-dimensional weights support numerical `totalmass`, `normalize`
+  and JAX gradients through `Integration`.
+
 - Exact normalized scores for matched conjugate posteriors and log evidence
   for Beta priors with Bernoulli or Binomial observations.
 

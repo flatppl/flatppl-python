@@ -524,3 +524,45 @@ def test_quadrature_distinguishes_continuous_mass_from_atoms() -> None:
         measure = query(reference)
         with pytest.raises(CompilationError):
             measure.compile(integration=Integration())
+
+
+@pytest.mark.parametrize("operator", ["weighted", "logweighted"])
+def test_rectangle_mass_and_live_bound_gradients(operator: str) -> None:
+    weight = "1.0 + a * p[1] * p[2]"
+    body = weight if operator == "weighted" else f"log({weight})"
+    mass = flatppl(f"""
+        a = external(reals)
+        u = external(reals)
+        v = external(reals)
+        D = cartprod(interval(0.0, u), interval(0.0, v))
+        M = {operator}((p, a) -> {body}, Lebesgue(D), a)
+        inputs = (a, u, v)
+        outputs = totalmass(M)
+    """).compile(integration=Integration(max_intervals=8))
+
+    a, v = 2.0, 0.75
+    widths = jnp.array([1.5, 0.0, -1.0, 2.0])
+    evaluate = jax.jit(
+        jax.vmap(jax.value_and_grad(mass, argnums=(0, 1, 2)), in_axes=(None, 0, None))
+    )
+    values, (da, du, dv) = evaluate(a, widths, v)
+    volume = np.asarray(widths) * v
+    positive = np.asarray(widths) > 0
+    np.testing.assert_allclose(
+        np.asarray(values)[positive],
+        (volume * (1 + a * volume / 4))[positive],
+        rtol=2e-5,
+    )
+    np.testing.assert_allclose(
+        np.asarray(da)[positive], volume[positive] ** 2 / 4, rtol=2e-5
+    )
+    np.testing.assert_allclose(
+        np.asarray(du)[positive], (v * (1 + a * volume / 2))[positive], rtol=2e-5
+    )
+    np.testing.assert_allclose(
+        np.asarray(dv)[positive],
+        (np.asarray(widths) * (1 + a * volume / 2))[positive],
+        rtol=2e-5,
+    )
+    assert values[1] == 0
+    assert np.isnan(values[2])

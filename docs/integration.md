@@ -1,7 +1,7 @@
 # Numerical integration
 
-Exact density rules remain the default. Enable numerical integration when an
-admitted scalar normalizer, bin mass or single shared continuous latent has no
+Exact density rules remain the default. Enable numerical integration when a
+supported normalizer, bin mass or single shared continuous latent has no
 exact rule:
 
 ```{testcode}
@@ -24,6 +24,36 @@ np.testing.assert_allclose(density(2.0, 0.25), expected, rtol=2e-5)
 Pass `density` to `jax.jit`, `jax.grad`, or BlackJAX as usual. Integration runs
 inside the emitted StableHLO program on the selected JAX device.
 There is no Python callback or integration-library runtime dependency.
+
+## Finite rectangles
+
+Use `totalmass` or `normalize` on a function-weighted or logweighted measure
+over two finite intervals. The weight receives the point as a two-element vector.
+
+```{testcode}
+import jax
+import numpy as np
+from flatppl import Integration, flatppl
+
+mass = flatppl("""
+    a = external(reals)
+    weight(p, a) = 1.0 + a * p[1] * p[2]
+    support = cartprod(interval(0.0, 1.0), interval(0.0, 1.0))
+    measure = weighted(weight, Lebesgue(support), a)
+    inputs = a
+    outputs = totalmass(measure)
+""").compile(integration=Integration())
+value, derivative = jax.value_and_grad(mass)(2.0)
+# The integral of p[1] * p[2] over the unit square is 1/4.
+np.testing.assert_allclose([value, derivative], [1.5, 0.25], rtol=2e-5)
+```
+
+The tensor Gauss–Kronrod rule splits the rectangle with the largest error
+estimate. Each rectangle counts towards `max_intervals`. Both bounds may
+depend on runtime inputs, and gradients include their derivatives. The
+rectangle path supports smooth weights. Coordinate-dependent cuts require
+a one-dimensional integration domain. Sharply peaked weights can need a
+larger `max_intervals` to converge.
 
 ## Restricted bin intensities
 

@@ -333,21 +333,21 @@ class Parameters(Mapping[str, Parameter]):
 
 @dataclass(frozen=True)
 class Integration:
-    """Settings for adaptive scalar quadrature.
+    """Settings for adaptive numerical integration.
 
-    Pass an instance to :meth:`Module.compile` to allow numerical scalar
-    marginals and normalizers where no exact rule applies. The tolerances bound
+    Pass an instance to :meth:`Module.compile` to allow numerical integration
+    where no exact rule applies. The tolerances bound
     the estimated absolute error of the integral before its logarithm:
     ``error <= max(atol, rtol * integral)``. They do not bound the error of
     derivatives, which follow the selected quadrature mesh. A failed
     convergence returns NaN. The compiler checks the values: both tolerances
     finite and nonnegative with at least one positive, and ``max_intervals``
-    in ``2..2**31-1``.
+    at least two, subject to the node limit.
 
     Attributes:
         rtol: The relative tolerance.
         atol: The absolute tolerance.
-        max_intervals: The size of the interval buffer.
+        max_intervals: The maximum number of intervals or rectangles.
     """
 
     rtol: float = 1e-5

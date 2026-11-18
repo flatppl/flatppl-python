@@ -370,6 +370,95 @@ def test_nonlinear_2pl_scores_and_preserves_prediction_level_order() -> None:
     )
 
 
+@pytest.mark.parametrize("estimate_guessing", [False, True])
+def test_binary_3pl_scores_and_predicts(estimate_guessing: bool) -> None:
+    nlpars = {"eta": "eta ~ 1", "logalpha": "logalpha ~ 1"}
+    point: dict[str, object] = {
+        "temp_Intercept_nl_eta": -0.8,
+        "temp_Intercept_nl_logalpha": math.log(1.5),
+    }
+    guessing = np.full(2, 0.25)
+    expression = "0.25 + 0.75 * inv_logit(exp(logalpha) * (eta + x))"
+    if estimate_guessing:
+        nlpars["g"] = "g ~ 0 + item"
+        guessing_logits = np.array([-2.0, -1.0])
+        point["b_nl_g"] = guessing_logits
+        guessing = 1 / (1 + np.exp(-guessing_logits))
+        expression = (
+            "inv_logit(g) + (1 - inv_logit(g)) * inv_logit(exp(logalpha) * (eta + x))"
+        )
+    model = from_formula(
+        f"y ~ {expression}",
+        {"y": [1, 0], "x": [0.2, 1.4], "item": ["a", "b"]},
+        family="bernoulli",
+        link="identity",
+        nlpars=nlpars,
+        priors=[
+            {"class": "b", "nlpar": name, "prior": "normal(0, 1)"} for name in nlpars
+        ],
+    )
+    logistic = 1 / (1 + np.exp(-np.array([-0.9, 0.9])))
+    probs = guessing + (1 - guessing) * logistic
+    model.context.register("irt_3pl.flatppl", model)
+    arguments = ", ".join(f"{name} = p.{name}" for name in point)
+    score = flatppl(
+        f"""
+        m = load_module("irt_3pl.flatppl")
+        p = elementof(m.formula_parameter_domain)
+        inputs = p
+        outputs = m.log_lik({arguments})
+        """,
+        context=model.context,
+    ).compile()
+    np.testing.assert_allclose(
+        score(point),
+        [np.log(probs[0]), np.log1p(-probs[1])],
+        rtol=2e-6,
+    )
+    forecast = model.formula.prepare({"x": [1.4, 0.2], "item": ["b", "a"]})
+    np.testing.assert_allclose(
+        forecast.formula.expected_response(point), probs[::-1], rtol=2e-6
+    )
+
+
+def test_graded_response_uses_item_discrimination() -> None:
+    model = from_formula(
+        "y ~ x + (1 |i| item)",
+        {"y": [1, 2, 3, 2], "x": [0.0, 1.0, 2.0, 3.0], "item": ["a", "b", "a", "b"]},
+        family="cumulative",
+        dpars={"disc": {"formula": "disc ~ 1 + (1 |i| item)"}},
+        priors=[
+            {"class": "sd", "group": "item", "prior": "constant(1)"},
+            {"class": "sd", "group": "item", "dpar": "disc", "prior": "constant(1)"},
+        ],
+    )
+    cuts = np.array([0.1, 1.4])
+    lower = np.array([[1.0, 0.0], [0.6, 0.8]])
+    innovations = np.array([[-0.3, 0.9], [0.4, 0.7]])
+    point = {
+        "cuts": cuts,
+        "b": np.array([0.5]),
+        "temp_Intercept_disc": -0.2,
+        "L_item_joint": lower,
+        "z_item_joint": innovations,
+    }
+    effects = lower @ innovations
+    items = [0, 1, 0, 1]
+    mu = np.array([-0.75, -0.25, 0.25, 0.75]) + effects[0, items]
+    disc = np.exp(-0.2 + effects[1, items])
+    cumulative = 1 / (1 + np.exp(-disc[:, None] * (cuts - mu[:, None])))
+    probs = np.diff(cumulative, axis=1, prepend=0, append=1)
+    np.testing.assert_allclose(
+        model.formula.log_likelihood(point),
+        np.log(probs[np.arange(4), [0, 1, 2, 1]]),
+        rtol=2e-6,
+    )
+    prediction = model.formula.prepare({"x": [3.0, 0.0], "item": ["b", "a"]})
+    np.testing.assert_allclose(
+        prediction.formula.expected_response(point), probs[[3, 0]], rtol=2e-6
+    )
+
+
 def test_nonlinear_binomial_prediction_uses_new_trial_counts() -> None:
     model = from_formula(
         "y | trials(n) ~ a / (1 + x)",

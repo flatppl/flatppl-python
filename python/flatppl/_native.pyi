@@ -32,6 +32,8 @@ class Context:
         model: FormulaModel,
         data_ipc: bytes,
         mode: str = "prediction",
+        *,
+        allow_new_levels: bool = False,
     ) -> tuple[Module, str]: ...
     def import_formula_path(
         self,
@@ -45,6 +47,8 @@ class Context:
         model: FormulaModel,
         path: str,
         mode: str = "prediction",
+        *,
+        allow_new_levels: bool = False,
     ) -> tuple[Module, str]: ...
     def load(self, path: str) -> Module: ...
     def load_bundle(self, name: str, data: bytes) -> Module: ...

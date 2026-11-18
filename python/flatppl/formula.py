@@ -11,12 +11,18 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from functools import cached_property
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from . import _native  # pyright: ignore[reportMissingModuleSource]
 from ._api import Context, Module, native_call
 from ._frozen import freeze
 from ._tables import ipc
+
+if TYPE_CHECKING:
+    from jax import Array
+    from jax.typing import DTypeLike
 
 __all__ = ["FormulaView", "from_formula"]
 
@@ -129,6 +135,8 @@ class FormulaView:
             read-only tree. It is for inspection; preparation uses Rust's copy.
         rows: Zero-based row positions retained from this module's input table.
             These are positions, not pandas index labels.
+        new_group_shapes: Shapes of new group innovations per parameter point,
+            by sampled binding name. The last axis indexes new levels.
     """
 
     module: Module = field(repr=False)
@@ -137,14 +145,31 @@ class FormulaView:
     rows: tuple[int, ...]
     _native: _native.FormulaModel = field(repr=False, compare=False)
 
+    new_group_shapes: Mapping[str, tuple[int, ...]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    _response_queries: dict[tuple[str, int], Module] = field(
+        default_factory=dict[tuple[str, int], Module],
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    @cached_property
+    def _response_model_name(self) -> str:
+        return self.module.context._register_query_model(self.module)  # pyright: ignore[reportPrivateUsage]
+
     def prepare(
-        self, data: object, *, mode: Literal["prediction", "training"] = "prediction"
+        self,
+        data: object,
+        *,
+        mode: Literal["prediction", "training"] = "prediction",
+        allow_new_levels: bool = False,
     ) -> Module:
         """Bind a fresh module using this fit's training recipe.
 
         Prediction needs no response column. Rows missing required predictors
         are omitted by Rust and reported in the returned view's ``rows``.
-        Unseen factor/group levels are diagnosed instead of recoded.
 
         Args:
             data: A table or file path accepted by :func:`from_formula`.
@@ -152,6 +177,9 @@ class FormulaView:
                 also binds the supplied response for scoring, using the same
                 recipe and prior defaults. Call :func:`from_formula` for a new
                 fit or cross-validation fold that needs new defaults.
+            allow_new_levels: In prediction mode, retain unseen group levels.
+                Expand fitted draws with :meth:`sample_new_groups` before
+                evaluating them. Unseen fixed-effect levels always raise.
 
         Returns:
             A new module in the same context, with its own row selection.
@@ -159,22 +187,103 @@ class FormulaView:
         Raises:
             CompilationError: Data are incompatible with the training recipe.
         """
+        context = self.module.context
+        native_context = context._native  # pyright: ignore[reportPrivateUsage]
+        options = {"allow_new_levels": True} if allow_new_levels else {}
         if isinstance(data, (str, os.PathLike)):
-            native, rows = native_call(
-                self.module.context._native.prepare_formula_path,  # pyright: ignore[reportPrivateUsage]
+            native, metadata = native_call(
+                native_context.prepare_formula_path,
                 self._native,
                 os.fsdecode(cast("str | os.PathLike[str] | os.PathLike[bytes]", data)),
                 mode,
+                **options,
             )
         else:
-            native, rows = native_call(
-                self.module.context._native.prepare_formula,  # pyright: ignore[reportPrivateUsage]
+            native, metadata = native_call(
+                native_context.prepare_formula,
                 self._native,
                 ipc(data),
                 mode,
+                **options,
             )
-        module = Module(native, self.module.context)
+        module = Module(native, context)
+        decoded = json.loads(metadata)
+        rows = decoded["rows"] if allow_new_levels else decoded
+        group_shapes = (
+            freeze(decoded["new_group_shapes"]) if allow_new_levels else freeze({})
+        )
         module._formula = FormulaView(  # pyright: ignore[reportPrivateUsage]
-            module, self.info, self.recipe, tuple(json.loads(rows)), self._native
+            module, self.info, self.recipe, tuple(rows), self._native, group_shapes
         )
         return module
+
+    def expected_response(
+        self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
+    ) -> Array:
+        """Return conditional means for each posterior draw and retained row.
+
+        Pass the named constrained coordinates returned by
+        :attr:`flatppl.inference.LogDensity.constrain`. Coordinate arrays can share any
+        leading draw axes, such as chain and draw. Results have the same
+        leading axes followed by rows.
+
+        Bernoulli returns success probabilities and Binomial returns expected
+        counts. Categorical and ordinal families append a class axis in
+        ``info["response_levels"]`` order. Censoring returns latent response
+        means. Truncation and mixture families use their predictive laws.
+        """
+        from ._formula_prediction import evaluate
+
+        if "expected_response" not in self.module.bindings:
+            raise ValueError(f"{self.info['family']} has no expected-response query")
+        return evaluate(self, "expected_response", draws, dtype=dtype)
+
+    def posterior_predict(
+        self, draws: Mapping[str, object], *, key: Array, dtype: DTypeLike = "float32"
+    ) -> Array:
+        """Draw one response vector per parameter point from the fitted law.
+
+        Draw coordinates and leading axes match :meth:`expected_response`.
+        Supply a JAX PRNG key for reproducible sampling. Reusing a key
+        reproduces the same draws. Censored models return latent responses.
+        Categorical and ordinal outputs are one-based codes in
+        ``info["response_levels"]`` order.
+
+        Raises:
+            CompilationError: The response kernel has no sample lowering.
+        """
+        from ._formula_prediction import sample_response
+
+        return sample_response(self, draws, dtype=dtype, key=key)
+
+    def log_likelihood(
+        self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
+    ) -> Array:
+        """Return pointwise log likelihoods for each draw and retained row.
+
+        Returns unweighted scores of the fitted observation law, including
+        censoring and truncation. Prepare held-out observations with
+        ``mode="training"``. Bind encoded ``y_data`` directly for uncensored
+        responses. Draw coordinates and leading axes match :meth:`expected_response`.
+        """
+        from ._formula_prediction import evaluate
+
+        if self.module.bindings["y_data"].kind == "observation":
+            raise ValueError(
+                'log_likelihood needs observations; use mode="training" or bind y_data'
+            )
+        return evaluate(self, "log_lik", draws, dtype=dtype)
+
+    def sample_new_groups(
+        self, draws: Mapping[str, object], *, key: Array, dtype: DTypeLike = "float32"
+    ) -> dict[str, object]:
+        """Expand fitted posterior draws for a prepared prediction with new groups.
+
+        Use a JAX PRNG key distinct from the response sampling key. This adds
+        independent standard Normal innovations per draw, level and coefficient.
+        The fitted model applies group scales and correlations. Rows sharing
+        a new level share its effects. Reuse the result across response queries.
+        """
+        from ._formula_prediction import sample_new_groups
+
+        return sample_new_groups(self, draws, key=key, dtype=dtype)

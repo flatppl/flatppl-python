@@ -197,47 +197,31 @@ print("Divergences:", int(jnp.sum(divergences)))
 # --------------------------------
 # New rows need predictors but no response column. ``prepare`` returns a new
 # module and retains the training mean, site order, contrasts and prior defaults.
-# It does not refit preprocessing on the prediction data or change the training
-# model. Unseen sites are currently refused.
+# Unseen sites raise by default. See :doc:`/formula` for predicting new levels.
 new_data = pl.DataFrame({"x": [4.0, 5.0], "site": ["A", "B"]})
 prediction = model.formula.prepare(new_data)
 design = prediction.query("X").compile(autodiff=False)()
 print("New design rows:", design)  # x minus its training mean, 2.5
 
 # %%
-# The prediction module's ``K_model`` is the observation law conditional on
-# model parameters. This query scores the pair of proposed responses together.
-# The first call uses our explicit parameter point; then we evaluate across
-# posterior draws to account for parameter uncertainty.
-context.register("prediction.flatppl", prediction)
-predictive_density = flatppl(
-    """
-    m = load_module("prediction.flatppl")
-    p = elementof(cartprod(temp_Intercept = reals, b = cartpow(reals, 1),
-                          sd_site = posreals, z_site = cartpow(reals, 2), sigma = posreals))
-    observed = elementof(cartpow(reals, 2))
-    inputs = (p, observed)
-    outputs = logdensityof(m.K_model(p), record(y = observed))
-    """,
-    context=context,
-).compile()
-observed = jnp.array([5.0, 7.0])
-prediction_score = predictive_density(point, observed)
-print("New-row log density:", float(prediction_score))
+# Conditional means show how parameter uncertainty propagates to the new rows.
+# Response draws include observation noise. Each result preserves the leading
+# chain and draw axes and appends two prediction rows.
+means = prediction.formula.expected_response(draws)
+responses = prediction.formula.posterior_predict(draws, key=jax.random.key(942))
+print("Mean predictions:", means.mean(axis=(0, 1)))
+print("90% predictive intervals:", np.quantile(responses, [0.05, 0.95], axis=(0, 1)))
 
-
-def score_responses(parameters: Any):
-    """Score both proposed responses at one posterior parameter draw."""
-    return predictive_density(parameters, observed)
-
-
-log_scores = jax.jit(jax.vmap(jax.vmap(score_responses)))(draws)
+# %%
+# Bind proposed observations to score the new rows for each draw. In this
+# Gaussian model the rows are conditionally independent, so summing their
+# pointwise scores gives the joint log density at one posterior draw.
+scoring = prediction.set(y_data=[5.0, 7.0])
+log_scores = scoring.formula.log_likelihood(draws).sum(axis=-1)
 predictive_score = jax.scipy.special.logsumexp(log_scores) - jnp.log(log_scores.size)
 print("Posterior predictive log density:", float(predictive_score))
 
 # %%
 # ``logsumexp`` computes the logarithm of the average conditional density
-# stably. This gives a Monte Carlo estimate of the joint posterior predictive
-# log density for ``[5, 7]`` at the two new rows, with the sampled site effects
-# included. The retained recipe lets us repeat the calculation for other rows;
-# a changed input shape may require another compilation.
+# stably. This estimates the joint posterior predictive log density for
+# ``[5, 7]`` at the two new rows.

@@ -11,8 +11,9 @@ tagged release.
   and JAX gradients through `Integration`.
 
 - Exact normalized scores for matched conjugate posteriors and log evidence
-  for all eight supported updates. Count and Gaussian evidence queries can
-  prepare fixed-size data summaries for repeated scores.
+  for all eight supported updates. Normalized densities, seeded draws and
+  evidence reuse prepared IID counts or moments. Ordinary densities support
+  fixed observations, and `Module.logdensity` accepts `sufficient_statistics`.
 
 - Formula views can set selected group effects to zero or average responses
   over their fitted Gaussian distributions with Monte Carlo standard errors.

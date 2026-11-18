@@ -1407,6 +1407,7 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         integration: Integration | None = None,
         optimize_forward: bool = False,
+        sufficient_statistics: bool = True,
     ) -> LogDensity:
         """Construct a log-density convenience object for inference.
 
@@ -1449,6 +1450,7 @@ class Module:
             target: Lowering profile, as in :meth:`compile`.
             integration: Numerical integration settings, as in :meth:`compile`.
             optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
+            sufficient_statistics: Reduce independent likelihood factors, as in :meth:`compile`.
 
         Returns:
             The log density, its gradient, starting point, coordinate maps and
@@ -1487,6 +1489,7 @@ class Module:
             target=target,
             integration=integration,
             optimize_forward=optimize_forward,
+            sufficient_statistics=sufficient_statistics,
         )
 
 

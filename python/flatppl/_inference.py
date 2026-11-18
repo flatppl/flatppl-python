@@ -330,6 +330,7 @@ def build(
     target: Literal["cpu", "gpu"] | None,
     integration: Integration | None,
     optimize_forward: bool,
+    sufficient_statistics: bool = True,
     correlation_factors: tuple[str, ...] = (),
     initial_fields: Mapping[str, float] | None = None,
 ) -> LogDensity:
@@ -347,6 +348,7 @@ def build(
         target=target,
         integration=integration,
         optimize_forward=optimize_forward,
+        sufficient_statistics=sufficient_statistics,
         correlation_factors=correlation_factors,
     )
     (item,) = transformed.constrained.schema["inputs"]

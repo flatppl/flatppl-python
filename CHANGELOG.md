@@ -7,6 +7,9 @@ tagged release.
 
 ### Added
 
+- Exact normalized scores for matched conjugate posteriors and log evidence
+  for Beta priors with Bernoulli or Binomial observations.
+
 - Formula views can set selected group effects to zero or average responses
   over their fitted Gaussian distributions with Monte Carlo standard errors.
 

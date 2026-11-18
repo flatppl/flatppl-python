@@ -39,6 +39,12 @@ leave the numeric parameters unknown until execution. If lowering refuses a
 query, `CompilationError.posterior_updates` retains the source matches.
 Other FlatPPL engines can support different sampling methods.
 
+For each matched posterior, `logdensityof(normalize(P), point)` scores the
+normalized law. For Beta priors with Bernoulli or Binomial observations,
+`totalmass(P)` gives the evidence. Use `log(totalmass(P))` for small
+probabilities. For the single success above, the evidence is 0.5 and the
+normalized posterior density at `record(p=0.75)` is 1.5.
+
 ## Incremental scores
 
 Write the density in FlatPPL and prepare the query.

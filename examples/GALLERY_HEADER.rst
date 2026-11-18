@@ -16,6 +16,8 @@ Python script or Jupyter notebook from the bottom of the page.
   iminuit, minimize with optimistix, or sample with nutpie.
 * **Starting from ROOT files?** Read histograms with uproot and hist, or build
   a workspace with cabinetry and run a discovery fit on the FlatPPL likelihood.
+* **Fitting an amplitude?** Normalize a three-pion decay with fixed Monte Carlo
+  points and fit the relative magnitude and phase.
 * **Shipping a model?** Export the compiled density with ``jax.export`` and run
   it without FlatPPL.
 * **Running toys?** Batch pseudo-experiments with ``jax.vmap`` and switch the

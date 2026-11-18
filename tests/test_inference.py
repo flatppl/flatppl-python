@@ -45,6 +45,27 @@ def test_unconstrained_density_matches_the_change_of_variables_and_normalises() 
     assert [float(b) for b in density.bounds] == [0.0, np.inf]
 
 
+@pytest.mark.parametrize("sufficient_statistics", [True, False])
+def test_logdensity_reduces_bound_observations(sufficient_statistics: bool) -> None:
+    model = flatppl("""
+        t = elementof(reals)
+        y = external(cartpow(reals,3))
+        L = likelihoodof(functionof(iid(Normal(t,1.),3),t=t),y)
+        P = bayesupdate(L,joint(t=Normal(0.,1.)))
+        point = elementof(cartprod(t=reals))
+        inputs = point
+        outputs = logdensityof(P,point)
+    """).set(y=[1.0, 2.0, 3.0])
+    for name in (None, "P"):
+        score = model.logdensity(
+            name, unconstrained=False, sufficient_statistics=sufficient_statistics
+        )
+        point = {"t": jnp.float32(1.5)}
+        expected = -2 * np.log(2 * np.pi) - 0.5 * (1.5**2 + 0.5**2 + 0.5**2 + 1.5**2)
+        assert float(score(point)) == pytest.approx(expected, abs=2e-5)
+        assert float(score.grad(point)["t"]) == pytest.approx(0.0, abs=2e-5)
+
+
 def test_without_the_jacobian_the_unconstrained_maximum_is_the_mode() -> None:
     density = flatppl(GAMMA).logdensity(jacobian=False)
     u = jnp.asarray([-1.0, 0.0, 0.5], dtype=jnp.float32)

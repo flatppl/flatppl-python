@@ -10,7 +10,7 @@ Unrecognized expressions have no decision. Components describe structural
 incidence, not a proof of posterior independence. File data may be read and
 cached with the same snapshot rules as ordinary compilation.
 
-## Conjugate posterior draws
+## Conjugate posterior queries
 
 Inspect `posterior_updates` to see which posterior family Rust recognizes
 and whether its StableHLO lowering uses an exact IID sampler.
@@ -51,10 +51,27 @@ observations. Count evidence preserves each observed allocation. For example,
 under the same Gamma prior, observing Poisson counts `[1, 1]` has twice the
 mass of `[0, 2]`. Both give the same normalized posterior.
 
-For repeated scores with new prior parameters, call
-`preparation, score, names = query.prepare_likelihood("y")` on a supported
-IID evidence query. Run the preparation when the data changes. Its output
-includes any count coefficients or Gaussian scatter needed by the score.
+Write `densityof(P, point)` or `logdensityof(P, point)` for the unnormalized
+posterior. With fixed observations, ordinary compilation can reduce IID
+likelihoods to counts or moments. For example, `query.set(y=data).compile()`
+binds the observations for repeated scores. File-backed count tables can fold
+after `load_data` reads them. The same Rust analysis supplies
+the updated law for `densityof(normalize(P), point)`, its log density and
+seeded draws for all eight matched pairs.
+
+A compiled query reads live observations on every call. To reuse one dataset,
+call `preparation, online, names = query.prepare_likelihood("y")` and run the
+preparation each time the dataset changes. The online query accepts the
+summaries and the remaining inputs. Binomial evidence retains the observed
+allocation. If both the trial count and observations change between datasets,
+prepare both with `query.prepare_likelihood("n", "y")` and pass that trial
+count wherever the online query requests it. Ordinary unnormalized Binomial
+scores can prepare live counts for fixed trial counts from 1 through 63.
+Categorical and Categorical0 scores can prepare a histogram when observations
+outnumber categories.
+
+Both `compile()` and `logdensity()` accept `sufficient_statistics=False`
+to disable the optional likelihood reduction pass.
 
 ## Incremental scores
 

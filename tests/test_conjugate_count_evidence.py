@@ -1,4 +1,6 @@
+import json
 import math
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -172,3 +174,43 @@ def test_single_label_evidence_with_an_overflowing_sum_of_shapes() -> None:
     with jax.enable_x64(False):
         score = query.compile(dtype="float32", checks="raise")
         assert float(score(jnp.array([3e38, 3e38]))) == pytest.approx(-math.log(2))
+
+
+def test_ordinary_multinomial_folds_bound_rows_and_their_allocations(
+    tmp_path: Path,
+) -> None:
+    rows = 257
+    source = f"""
+        p = elementof(stdsimplex(3))
+        Y = external(cartpow(integers,{3 * rows}))
+        y = splitblocks(Y,3)
+        inputs = (p,Y)
+        outputs = logdensityof(iid(Multinomial(2,p),{rows}),y)
+    """
+    query = flatppl(source)
+    point = np.array([0.6, 0.2, 0.2])
+    with jax.enable_x64():
+        for first, second in [([2, 0, 0], [0, 1, 1]), ([0, 1, 1], [2, 0, 0])]:
+            table = np.take([first, second], np.arange(rows) % 2, axis=0)
+            score = query.set(Y=table.ravel()).compile(dtype="float64")
+            assert f"tensor<{rows}x" not in score.stablehlo
+            assert f"tensor<{3 * rows}x" not in score.stablehlo
+            columns = table.sum(axis=0)
+            expected = columns @ np.log(point) + columns[1] * math.log(2)
+            value, grad = jax.value_and_grad(score)(point)
+            assert float(value) == pytest.approx(expected, abs=1e-10)
+            np.testing.assert_allclose(grad, columns / point, atol=2e-11)
+        (tmp_path / "rows.json").write_text(json.dumps(table.ravel().tolist()))
+        loaded = flatppl(
+            source.replace("Y = external(", 'Y = load_data("rows.json",').replace(
+                "inputs = (p,Y)", "inputs = p"
+            ),
+            source_path=tmp_path / "rows.flatppl",
+        )
+        file_score = loaded.compile(dtype="float64", autodiff=False)
+        assert f"tensor<{rows}x" not in file_score.stablehlo
+        assert f"tensor<{3 * rows}x" not in file_score.stablehlo
+        assert float(file_score(point)) == pytest.approx(expected, abs=1e-10)
+        table[0] = [3, 0, 0]
+        score = query.set(Y=table.ravel()).compile(dtype="float64")
+        assert np.isneginf(score(point))

@@ -227,15 +227,15 @@ prediction, _, _ = np.histogram2d(
 )
 prediction *= len(data) / prediction.sum()
 
-fig, axes = plt.subplots(1, 2, figsize=(8, 3.7), layout="constrained")
-for ax, title, hist in zip(
-    axes, ("Simulated data", "Fitted density"), (counts, prediction), strict=True
-):
-    mesh = ax.pcolormesh(bins, bins, hist.T, vmin=0, vmax=counts.max())
+fig, (data_axis, fit_axis) = plt.subplots(1, 2, figsize=(8, 3.7), layout="constrained")
+vmax = max(counts.max(), prediction.max())
+mesh = data_axis.pcolormesh(bins, bins, counts.T, vmin=0, vmax=vmax)
+fit_axis.pcolormesh(bins, bins, prediction.T, vmin=0, vmax=vmax)
+for ax, title in [(data_axis, "Simulated data"), (fit_axis, "Fitted counts")]:
     ax.set(
         title=title,
         xlabel=r"$s_{12}$ (GeV$^2$)",
         ylabel=r"$s_{13}$ (GeV$^2$)",
         aspect="equal",
     )
-fig.colorbar(mesh, ax=axes, label="Events per bin")
+fig.colorbar(mesh, ax=[data_axis, fit_axis], label="Events per bin")

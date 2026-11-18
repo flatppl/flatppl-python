@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import jax
 import jax.numpy as jnp
@@ -327,10 +327,11 @@ def build(
     jacobian: bool,
     bounds: bool,
     dtype: DTypeLike,
-    target: str | None,
+    target: Literal["cpu", "gpu"] | None,
     integration: Integration | None,
     optimize_forward: bool,
-    initial_fields: Mapping[str, Any] | None = None,
+    correlation_factors: tuple[str, ...] = (),
+    initial_fields: Mapping[str, float] | None = None,
 ) -> LogDensity:
     """Compile a :class:`LogDensity` for :meth:`flatppl.Module.logdensity`."""
     from ._jax import float_dtype
@@ -340,12 +341,13 @@ def build(
     query = module
     if measure is not None:
         query, parameters, fixed = _query(module, measure, bounds)
-    transformed = query.compile_transformed(
+    transformed = query._compile_coordinate_charts(  # pyright: ignore[reportPrivateUsage]
         logdensity=jacobian,
         dtype=dtype,
-        target=target,  # pyright: ignore[reportArgumentType]
+        target=target,
         integration=integration,
         optimize_forward=optimize_forward,
+        correlation_factors=correlation_factors,
     )
     (item,) = transformed.constrained.schema["inputs"]
     name: str = item["name"]
@@ -356,7 +358,7 @@ def build(
 
     point = _initial(transformed, parameters, fixed)
     if initial_fields is not None:
-        point = {**point, **initial_fields}
+        point.update(initial_fields)
     free = transformed.unconstrain(point)
     if not all(bool(jnp.all(jnp.isfinite(x))) for x in jax.tree.leaves(free)):  # pyright: ignore[reportUnknownMemberType]
         raise ValueError(

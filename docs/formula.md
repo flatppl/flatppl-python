@@ -132,8 +132,9 @@ print(float(model.formula.parameter_draws(point)["sigma"]))
 
 Pass `unconstrained=False` to score in model coordinates, or `jacobian=False`
 to omit the coordinate Jacobian while optimizing in free coordinates. The
-automatic chart uses fixed parameter supports. Score correlated group factors
-in model coordinates with `unconstrained=False`.
+automatic chart uses fixed parameter supports. Correlation factors have one
+free partial-correlation coordinate per strictly lower-triangular entry.
+`constrain` returns a full Cholesky matrix for each factor.
 
 `parameter_draws` takes named model-coordinate bindings and returns named
 coefficient arrays with their leading chain and draw axes preserved. Names and
@@ -191,7 +192,7 @@ Results retain the leading draw axes and append the rows in `formula.rows`
 order. `expected_response` returns conditional means, Bernoulli success
 probabilities, or Binomial expected successes. Ordinal and categorical
 predictions append a probability axis in `info["response_levels"]` order.
-Von Mises has no arithmetic expected-response query.
+Wiener returns mean response times. Von Mises has no arithmetic expected-response query.
 
 `posterior_predict` samples the response law, including residual variation
 and any row dependence. Binomial, categorical and ordinal rows use JAX
@@ -199,7 +200,8 @@ samplers with the fitted probabilities. Categorical and ordinal draws are
 one-based category codes. Binomial trial counts must fit exactly in the
 selected precision. Other families use the sample lowering of `K_model`.
 Zero-trial Binomial rows always draw zero and contribute zero log likelihood.
-Von Mises draws use one period and require positive concentration.
+Von Mises draws use one period and require positive concentration. Wiener draws
+append an axis with the response time and binary decision.
 
 Reusing a JAX key reproduces the draws. Censored models predict latent
 responses. Truncated models draw within their bounds. Gaussian AR(1)
@@ -430,6 +432,7 @@ Pass `family` and, optionally, `link` to `from_formula`:
 | --- | --- | --- |
 | `gaussian`, `student` | `identity` | `log`, `inverse`, `softplus`, `squareplus`, `logit`, `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit` |
 | `lognormal`, `hurdle_lognormal` | `identity` | `inverse` |
+| `exgaussian` | `identity` | `log`, `inverse`, `softplus`, `squareplus` |
 | `bernoulli`, `binomial`, `beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
 | `zero_inflated_binomial`, `zero_inflated_beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
 | `poisson`, `negbinomial`, `geometric` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
@@ -437,7 +440,9 @@ Pass `family` and, optionally, `link` to `from_formula`:
 | `hurdle_poisson`, `hurdle_negbinomial` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
 | `Gamma` (also `gamma`), `hurdle_gamma`, `exponential`, `weibull` | `log` | `identity`, `inverse`, `softplus`, `squareplus` |
 | `von_mises` | `tan_half` | `identity` |
+| `wiener` | `identity` | `log` |
 | `cumulative` | `logit` | — |
+| `acat` | `logit` | — |
 | `categorical` | `logit` | — |
 
 Student models have `sigma` and `nu`, with `nu >= 1`. Gamma and negative-binomial
@@ -446,6 +451,11 @@ rate `1 / mu`. Geometric models count failures before the first success, with
 expected count `mu`. Weibull models use mean `mu` and `shape`, giving scale
 `mu / gamma(1 + 1 / shape)`. A lognormal predictor controls the log-location,
 with `sigma` as the log-scale.
+
+The `exgaussian` family is the sum of a Normal with location `mu - beta`
+and standard deviation `sigma`, and an exponential with mean `beta`.
+The response mean is `mu`. Both `sigma` and `beta` must be positive and
+can have their own predictors in `dpars`, with a log link by default.
 
 Binomial and zero-inflated binomial formulas require `y | trials(n) ~ ...`.
 Use a positive integer or a column of positive trial counts. Prediction needs
@@ -485,6 +495,34 @@ For a graded-response model with varying item discrimination, set
 Discrimination multiplies each threshold minus the location predictor.
 The default log link keeps it positive. With no `disc` predictor,
 discrimination equals one.
+
+Use `y | thres(gr=item) ~ x` for item-specific threshold vectors on a common
+response scale. If the inferred categories differ by item, specify the shared
+threshold count as in `y | thres(2, gr=item) ~ x` for three categories.
+Prediction needs the grouping column with fitted labels, including when
+`allow_new_levels=True`. The sampled bindings `cuts_1`, `cuts_2`, etc.
+follow `model.formula.info["threshold_groups"]["levels"]`.
+`parameter_draws` reports names such as `Intercept[item_a,1]` and
+`b_Intercept[item_a,1]`. The score offset includes one `log(m!)` per group.
+
+Adjacent-category logit (`acat`) fits partial-credit models with the same
+response coding. Each cut is an unconstrained intercept for a transition.
+For category `j + 1` versus `j`, the log odds are the linear predictor minus
+cut `j`. An additive `cs(x)` term gives numeric predictor `x` a separate
+slope for each transition.
+
+```{testcode} formula
+partial_credit = from_formula(
+    "rating ~ cs(anger) + (1 | item)",
+    {"rating": [1, 2, 3], "anger": [0.0, 1.0, 2.0], "item": ["a", "b", "a"]},
+    family="acat",
+    priors=[{"class": "b", "coef": "anger", "prior": "normal(0, 1)"}],
+)
+```
+
+The metadata names the slopes `bcs_anger[1]`, `bcs_anger[2]`, and so on.
+A shared `Intercept` prior applies independently to the cuts. The response
+queries use the retained category order and return one-based sampled codes.
 
 Categorical responses accept factors, logical values or numeric labels. The
 first retained level is the reference category, with logit zero. Each other
@@ -636,6 +674,46 @@ range. Bounds can be numbers or columns. Omit one bound for a half-line. The
 kernel and the likelihood use the truncated law. Supply any bound columns
 when preparing new rows.
 
+## Response times and decisions
+
+Use the Wiener diffusion model to fit a reaction time and a simultaneous
+binary decision. In `rt | dec(choice) ~ x`, the decision column accepts
+Boolean values, the labels `lower` and `upper`, or numeric values with
+zero for the lower boundary. Higher drift favors the upper boundary. Times must
+be positive, and a time at or below the point's nondecision time has zero likelihood.
+
+```python
+model = from_formula(
+    "time | dec(correct) ~ rotate + (1 | p | person) + (1 | i | item)",
+    trials,
+    family="wiener",
+    link="log",
+    dpars={
+        "bs": {"formula": "bs ~ rotate + (1 | p | person) + (1 | i | item)"},
+        "ndt": {"formula": "ndt ~ rotate + (1 | p | person) + (1 | i | item)"},
+    },
+)
+```
+
+`bs` is the boundary separation and `ndt` is the nondecision time. Both
+distributional predictors default to a log link. `bias` is the fractional
+starting point between the lower and upper boundaries. It defaults to a
+fixed `0.5`. Set its direct prior explicitly to estimate it, or use
+a distributional formula for `bias`, which defaults to a logit link.
+Direct `bs` and `ndt` priors default to `lognormal(0, 1)` and `Gamma(2, 10)`
+(shape and rate). Choose priors and starting values for the units of your
+response times.
+
+The joint log likelihood scores each time and its recorded decision.
+Prepare held-out observations with both columns in training mode, or
+bind `y_data` and an integer `dec_data` vector. Prediction needs only the
+predictors. `expected_response` returns mean response times averaged across
+decisions. `posterior_predict` returns matching time and decision columns
+for each row. The rejection sampler tries up to 64 proposals per row.
+The exhaustion probability is at most `2**-64` per row in exact arithmetic.
+Both columns contain NaN if the sampler exhausts its proposals or the
+selected response time cannot be represented at the requested precision.
+
 ## Grouped Gaussian AR(1)
 
 Use `y | ar(time=t, group=site) ~ x` for Gaussian residuals that follow a
@@ -677,7 +755,7 @@ Use `Uniform(interval(a, b))` for a proper constant prior on a fixed finite inte
 
 Use `class="b"` for population coefficients, `Intercept` for the centred
 intercept, `sd` for group scales, `sds` for smooth scales, and `sigma`, `nu`,
-`shape`, `phi`, `kappa`, `zi` or `hu` for an auxiliary parameter provided by the family.
+`shape`, `phi`, `kappa`, `beta`, `zi` or `hu` for an auxiliary parameter provided by the family.
 Add `coef` to select a named coefficient or `group` to select a grouping factor.
 A coefficient-specific `sd` prior also
 requires `group`. More specific entries override their class defaults.

@@ -1250,7 +1250,6 @@ class Module:
             CoordinateFunction,
             NormalCoordinatesFunction,
             NormalTransformedFunction,
-            TransformedFunction,
         )
 
         if self._gradient:
@@ -1344,10 +1343,39 @@ class Module:
             )
         if data_inputs:
             raise ValueError("data_inputs requires a Normal coordinate selection")
+        return self._compile_coordinate_charts(
+            logdensity=logdensity,
+            dtype=dtype,
+            autodiff=autodiff,
+            integration=integration,
+            optimize_forward=optimize_forward,
+            target=target,
+            checks=checks,
+            sufficient_statistics=sufficient_statistics,
+        )
+
+    def _compile_coordinate_charts(
+        self,
+        *,
+        logdensity: bool,
+        dtype: DTypeLike,
+        integration: Integration | None,
+        optimize_forward: bool,
+        target: Literal["cpu", "gpu"] | None,
+        autodiff: bool = True,
+        checks: Literal["nan", "raise"] = "nan",
+        sufficient_statistics: bool = True,
+        correlation_factors: Sequence[str] = (),
+    ) -> TransformedFunction:
+        from ._transforms import TransformedFunction
+
+        if self._gradient:
+            raise ValueError("transform the scalar query before requesting gradients")
         native = native_call(
             self._context._native.transform,  # pyright: ignore[reportPrivateUsage]
             self._native,
             logdensity,
+            correlation_factors,
         )
 
         def compile_module(module: Module) -> CompiledFunction:

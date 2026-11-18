@@ -10,6 +10,9 @@ tagged release.
 - Formula views can set selected group effects to zero or average responses
   over their fitted Gaussian distributions with Monte Carlo standard errors.
 
+- `Module.analyze().posterior_updates` reports conjugate families and exact
+  IID sampling in Rust StableHLO. Analysis errors retain available decisions.
+
 - Formula imports support additive `mo()` terms, factor-specific smooths,
   Gaussian censoring and truncation, and nonlinear predictors for Student
   and count families. Rust retains the fitted predictor state for new rows.

@@ -143,6 +143,8 @@ whose names start with an underscore, is private.
 
 .. autoclass:: flatppl.NormalCoordinate
 
+.. autoclass:: flatppl.PosteriorUpdate
+
 .. autoclass:: flatppl.ReductionDecision
 
 .. autoclass:: flatppl.GroupPartition

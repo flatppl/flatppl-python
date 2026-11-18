@@ -1,6 +1,38 @@
 import numpy as np
+import pytest
 
-from flatppl import InputCell, flatppl
+from flatppl import CompilationError, InputCell, flatppl
+
+
+def test_posterior_update_reports_explain_sampling_and_refusal():
+    model = """
+        p = elementof(unitinterval)
+        seed = elementof(nonnegintegers)
+        data = elementof(booleans)
+        L = likelihoodof(functionof(Bernoulli(p), p=p), data)
+        P = bayesupdate(L, joint(p=Beta(1, 1)))
+        inputs = (data, seed)
+        outputs = rand(normalize(P), rnginit(seed))
+    """
+    query = flatppl(model)
+    (update,) = query.analyze().posterior_updates
+    assert (update.binding, update.field, update.family) == ("P", "p", "Beta")
+    assert update.backend == "rust-stablehlo"
+    assert (update.likelihoods, update.parameters, update.sampling) == (
+        ("Bernoulli",),
+        None,
+        "exact_iid",
+    )
+    fixed = model.replace("elementof(booleans)", "true").replace("(data, seed)", "seed")
+    assert flatppl(fixed).analyze().posterior_updates[0].parameters == (2.0, 1.0)
+    with pytest.raises(CompilationError, match="no matching rule") as caught:
+        flatppl(model.replace("Bernoulli(p)", "Bernoulli(p*p)")).analyze()
+    (refusal,) = caught.value.posterior_updates
+    assert (refusal.binding, refusal.family, refusal.sampling) == (
+        "P",
+        None,
+        "lowering_refused",
+    )
 
 
 def test_array_read_facts_normalize_coordinates_without_splitting_parameters():

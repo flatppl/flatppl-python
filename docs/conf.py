@@ -131,6 +131,7 @@ _NO_SIGNATURE = {
     "flatppl.ModelAnalysis",
     "flatppl.AnalysisTerm",
     "flatppl.NormalCoordinate",
+    "flatppl.PosteriorUpdate",
     "flatppl.ReductionDecision",
     "flatppl.GroupPartition",
     "flatppl.NormalTransformedFunction",

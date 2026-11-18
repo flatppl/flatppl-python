@@ -10,7 +10,38 @@ Unrecognized expressions have no decision. Components describe structural
 incidence, not a proof of posterior independence. File data may be read and
 cached with the same snapshot rules as ordinary compilation.
 
-Write the density in FlatPPL and prepare that query:
+## Conjugate posterior draws
+
+Inspect `posterior_updates` to see which posterior family Rust recognizes
+and whether its StableHLO lowering uses an exact IID sampler.
+
+```python
+from flatppl import flatppl
+
+query = flatppl("""
+p = elementof(unitinterval)
+seed = elementof(nonnegintegers)
+L = likelihoodof(functionof(Bernoulli(p), p=p), true)
+P = bayesupdate(L, joint(p=Beta(1, 1)))
+inputs = seed
+outputs = rand(normalize(P), rnginit(seed))
+""")
+update, = query.analyze().posterior_updates
+assert (update.binding, update.field) == ("P", "p")
+assert (update.family, update.parameters, update.sampling) == (
+    "Beta", (2.0, 1.0), "exact_iid"
+)
+```
+
+A score can report the same matched family with `sampling="not_used"`.
+A missing family means Rust found no matching rule. Runtime observations can
+leave the numeric parameters unknown until execution. If lowering refuses a
+query, `CompilationError.posterior_updates` retains the source matches.
+Other FlatPPL engines can support different sampling methods.
+
+## Incremental scores
+
+Write the density in FlatPPL and prepare the query.
 
 ```python
 from flatppl import flatppl

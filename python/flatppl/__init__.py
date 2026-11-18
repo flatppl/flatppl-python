@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         InputCell,
         ModelAnalysis,
         NormalCoordinate,
+        PosteriorUpdate,
         ReductionDecision,
     )
     from ._incremental import CompiledIncrementalScore, IncrementalScore, ScoreExecutor
@@ -65,6 +66,7 @@ __all__ = [
     "NormalTransformedFunction",
     "Parameter",
     "Parameters",
+    "PosteriorUpdate",
     "ReductionDecision",
     "Reference",
     "ScoreExecutor",
@@ -85,6 +87,7 @@ def __getattr__(name: str) -> object:
         "InputCell",
         "ModelAnalysis",
         "NormalCoordinate",
+        "PosteriorUpdate",
         "ReductionDecision",
     ):
         from . import _analysis

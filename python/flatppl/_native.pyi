@@ -144,6 +144,5 @@ class Module:
         integration: tuple[float, float, int] | None = None,
         batch: tuple[Sequence[int], Sequence[Sequence[int | None]]] | None = None,
         target: str = "cpu",
-        boxes: Sequence[tuple[str, str, str]] | None = None,
         sufficient_statistics: bool = True,
     ) -> str: ...

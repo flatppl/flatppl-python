@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 import jax
 import jax.numpy as jnp
 import numpy as np
-from enzyme_ad.jax import hlo_call, optimization_passes
+from enzyme_ad.jax import enzyme_call, hlo_call, optimization_passes
 from jax.core import Tracer
 from jax.custom_batching import custom_vmap
 from jax.custom_derivatives import SymbolicZero
@@ -96,7 +96,9 @@ def pack_tensor(
     supplied_dtype = getattr(value, "dtype", None)
     if supplied_dtype is not None:
         supplied = jnp.dtype(supplied_dtype)
-        if supplied.kind == "c" or (dtype.kind != "f" and supplied != dtype):
+        if (supplied.kind == "c" and dtype.kind != "c") or (
+            dtype.kind not in "fc" and supplied != dtype
+        ):
             raise TypeError(f"{path} requires {dtype}, got {supplied_dtype}")
     elif dtype.kind == "f" and any(
         jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(value)
@@ -106,7 +108,7 @@ def pack_tensor(
         isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
     ):
         value = np.array(value, copy=True)
-    array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)  # pyright: ignore[reportUnknownMemberType]
+    array = jnp.asarray(value, dtype=dtype if dtype.kind in "fc" else None)  # pyright: ignore[reportUnknownMemberType]
     if dtype.kind in "biu" and array.dtype != dtype:
         raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
     return array.astype(dtype)
@@ -193,6 +195,67 @@ def _batch_status_for_check(
     return _status_for_check(status), in_batched[0]
 
 
+def _split_complex(values: Iterable[jax.Array]) -> tuple[jax.Array, ...]:
+    return tuple(
+        component
+        for value in values
+        for component in (
+            (value.real, value.imag) if value.dtype.kind == "c" else (value,)
+        )
+    )
+
+
+def _join_complex(
+    values: Iterable[jax.Array], mask: tuple[bool, ...]
+) -> tuple[jax.Array, ...]:
+    parts = iter(values)
+    return tuple(
+        jax.lax.complex(next(parts), next(parts)) if is_complex else next(parts)
+        for is_complex in mask
+    )
+
+
+def _complex_derivative_call(
+    source: str, primals: tuple[jax.Array, ...], output_mask: tuple[bool, ...]
+) -> _Call:
+    """Keep Enzyme's transpose on real tensors, with JAX handling the complex ABI."""
+    input_mask = tuple(value.dtype.kind == "c" for value in primals)
+
+    def real_boundary(*components: jax.Array) -> tuple[jax.Array, ...]:
+        values = _join_complex(components, input_mask)
+        return _split_complex(hlo_call(*values, source=source))
+
+    abstract: list[jax.ShapeDtypeStruct] = []
+    for value in primals:
+        dtype = value.dtype
+        if dtype.kind == "c":
+            dtype = jnp.dtype("float32" if dtype.itemsize == 8 else "float64")
+            abstract.extend((jax.ShapeDtypeStruct(value.shape, dtype),) * 2)
+        else:
+            abstract.append(jax.ShapeDtypeStruct(value.shape, dtype))
+    module = jax.jit(real_boundary).lower(*abstract).compiler_ir(dialect="stablehlo")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    pipeline = "inline,canonicalize,lower-complex-operations{concat-dimension=last},canonicalize,cse"
+    message = (
+        "the complex query uses operations without a real-tensor derivative lowering"
+    )
+    try:
+        _, lowered = cast(
+            tuple[str, str], enzyme_call.run_pass_pipeline([], str(module), pipeline)
+        )
+    except ValueError as exc:
+        raise TypeError(message) from exc
+    if "complex<" in lowered or "unrealized_conversion_cast" in lowered:
+        raise TypeError(message)
+    # The pass runner privatizes its entry for inlining. Import it as a module again.
+    lowered = lowered.replace("func.func private @main(", "func.func public @main(", 1)
+
+    def evaluate(*values: jax.Array) -> tuple[jax.Array, ...]:
+        parts = hlo_call(*_split_complex(values), source=lowered)
+        return _join_complex(parts, output_mask)
+
+    return evaluate
+
+
 def _compiled_call(
     exported: Export,
     export_batch: ExportBatch,
@@ -200,14 +263,14 @@ def _compiled_call(
     optimize_forward: bool,
 ) -> _Call:
     def specialize(shape: tuple[int, ...], input_axes: Axes) -> _Call:
-        source = (exported if not shape else export_batch(shape, input_axes))[
-            "stablehlo"
-        ]
+        specialization = exported if not shape else export_batch(shape, input_axes)
+        source = specialization["stablehlo"]
         key = (source, input_axes, autodiff, optimize_forward)
         cached = _programs.get(key)
         if cached is not None:
             _programs.move_to_end(key)
             return cached
+        has_complex = "complex<" in source
 
         @jax.jit  # pyright: ignore[reportUnknownMemberType]
         def raw(*args: jax.Array) -> tuple[jax.Array, ...]:
@@ -239,13 +302,28 @@ def _compiled_call(
             return result, tuple(True for _ in result)
 
         call = jax.custom_jvp(mapped)
+        real_boundary: _Call | None = None
 
         @partial(call.defjvp, symbolic_zeros=True)
         def derivative(
             primals: tuple[jax.Array, ...], tangents: tuple[Any, ...]
         ) -> tuple[tuple[jax.Array, ...], tuple[jax.Array | NDArray[np.void], ...]]:
+            nonlocal real_boundary
             if not autodiff:
                 raise TypeError("query was compiled with autodiff=False")
+            evaluate = raw
+            if has_complex:
+                if real_boundary is None:
+                    output_mask = tuple(
+                        leaf["dtype"] in ("complex64", "complex128")
+                        for leaf in _leaves(specialization["output"])
+                    )
+                    if specialization.get("runtime_status") is not None:
+                        output_mask += (False,)
+                    real_boundary = _complex_derivative_call(
+                        source, primals, output_mask
+                    )
+                evaluate = real_boundary
             active = tuple(
                 i
                 for i, tangent in enumerate(tangents)
@@ -256,7 +334,7 @@ def _compiled_call(
                 args = list(primals)
                 for i, value in zip(active, values, strict=True):
                     args[i] = value
-                return raw(*args)  # pyright: ignore[reportUnknownVariableType]
+                return evaluate(*args)  # pyright: ignore[reportUnknownVariableType]
 
             outputs, derivatives = jax.jvp(  # pyright: ignore[reportUnknownMemberType]
                 differentiate,
@@ -288,7 +366,7 @@ PARAMETER_OUTSIDE_SET = 9
 
 def _nan_where(invalid: jax.Array, leaf: jax.Array) -> jax.Array:
     """``leaf`` with NaN in the calls ``invalid`` marks; other kinds unchanged."""
-    if not jnp.issubdtype(leaf.dtype, jnp.floating):
+    if not jnp.issubdtype(leaf.dtype, jnp.inexact):
         return leaf
     mask = jnp.reshape(invalid, invalid.shape + (1,) * (leaf.ndim - invalid.ndim))
     return jnp.where(mask, jnp.nan, leaf)
@@ -395,7 +473,7 @@ class CompiledFunction:
         ]
         outputs = tuple(_leaves(exported["output"]))
         requires_x64 = any(
-            leaf["dtype"] in ("float64", "int64", "uint64")
+            leaf["dtype"] in ("float64", "complex128", "int64", "uint64")
             for leaf in (*inputs, *outputs)
         )
         if requires_x64 and not jax.config.x64_enabled:

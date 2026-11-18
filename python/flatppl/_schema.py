@@ -107,14 +107,15 @@ class Diagnostic(TypedDict):
 
 
 type Real = float | Literal["inf", "-inf"]
+type ComplexParts = tuple[Real, Real]
 
 
 class ArrayData(TypedDict):
     """Array elements of one scalar kind as one flat list in C order."""
 
     shape: list[int]
-    dtype: Literal["bool", "integer", "real", "real32"]
-    data: list[bool] | list[int] | list[Real]
+    dtype: Literal["bool", "integer", "real", "real32", "complex"]
+    data: list[bool] | list[int] | list[Real] | list[ComplexParts]
 
 
 class Constant(TypedDict):
@@ -125,6 +126,7 @@ class Constant(TypedDict):
         "integer",
         "real",
         "real32",
+        "complex",
         "string",
         "array",
         "record",
@@ -137,6 +139,7 @@ class Constant(TypedDict):
         bool
         | int
         | Real
+        | ComplexParts
         | str
         | ArrayData
         | Constant

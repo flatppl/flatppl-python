@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from ._schema import ArrayData, Constant, Real
+from ._schema import ArrayData, ComplexParts, Constant, Real
 from ._tables import columns as table_columns
 
 
@@ -45,6 +45,14 @@ def _real(value: float) -> Real:
     return value
 
 
+def _parts(value: complex) -> ComplexParts:
+    return _real(value.real), _real(value.imag)
+
+
+def _complex(parts: ComplexParts) -> complex:
+    return complex(float(parts[0]), float(parts[1]))
+
+
 def constant(value: Any) -> Constant:
     if isinstance(value, np.generic):
         scalar = cast("np.generic[Any]", value)
@@ -57,6 +65,8 @@ def constant(value: Any) -> Constant:
         return {"kind": "integer", "value": value}
     if isinstance(value, float):
         return {"kind": "real", "value": _real(value)}
+    if isinstance(value, complex):
+        return {"kind": "complex", "value": _parts(value)}
     if isinstance(value, str):
         return {"kind": "string", "value": value}
     if isinstance(value, tuple):
@@ -73,8 +83,10 @@ def constant(value: Any) -> Constant:
     if hasattr(value, "columns"):
         return _fields("table", value, value.columns)
     array = np.asarray(value)
-    if array.dtype.kind not in "biuf":
-        raise TypeError("constant arrays require boolean, integer, or real values")
+    if array.dtype.kind not in "biufc":
+        raise TypeError(
+            "constant arrays require boolean, integer, real, or complex values"
+        )
     if array.ndim == 0:
         return constant(array[()])
     flat = array.ravel()
@@ -83,6 +95,12 @@ def constant(value: Any) -> Constant:
         packed = {"shape": list(array.shape), "dtype": "bool", "data": flat.tolist()}
     elif array.dtype.kind in "iu":
         packed = {"shape": list(array.shape), "dtype": "integer", "data": flat.tolist()}
+    elif array.dtype.kind == "c":
+        packed = {
+            "shape": list(array.shape),
+            "dtype": "complex",
+            "data": [_parts(item) for item in flat.tolist()],
+        }
     else:
         data: list[Real] = [_real(item) for item in flat.astype(float).tolist()]
         packed = {
@@ -100,6 +118,8 @@ def value(constant: Constant) -> object:
         return float(cast(Real, value_))
     if kind == "real32":
         return np.float32(float(cast(Real, value_)))
+    if kind == "complex":
+        return _complex(cast(ComplexParts, value_))
     if kind == "array":
         array = cast(ArrayData, value_)
         dtype = {
@@ -107,12 +127,15 @@ def value(constant: Constant) -> object:
             "integer": np.int64,
             "real": np.float64,
             "real32": np.float32,
+            "complex": np.complex128,
         }
-        data = (
-            [float(x) for x in array["data"]]
-            if array["dtype"] in ("real", "real32")
-            else array["data"]
-        )
+        data: list[bool] | list[int] | list[Real] | list[complex]
+        if array["dtype"] == "complex":
+            data = [_complex(x) for x in cast(list[ComplexParts], array["data"])]
+        elif array["dtype"] in ("real", "real32"):
+            data = [float(x) for x in cast(list[Real], array["data"])]
+        else:
+            data = cast(list[bool] | list[int], array["data"])
         return np.asarray(data, dtype=dtype[array["dtype"]]).reshape(array["shape"])
     if kind in ("record", "table"):
         fields = cast(list[tuple[str, Constant]], value_)

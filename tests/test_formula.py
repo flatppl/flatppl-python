@@ -370,6 +370,192 @@ def test_nonlinear_2pl_scores_and_preserves_prediction_level_order() -> None:
     )
 
 
+def test_nonlinear_binomial_prediction_uses_new_trial_counts() -> None:
+    model = from_formula(
+        "y | trials(n) ~ a / (1 + x)",
+        {"x": [0.5, 2.0], "n": [4, 6], "y": [1, 4]},
+        family="binomial",
+        nlpars={"a": "a ~ 1"},
+        priors=[{"class": "b", "nlpar": "a", "prior": "normal(0, 1)"}],
+    )
+    new_x, new_trials, new_y = 0.2, 7, 3
+    prediction = model.formula.prepare({"x": [new_x], "n": [new_trials]})
+    prediction = prediction.set(y_data=[new_y])
+    model.context.register("binomial_prediction.flatppl", prediction)
+    score = flatppl(
+        """
+        m = load_module("binomial_prediction.flatppl")
+        p = elementof(reals)
+        inputs = p
+        outputs = m.log_lik(p)
+        """,
+        context=model.context,
+    ).compile(autodiff=False)
+    a = 1.5
+    eta = a / (1 + new_x)
+    expected = (
+        math.log(math.comb(new_trials, new_y))
+        + new_y * eta
+        - new_trials * np.logaddexp(0.0, eta)
+    )
+    np.testing.assert_allclose(score(a), [expected], atol=2e-6)
+
+
+def test_monotonic_prediction_keeps_order_and_unequal_steps() -> None:
+    levels = ["none", "low", "medium", "high"]
+    data = pd.DataFrame(
+        {
+            "dose": pd.Categorical(
+                ["high", "low", "none", "medium"], categories=levels, ordered=True
+            ),
+            "y": [-1.2, -0.1, 0.1, -0.8],
+        }
+    )
+    model = from_formula(
+        "y ~ 0 + mo(dose)",
+        data,
+        priors=[{"class": "sigma", "prior": "constant(0.7)"}],
+    )
+    observed = np.array([-1.3, 0.4, -1.4])
+    prediction = model.formula.prepare(
+        pd.DataFrame(
+            {
+                "dose": pd.Categorical(
+                    ["high", "none", "medium"],
+                    categories=levels[::-1],
+                    ordered=True,
+                )
+            }
+        )
+    ).set(y_data=observed)
+    model.context.register("monotonic_prediction.flatppl", prediction)
+    score = flatppl(
+        """
+        m = load_module("monotonic_prediction.flatppl")
+        p = elementof(cartprod(bmo_1 = reals, simo_1 = stdsimplex(3)))
+        inputs = p
+        outputs = m.log_lik(p)
+        """,
+        context=model.context,
+    ).compile(autodiff=False)
+    mean = np.array([-1.5, 0.0, -1.05])
+    expected = -0.5 * ((observed - mean) / 0.7) ** 2 - math.log(
+        0.7 * math.sqrt(2 * math.pi)
+    )
+    np.testing.assert_allclose(
+        score({"bmo_1": -0.5, "simo_1": np.array([0.2, 0.5, 0.3])}),
+        expected,
+        atol=2e-6,
+    )
+
+
+def test_censored_gaussian_scores_each_observation_event() -> None:
+    mean, sigma = 0.3, 0.8
+    y = [-0.1, 0.6, mean, 0.1]
+    model = from_formula(
+        "y | cens(code, upper) ~ 1",
+        {"y": y, "code": [-1, 0, 1, 2], "upper": [None, None, None, 0.7]},
+        priors=[{"class": "sigma", "prior": "constant(0.8)"}],
+    )
+    assert model.formula.rows == (0, 1, 2, 3)
+    model.context.register("censored.flatppl", model)
+    score = flatppl(
+        """
+        m = load_module("censored.flatppl")
+        p = elementof(reals)
+        inputs = p
+        outputs = m.log_lik(p)
+        """,
+        context=model.context,
+    ).compile()
+    left, exact, right, lower = (value - mean for value in y)
+    scale = sigma * math.sqrt(2)
+    expected = [
+        math.log(0.5 * math.erfc(-left / scale)),
+        -0.5 * (exact / sigma) ** 2 - math.log(sigma * math.sqrt(2 * math.pi)),
+        math.log(0.5 * math.erfc(right / scale)),
+        math.log(0.5 * (math.erf((0.7 - mean) / scale) - math.erf(lower / scale))),
+    ]
+    np.testing.assert_allclose(score(mean), expected, atol=2e-6)
+    gradient = jax.jit(jax.jacrev(score))(mean)
+    np.testing.assert_allclose(gradient[2], math.sqrt(2 / math.pi) / sigma, atol=2e-6)
+
+
+def test_truncated_gaussian_prediction_scores_against_new_tail_bounds() -> None:
+    model = from_formula(
+        "y | trunc(lb=lo, ub=hi) ~ 1",
+        {"y": [0.25, 0.5], "lo": [-1.0, 0.0], "hi": [1.0, 2.0]},
+        priors=[{"class": "sigma", "prior": "constant(0.8)"}],
+    )
+    lower, upper, observed = 5.0, 5.5, 5.1
+    prediction = model.formula.prepare({"lo": [lower], "hi": [upper]})
+    model.context.register("truncated.flatppl", prediction)
+    score = flatppl(
+        """
+        m = load_module("truncated.flatppl")
+        p = elementof(reals)
+        inputs = p
+        outputs = logdensityof(m.K_model(p), record(y = [5.1]))
+        """,
+        context=model.context,
+    ).compile(autodiff=False)
+    mean, sigma = 0.3, 0.8
+    scale = sigma * math.sqrt(2)
+    mass = 0.5 * (math.erfc((lower - mean) / scale) - math.erfc((upper - mean) / scale))
+    expected = (
+        -0.5 * ((observed - mean) / sigma) ** 2
+        - math.log(sigma * math.sqrt(2 * math.pi))
+        - math.log(mass)
+    )
+    np.testing.assert_allclose(score(mean), expected, atol=5e-6)
+
+
+def test_factor_smooth_prediction_selects_the_level_curve() -> None:
+    data = {
+        "time": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+        "treatment": ["A", "B", "A", "B", "A", "B"],
+        "y": [0.2, 0.9, 0.3, -0.2, 0.8, 0.1],
+    }
+    priors = [
+        {"class": "sigma", "prior": "constant(0.7)"},
+        {"class": "sds", "prior": "constant(1.0)"},
+    ]
+    model = from_formula("y ~ 0 + s(time, k=4, by=treatment)", data, priors=priors)
+    common = from_formula(
+        "y ~ 0 + s(time, k=4)", data, priors=priors, context=model.context
+    )
+    time = [1.4, 3.7]
+    y = [0.2, -0.3]
+    by_level = model.formula.prepare({"time": time, "treatment": ["B", "A"]}).set(
+        y_data=y
+    )
+    reference = common.formula.prepare({"time": time}).set(y_data=y)
+    model.context.register("factor_smooth.flatppl", by_level)
+    model.context.register("common_smooth.flatppl", reference)
+    score = flatppl(
+        """
+        m = load_module("factor_smooth.flatppl")
+        ref = load_module("common_smooth.flatppl")
+        p = elementof(cartprod(bs = cartpow(reals, 2),
+                               zs_stime_treatmentA_1 = cartpow(reals, 2),
+                               zs_stime_treatmentB_1 = cartpow(reals, 2)))
+        inputs = p
+        a = ref.log_lik(record(bs = [p.bs[1]], zs_stime_1 = p.zs_stime_treatmentA_1))
+        b = ref.log_lik(record(bs = [p.bs[2]], zs_stime_1 = p.zs_stime_treatmentB_1))
+        outputs = record(actual = m.log_lik(p), expected = [b[1], a[2]])
+        """,
+        context=model.context,
+    ).compile(autodiff=False)
+    result = score(
+        {
+            "bs": np.zeros(2),
+            "zs_stime_treatmentA_1": np.array([0.3, -0.2]),
+            "zs_stime_treatmentB_1": np.array([-0.1, 0.8]),
+        }
+    )
+    np.testing.assert_allclose(result["actual"], result["expected"], atol=2e-6)
+
+
 def test_ordered_factors_and_observed_preparation_keep_training_defaults() -> None:
     data = pd.DataFrame(
         {

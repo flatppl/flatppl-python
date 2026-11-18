@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- Formula imports support additive `mo()` terms, factor-specific smooths,
+  Gaussian censoring and truncation, and nonlinear predictors for Student
+  and count families. Rust retains the fitted predictor state for new rows.
+
 - Exact shared Beta and Dirichlet marginals preserve observation dependence and
   coefficients. Affine Gaussian queries support exact marginal scoring and
   conditional scoring and sampling through `disintegrate`.

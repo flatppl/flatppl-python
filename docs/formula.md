@@ -211,9 +211,11 @@ model = from_formula(
 prediction = model.formula.prepare({"x": [3.0, -1.0]})
 ```
 
-Gaussian and Bernoulli formulas support this option. The family link applies
-to the full expression. This 2PL model fixes the ability prior to the standard
-Normal and estimates a positive item discrimination through `exp(ld)`.
+Gaussian, Student, Bernoulli, and count formulas support this option. This
+includes Binomial with `trials`, Geometric, Poisson, Negative Binomial, and the
+listed zero-inflated and hurdle count families. The family link applies to the
+full expression. This 2PL model uses standard Normal ability priors and
+estimates a positive item discrimination through `exp(ld)`.
 
 ```python
 irt = from_formula(
@@ -287,9 +289,9 @@ expected count `mu`. Weibull models use mean `mu` and `shape`, giving scale
 `mu / gamma(1 + 1 / shape)`. A lognormal predictor controls the log-location,
 with `sigma` as the log-scale.
 
-Binomial and zero-inflated binomial formulas require `y | trials(n) ~ ...`,
-where `n` is a nonnegative integer or a column of counts; that column is also
-needed for prediction. Bernoulli responses can be numeric, logical or factors, with the
+Binomial and zero-inflated binomial formulas require `y | trials(n) ~ ...`.
+Use a positive integer or a column of positive trial counts. Prediction needs
+the trial column too. Bernoulli responses can be numeric, logical or factors, with the
 training event coding retained in the recipe. Counts must be nonnegative
 integers; Gamma, exponential, lognormal and Weibull responses must be strictly
 positive. Zero-inflated families have an additional `zi` probability for the
@@ -351,6 +353,26 @@ category, order the explicit factor levels before fitting; a separate `refcat`
 option is not supported. Omitting missing rows in a way that removes a whole
 response level is refused; filter and fit again with explicit levels.
 
+## Monotonic predictors
+
+Use `mo(dose)` for an integer score or an ordered factor. The coefficient sets
+the sign and average step size. A simplex allocates the effect across adjacent
+levels. Integer scores retain gaps such as the unobserved step at dose 2 here:
+
+```{testcode} formula
+monotonic = from_formula(
+    "y ~ mo(dose)",
+    {"dose": [0, 1, 3, 3], "y": [0.1, 0.6, 1.8, 2.0]},
+    priors=[{"class": "b", "coef": "modose", "prior": "normal(0, 1)"}],
+)
+monotonic_prediction = monotonic.formula.prepare({"dose": [0, 2, 3]})
+```
+
+Additive `mo()` terms can accompany ordinary predictors and group terms. For
+ordered factors, the recipe retains the order of levels used in training. The
+`simo` prior class selects the step proportions, which default to a symmetric
+Dirichlet prior. Each term supports up to 4,096 steps.
+
 ## Smooth predictors
 
 Additive `s(x)` or `s(x, k=6)` uses a one-dimensional mgcv/brms thin-plate
@@ -375,10 +397,16 @@ and `dpar` when the smooth belongs to an auxiliary predictor. Penalized
 coefficients are standard Normals. Prediction reuses the fitted basis and
 centering, including outside the training range.
 
+Use `s(time, k=4, by=treatment)` for a separate curve per unordered factor
+level. Add `treatment` as a main effect to allow different intercepts. An ordered
+factor with two or more levels omits the first level's smooth. Include
+`s(time, k=4)` for a baseline curve, with the `by` terms giving the other levels'
+differences. A factor with one retained level gets one curve.
+
 The default rank is 10. Rank must be at least 3 and no greater than the number
 of distinct retained training values, which is currently limited to 2,000.
-Only a named numeric column is accepted inside `s`. `by` smooths, tensor
-products, other bases, custom knots and smooth interactions are not supported.
+`s` takes a numeric column and `by` takes a factor column. Tensor products,
+other bases, custom knots and smooth interactions are outside this subset.
 
 ## Response weights and known observation scales
 
@@ -420,6 +448,21 @@ weighted = from_formula(
 )
 new_rows = weighted.formula.prepare(pl.DataFrame({"x": [4.0], "s": [0.25]}))
 ```
+
+## Censored and truncated responses
+
+Gaussian formulas accept `y | cens(status) ~ x` for exact, left-censored, and
+right-censored observations. Supply `cens(status, upper)` for interval rows,
+with `y` as the lower bound. Use `0`, `-1`, `1`, and `2` or the labels `none`,
+`left`, `right`, and `interval`. The upper endpoint is used only for interval
+rows. `log_lik` scores the observed events. Prediction through
+`K_model` gives the underlying continuous response law.
+
+Use `y | trunc(lb=lower, ub=upper) ~ x` to condition a Gaussian response on a
+range. Bounds can be numbers or columns. Omit one bound for a half-line. The
+kernel and the likelihood use the truncated law. Supply any bound columns
+when preparing new rows. Rust can score the truncated kernel. Forward sampling
+raises a lowering error.
 
 ## Select priors and bounds
 
@@ -474,8 +517,9 @@ sampled as a prior source. The posterior can still be proper.
 
 ## Current limits
 
-Monotonic terms, nonlinear predictors for other families, and response
-additions other than `trials`, `weights` and `se` are not implemented.
+The nonlinear section lists the supported response families. Monotonic terms
+support additive effects. Censoring and truncation currently support Gaussian
+responses.
 `center=False` is not supported; use `0 + Intercept + ...` for an uncentred
 intercept, or keep the default centred intercept. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.

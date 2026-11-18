@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 import polars as pl
 
-from flatppl import flatppl, from_formula
+from flatppl import from_formula
 
 # %%
 # Choose priors in model units
@@ -84,37 +84,14 @@ print("Sampled parameters:", [parameter["name"] for parameter in sampled])
 # ``r_site = sd_site * z_site``. ``b_Intercept`` is a derived intercept at
 # ``x = 0`` and is not another sampling coordinate.
 #
-# Registering the model makes it importable by an explicit density query.
-# Its input domains describe model coordinates, including positive scales;
-# Rust uses these same domains to choose the sampling transforms.
-context = model.context
-context.register("training.flatppl", model)
-query = flatppl(
-    """
-    m = load_module("training.flatppl")
-    p = elementof(cartprod(temp_Intercept = reals, b = cartpow(reals, 1),
-                          sd_site = posreals, z_site = cartpow(reals, 2), sigma = posreals))
-    inputs = p
-    outputs = logdensityof(m.Pi_post, p)
-    """,
-    context=context,
-)
-
-# %%
-# Compile the density and its transforms together
-# -----------------------------------------------
-# ``compile_transformed(logdensity=True)`` returns four compiled callables:
-# ``constrained`` evaluates the original query, ``unconstrained`` evaluates
-# the density in free coordinates, ``unconstrain`` maps a model point to free
-# coordinates, and ``constrain`` maps a free point back.
-#
-# For this model, positive scales use log coordinates and the other coordinates
-# stay unchanged. The unconstrained density includes the change-of-variables
-# correction once. Both the transforms and density execute in StableHLO;
-# Python performs no coordinate conversion or Jacobian calculation inside the
-# sampler loop. Compilation defaults to float32; see :doc:`/transforms` for
-# float64 and the supported domains.
-target = query.compile_transformed(logdensity=True)
+# Compile the formula posterior
+# -----------------------------
+# The fitted formula supplies its sampled coordinates and their supports.
+# ``logdensity()`` compiles the density and its coordinate maps.
+# For this model, positive scales use log coordinates. The free log density
+# includes the Jacobian for sampling. See :doc:`/transforms` for precision and
+# supported coordinate domains.
+target = model.formula.logdensity()
 point = {
     "temp_Intercept": 1.0,
     "b": jnp.array([2.0]),
@@ -122,7 +99,7 @@ point = {
     "z_site": jnp.array([-0.2, 0.4]),
     "sigma": 1.5,
 }
-score, gradient = jax.jit(jax.value_and_grad(target.constrained))(point)
+score, gradient = jax.jit(jax.value_and_grad(target.transformed.constrained))(point)
 print("Model-coordinate log density:", float(score))
 print("Gradient:", jax.tree.map(lambda value: np.asarray(value).tolist(), gradient))
 initial = target.unconstrain(point)
@@ -137,7 +114,7 @@ initial = target.unconstrain(point)
 # keeps 2,000 posterior draws. Warmup draws are discarded. Four independent
 # random keys drive four chains, vectorized with ``jax.vmap``; ``jax.lax.scan``
 # keeps the sampling loop compiled. BlackJAX owns the sampler and adaptation.
-warmup = blackjax.window_adaptation(blackjax.nuts, target.unconstrained)
+warmup = blackjax.window_adaptation(blackjax.nuts, target.fn)
 
 
 @jax.jit
@@ -145,7 +122,7 @@ def sample_chain(key: jax.Array):
     """Adapt one NUTS chain, then collect its draws and divergence flags."""
     warmup_key, sample_key = jax.random.split(key)
     (state, parameters), _ = warmup.run(warmup_key, initial, num_steps=1000)
-    sampler = blackjax.nuts(target.unconstrained, **parameters)
+    sampler = blackjax.nuts(target.fn, **parameters)
 
     def step(current: Any, draw_key: jax.Array):
         updated, info = sampler.step(draw_key, current)
@@ -171,11 +148,9 @@ draws = jax.vmap(jax.vmap(target.constrain))(free_draws)
 # the summaries. For poor mixing or divergences, check the parameterization,
 # priors and sampler tuning. Longer runs reduce Monte Carlo uncertainty once
 # sampling behaves well.
+named = model.formula.parameter_draws(draws)
 parameters = {
-    "Centred intercept": draws["temp_Intercept"],
-    "b_x": draws["b"][..., 0],
-    "sd_site": draws["sd_site"],
-    "sigma": draws["sigma"],
+    name: named[name] for name in ("b_Intercept", "b_x", "sd_site__Intercept", "sigma")
 }
 for name, chains in parameters.items():
     interval = np.quantile(chains, [0.05, 0.95])

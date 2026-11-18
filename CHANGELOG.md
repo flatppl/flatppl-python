@@ -7,9 +7,15 @@ tagged release.
 
 ### Added
 
+- Formula views can set selected group effects to zero or average responses
+  over their fitted Gaussian distributions with Monte Carlo standard errors.
+
 - Formula imports support additive `mo()` terms, factor-specific smooths,
   Gaussian censoring and truncation, and nonlinear predictors for Student
   and count families. Rust retains the fitted predictor state for new rows.
+
+- Formula views prepare posterior densities directly and report sampled, fixed
+  and derived coefficients by name across sampler draws.
 
 - Formula views evaluate batched conditional means, predictive draws and
   pointwise log likelihoods in fitted model coordinates. Opt-in prediction
@@ -19,6 +25,9 @@ tagged release.
   monotonic interactions, cubic bivariate tensor smooths, and nonlinear scalar
   and cumulative predictors. Predictive draws support truncated Gaussian and
   hurdle count laws.
+
+- A pair of Gaussian formulas fits two correlated outcomes. The fitted model
+  exposes paired conditional means and predictive draws, plus joint row scores.
 
 - Exact shared Beta and Dirichlet marginals preserve observation dependence and
   coefficients. Affine Gaussian queries support exact marginal scoring and

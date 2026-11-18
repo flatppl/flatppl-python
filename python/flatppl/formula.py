@@ -16,19 +16,30 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from . import _native  # pyright: ignore[reportMissingModuleSource]
-from ._api import Context, Module, native_call
+from ._api import Context, Module, flatppl, native_call
 from ._frozen import freeze
 from ._tables import ipc
 
 if TYPE_CHECKING:
-    from jax import Array
+    import jax
     from jax.typing import DTypeLike
+
+    from ._api import Integration
+    from .inference import LogDensity
 
 __all__ = ["FormulaView", "from_formula"]
 
 
+def _table_source(data: object) -> tuple[bytes | None, str | None]:
+    if isinstance(data, (str, os.PathLike)):
+        return None, os.fsdecode(
+            cast("str | os.PathLike[str] | os.PathLike[bytes]", data)
+        )
+    return ipc(data), None
+
+
 def from_formula(
-    formula: str,
+    formula: str | tuple[str, str],
     data: object,
     family: str = "gaussian",
     priors: Sequence[Mapping[str, object]] | None = None,
@@ -48,7 +59,8 @@ def from_formula(
     and recipe for preparing new data.
 
     Args:
-        formula: An R-style formula, such as ``"y ~ x + group"``.
+        formula: An R-style formula, such as ``"y ~ x + group"``. A pair of
+            formulas fits two Gaussian responses with correlated residuals.
         data: A CSV, JSON or Arrow IPC path, or a pandas or Polars dataframe,
             Arrow table or record batch, another dataframe interchange producer,
             or a mapping of column names to arrays. Categories, numeric
@@ -77,11 +89,11 @@ def from_formula(
         TypeError: The data cannot be transported as a table.
         ValueError: The table has duplicate column names.
     """
-    spec: dict[str, object] = {
-        "formula": formula,
-        "family": family,
-        "options": options,
-    }
+    spec: dict[str, object] = {"family": family, "options": options}
+    if isinstance(formula, str):
+        spec["formula"] = formula
+    else:
+        spec["formula"], spec["paired_formula"] = formula
     if priors is not None:
         spec["priors"] = list(priors)
     if link is not None:
@@ -159,12 +171,22 @@ class FormulaView:
     def _response_model_name(self) -> str:
         return self.module.context._register_query_model(self.module)  # pyright: ignore[reportPrivateUsage]
 
+    @cached_property
+    def group_terms(self) -> Mapping[str, tuple[tuple[str, str], ...]]:
+        """Map sampled innovation blocks to their (predictor, grouping column) pairs."""
+        terms: dict[str, list[tuple[str, str]]] = {}
+        for predictor, recipe in self.recipe["predictors"].items():
+            for group in recipe["groups"]:
+                terms.setdefault(group["z"], []).append((predictor, group["column"]))
+        return MappingProxyType({name: tuple(pairs) for name, pairs in terms.items()})
+
     def prepare(
         self,
         data: object,
         *,
         mode: Literal["prediction", "training"] = "prediction",
         allow_new_levels: bool = False,
+        history: object | None = None,
     ) -> Module:
         """Bind a fresh module using this fit's training recipe.
 
@@ -180,6 +202,10 @@ class FormulaView:
             allow_new_levels: In prediction mode, retain unseen group levels.
                 Expand fitted draws with :meth:`sample_new_groups` before
                 evaluating them. Unseen fixed-effect levels always raise.
+            history: For Gaussian AR(1) prediction, a table or path with
+                observed responses, predictors, group and time. Each group's
+                forecast starts at its last complete historical observation.
+                Groups absent from history start from the stationary law.
 
         Returns:
             A new module in the same context, with its own row selection.
@@ -190,7 +216,17 @@ class FormulaView:
         context = self.module.context
         native_context = context._native  # pyright: ignore[reportPrivateUsage]
         options = {"allow_new_levels": True} if allow_new_levels else {}
-        if isinstance(data, (str, os.PathLike)):
+        if history is not None:
+            if mode != "prediction":
+                raise ValueError("history requires prediction mode")
+            native, metadata = native_call(
+                native_context.prepare_formula_forecast,
+                self._native,
+                *_table_source(data),
+                *_table_source(history),
+                **options,
+            )
+        elif isinstance(data, (str, os.PathLike)):
             native, metadata = native_call(
                 native_context.prepare_formula_path,
                 self._native,
@@ -208,18 +244,111 @@ class FormulaView:
             )
         module = Module(native, context)
         decoded = json.loads(metadata)
-        rows = decoded["rows"] if allow_new_levels else decoded
+        prediction_metadata = allow_new_levels or history is not None
+        rows = decoded["rows"] if prediction_metadata else decoded
         group_shapes = (
-            freeze(decoded["new_group_shapes"]) if allow_new_levels else freeze({})
+            freeze(decoded["new_group_shapes"]) if prediction_metadata else freeze({})
         )
         module._formula = FormulaView(  # pyright: ignore[reportPrivateUsage]
             module, self.info, self.recipe, tuple(rows), self._native, group_shapes
         )
         return module
 
+    @cached_property
+    def _posterior_query(self) -> Module:
+        return flatppl(
+            f'''_model = load_module("{self._response_model_name}")
+            point = elementof(_model.formula_parameter_domain)
+            inputs = point
+            outputs = logdensityof(_model.Pi_post, point)
+            ''',
+            context=self.module.context,
+        )
+
+    def logdensity(
+        self,
+        *,
+        unconstrained: bool = True,
+        jacobian: bool = True,
+        dtype: DTypeLike = "float32",
+        target: Literal["cpu", "gpu"] | None = None,
+        integration: Integration | None = None,
+        optimize_forward: bool = False,
+    ) -> LogDensity:
+        """Prepare a sampler log density over this formula's posterior coordinates.
+
+        Options have the same meaning as in :meth:`flatppl.Module.logdensity`.
+        Model points use the sampled binding names from ``Pi_post``. The density
+        includes the prior and the likelihood of the bound observations. The
+        model needs fixed continuous parameter supports. Score correlated group
+        factors in model coordinates with ``unconstrained=False``.
+        """
+        if not self._has_observations():
+            raise ValueError(
+                'logdensity needs observations; use mode="training" or bind the encoded response columns'
+            )
+        if "formula_parameter_domain" not in self.module.bindings:
+            raise ValueError(
+                "formula logdensity requires fixed continuous parameter supports"
+            )
+
+        correlations = {
+            name
+            for predictor in self.recipe["predictors"].values()
+            for group in predictor["groups"]
+            if (name := group.get("correlation")) is not None
+        }
+        if correlations and unconstrained:
+            names = ", ".join(sorted(correlations))
+            raise ValueError(
+                f"no unconstraining chart for correlation factors {names}; "
+                "use unconstrained=False to score model coordinates"
+            )
+
+        from ._inference import build
+
+        initial: dict[str, object] = {}
+        if correlations:
+            import numpy as np
+
+            from ._jax import float_dtype
+
+            dtype_name = float_dtype(dtype)
+            for name in correlations:
+                shape = self.module.bindings[name].shape
+                assert shape and shape[0] is not None
+                initial[name] = np.eye(shape[0], dtype=dtype_name)
+        return build(
+            self._posterior_query,
+            None,
+            unconstrained=unconstrained,
+            jacobian=jacobian,
+            bounds=True,
+            dtype=dtype,
+            target=target,
+            integration=integration,
+            optimize_forward=optimize_forward,
+            initial_fields=initial,
+        )
+
+    def parameter_draws(
+        self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
+    ) -> dict[str, jax.Array]:
+        """Report draws by the coefficient names in ``info["parameters"]``.
+
+        Pass sampled model-coordinate bindings, as for :meth:`expected_response`.
+        Each reported array preserves the leading draw axes. Fixed parameters
+        repeat their values across draws. Derived parameters use the model's
+        bindings, including the intercept on the original predictor scale and
+        group effects. Read each name's role from ``info["parameters"]``.
+        """
+        from ._formula_prediction import parameter_draws
+
+        return parameter_draws(self, draws, dtype=dtype)
+
     def expected_response(
         self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
-    ) -> Array:
+    ) -> jax.Array:
         """Return conditional means for each posterior draw and retained row.
 
         Pass the named constrained coordinates returned by
@@ -231,6 +360,8 @@ class FormulaView:
         counts. Categorical and ordinal families append a class axis in
         ``info["response_levels"]`` order. Censoring returns latent response
         means. Truncation and mixture families use their predictive laws.
+        Paired Gaussian models append a response axis in
+        ``info["response_columns"]`` order.
         """
         from ._formula_prediction import evaluate
 
@@ -239,15 +370,20 @@ class FormulaView:
         return evaluate(self, "expected_response", draws, dtype=dtype)
 
     def posterior_predict(
-        self, draws: Mapping[str, object], *, key: Array, dtype: DTypeLike = "float32"
-    ) -> Array:
+        self,
+        draws: Mapping[str, object],
+        *,
+        key: jax.Array,
+        dtype: DTypeLike = "float32",
+    ) -> jax.Array:
         """Draw one response vector per parameter point from the fitted law.
 
         Draw coordinates and leading axes match :meth:`expected_response`.
         Supply a JAX PRNG key for reproducible sampling. Reusing a key
         reproduces the same draws. Censored models return latent responses.
         Categorical and ordinal outputs are one-based codes in
-        ``info["response_levels"]`` order.
+        ``info["response_levels"]`` order. Paired Gaussian models append a
+        response axis with both correlated draws in ``info["response_columns"]`` order.
 
         Raises:
             CompilationError: The response kernel has no sample lowering.
@@ -258,24 +394,36 @@ class FormulaView:
 
     def log_likelihood(
         self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
-    ) -> Array:
+    ) -> jax.Array:
         """Return pointwise log likelihoods for each draw and retained row.
 
         Returns unweighted scores of the fitted observation law, including
         censoring and truncation. Prepare held-out observations with
         ``mode="training"``. Bind encoded ``y_data`` directly for uncensored
-        responses. Draw coordinates and leading axes match :meth:`expected_response`.
+        responses, along with ``y2_data`` for paired Gaussian models. A paired
+        model returns one joint score for each row. Draw coordinates and leading
+        axes match :meth:`expected_response`.
         """
         from ._formula_prediction import evaluate
 
-        if self.module.bindings["y_data"].kind == "observation":
+        if not self._has_observations():
             raise ValueError(
-                'log_likelihood needs observations; use mode="training" or bind y_data'
+                'log_likelihood needs observations; use mode="training" or bind response data'
             )
         return evaluate(self, "log_lik", draws, dtype=dtype)
 
+    def _has_observations(self) -> bool:
+        names = (
+            ("y_data", "y2_data") if "response_columns" in self.info else ("y_data",)
+        )
+        return all(self.module.bindings[name].kind != "observation" for name in names)
+
     def sample_new_groups(
-        self, draws: Mapping[str, object], *, key: Array, dtype: DTypeLike = "float32"
+        self,
+        draws: Mapping[str, object],
+        *,
+        key: jax.Array,
+        dtype: DTypeLike = "float32",
     ) -> dict[str, object]:
         """Expand fitted posterior draws for a prepared prediction with new groups.
 
@@ -287,3 +435,54 @@ class FormulaView:
         from ._formula_prediction import sample_new_groups
 
         return sample_new_groups(self, draws, key=key, dtype=dtype)
+
+    def zero_group_effects(
+        self,
+        draws: Mapping[str, object],
+        *,
+        groups: Sequence[str] | None = None,
+        dtype: DTypeLike = "float32",
+    ) -> dict[str, object]:
+        """Return coordinates for prediction with selected group effects set to zero.
+
+        Pass a name or a sequence of names from :attr:`group_terms`. The
+        default selects all group blocks. Coordinates for selected blocks
+        may be omitted. Other coordinates retain their supplied values and
+        determine the draw axes. Pass a selected coordinate to retain its draw
+        axes if the model has no other sampled parameters.
+
+        Pass the returned coordinates to :meth:`expected_response`,
+        :meth:`posterior_predict` or :meth:`log_likelihood`.
+        """
+        from ._formula_prediction import zero_group_effects
+
+        return zero_group_effects(self, draws, groups=groups, dtype=dtype)
+
+    def marginal_expected_response(
+        self,
+        draws: Mapping[str, object],
+        *,
+        key: jax.Array,
+        groups: Sequence[str] | None = None,
+        samples: int = 256,
+        dtype: DTypeLike = "float32",
+    ) -> tuple[jax.Array, jax.Array]:
+        """Estimate the response mean averaged over selected fitted group distributions.
+
+        Selection and draw coordinates follow :meth:`zero_group_effects`.
+        For each posterior draw, integrate the conditional response mean over
+        ``samples`` samples of the selected Gaussian effects given their
+        fitted scales and correlations. Rows sharing a level use the same
+        effect within each sample. Other coordinates stay fixed at their
+        supplied value for each posterior draw.
+
+        Return the estimate and its Monte Carlo standard error, both with the
+        shape of :meth:`expected_response`. The standard error describes
+        integration noise conditional on each draw. Use a JAX PRNG key and
+        at least two samples.
+        """
+        from ._formula_prediction import marginal_expected_response
+
+        return marginal_expected_response(
+            self, draws, key=key, groups=groups, samples=samples, dtype=dtype
+        )

@@ -35,6 +35,16 @@ class Context:
         *,
         allow_new_levels: bool = False,
     ) -> tuple[Module, str]: ...
+    def prepare_formula_forecast(
+        self,
+        model: FormulaModel,
+        data_ipc: bytes | None,
+        path: str | None,
+        history_ipc: bytes | None,
+        history_path: str | None,
+        *,
+        allow_new_levels: bool = False,
+    ) -> tuple[Module, str]: ...
     def import_formula_path(
         self,
         spec: str,

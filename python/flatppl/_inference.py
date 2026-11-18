@@ -330,6 +330,7 @@ def build(
     target: str | None,
     integration: Integration | None,
     optimize_forward: bool,
+    initial_fields: Mapping[str, Any] | None = None,
 ) -> LogDensity:
     """Compile a :class:`LogDensity` for :meth:`flatppl.Module.logdensity`."""
     from ._jax import float_dtype
@@ -354,6 +355,8 @@ def build(
     model_bounds = _box(binding.domain, schema)
 
     point = _initial(transformed, parameters, fixed)
+    if initial_fields is not None:
+        point = {**point, **initial_fields}
     free = transformed.unconstrain(point)
     if not all(bool(jnp.all(jnp.isfinite(x))) for x in jax.tree.leaves(free)):  # pyright: ignore[reportUnknownMemberType]
         raise ValueError(

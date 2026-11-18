@@ -112,12 +112,34 @@ as tuples and preserves numeric labels.
 
 ## Evaluate the posterior
 
-The generated parameters below have proper priors. Query their joint law explicitly, as in
-the [tutorial](examples/formula.rst); the
-[general query helper](modules.md#query-from-python) applies to free parameters
-declared with `elementof`. The [coordinate-transform reference](transforms.md)
-covers `compile_transformed(logdensity=True)`, automatic density corrections,
-precision and supported input domains.
+Use `model.formula.logdensity()` with bound observations. It scores `Pi_post`
+and builds the same coordinate maps as [Module.logdensity](inference.md). The
+sampler position is a record keyed by sampled binding name.
+
+```{testcode} formula
+density = model.formula.logdensity()
+point = density.constrain(density.init)
+print(sorted(point))
+print(float(point["sigma"]))
+print(float(model.formula.parameter_draws(point)["sigma"]))
+```
+
+```{testoutput} formula
+['b', 'sigma', 'temp_Intercept']
+1.0
+1.0
+```
+
+Pass `unconstrained=False` to score in model coordinates, or `jacobian=False`
+to omit the coordinate Jacobian while optimizing in free coordinates. The
+automatic chart uses fixed parameter supports. Score correlated group factors
+in model coordinates with `unconstrained=False`.
+
+`parameter_draws` takes named model-coordinate bindings and returns named
+coefficient arrays with their leading chain and draw axes preserved. Names and
+roles come from `formula.info["parameters"]`. For example, `Intercept` is the
+centred fit coordinate and `b_Intercept` is the derived intercept on the
+original predictor scale.
 
 ## Sample with BlackJAX
 
@@ -176,11 +198,13 @@ and any row dependence. Binomial, categorical and ordinal rows use JAX
 samplers with the fitted probabilities. Categorical and ordinal draws are
 one-based category codes. Binomial trial counts must fit exactly in the
 selected precision. Other families use the sample lowering of `K_model`.
+Zero-trial Binomial rows always draw zero and contribute zero log likelihood.
+Von Mises draws use one period and require positive concentration.
 
 Reusing a JAX key reproduces the draws. Censored models predict latent
 responses. Truncated models draw within their bounds. Gaussian AR(1)
-prediction starts a stationary residual trajectory for each group, in the
-prepared time order. Follow the [JAX runtime check guide](jax.md#runtime-checks)
+prediction uses the prepared time order and starts a stationary residual
+trajectory for each group by default. Follow the [JAX runtime check guide](jax.md#runtime-checks)
 when staging a predictive call with `jax.jit`.
 
 `log_likelihood(draws)` returns unweighted pointwise scores with censoring
@@ -211,6 +235,75 @@ Each new level receives one effect per posterior draw from the fitted group
 distribution. Rows for the same level share that effect. Reuse the expanded
 coordinates to compare conditional means and response draws at the same
 effects.
+
+### Predict at zero group effects or average over the group population
+
+`prediction.formula.group_terms` lists the sampled group blocks and their
+predictor and grouping column names. These calls use a site block named
+`z_site`.
+
+```python
+view = prediction.formula
+zeroed = view.zero_group_effects(draws, groups="z_site")
+at_zero = view.expected_response(zeroed)
+average, mcse = view.marginal_expected_response(
+    draws, groups="z_site", key=jax.random.key(27), samples=512
+)
+```
+
+Setting site effects to zero gives the conditional response at zero.
+Averaging over the site distribution accounts for its fitted scales and
+correlations. For a level seen in training, this calculation replaces the
+sampled effect for that level with draws from the fitted group distribution.
+With a log link, for example, a mean of `exp(eta)` at zero
+becomes `exp(eta + variance / 2)` after averaging a Gaussian effect of
+variance `variance`. Effects in other blocks keep their supplied estimates.
+Omit `groups` to select every fitted block. For an opted-in snapshot with new
+levels, either operation can replace the entire selected block using the
+original fitted draws. If an unselected block has new levels, expand it
+with `sample_new_groups` before using these helpers.
+
+The marginal mean and its Monte Carlo standard error retain the posterior
+draw axes and prepared row order. Each integration sample uses one Gaussian
+effect per level of each selected block, shared across rows of that level.
+The standard error measures integration noise for that posterior draw.
+Larger `samples` reduce this noise and increase the work. The calculation
+processes fixed-size batches of integration samples. Memory per batch
+scales with the number of posterior draws and fitted group levels. Large
+inputs can be split along the posterior draw axes and given separate keys.
+
+Marginal means require a finite expectation over the selected effects.
+The helper rejects inverse links, selected nonlinear parameter terms,
+identity links on constrained parameters, log links on probabilities, and
+selected Lognormal scale effects. These cases can leave the response
+parameter support or have divergent means. Zeroing group effects still
+works wherever the resulting conditional model is valid.
+
+### Predict two Gaussian responses
+
+Pass two formulas to fit Gaussian responses with separate mean predictors and
+scales and a joint residual correlation.
+
+```python
+paired = from_formula(
+    ("reading ~ hours", "math ~ hours"),
+    {"reading": [6.0, 8.0, 7.0], "math": [5.0, 9.0, 8.0], "hours": [1, 3, 2]},
+)
+prediction = paired.formula.prepare({"hours": [2, 4]})
+```
+
+Training retains rows complete for both responses and their predictors.
+Prediction needs the predictors for both formulas. Means and draws end in a
+`(rows, 2)` array in `info["response_columns"]` order. The two outcomes in a
+row share residual covariance. `log_likelihood` returns their joint score per
+row.
+
+Use `dpar="mu2"` for the second mean's coefficient and group priors. Use
+classes `sigma` and `sigma2` for the residual scales and `rescor` for their
+correlation, which defaults to `uniform(-1, 1)`. Each scale's default prior
+uses the corresponding outcome's scale. Paired models support ordinary
+predictor terms and scalar residual scales. Give group terms the same ID, as
+in `(1 | ability | site)` in both formulas, to fit a joint site covariance.
 
 ## Model a family parameter
 
@@ -538,9 +631,26 @@ integers within a group. The lag across a gap of `d` time steps is `ar**d`.
 Class `ar` selects the coefficient prior, which defaults to `uniform(-1, 1)`.
 The scalar `sigma` is the one-step innovation standard deviation.
 
-The returned row positions follow group and time order. Prepared data
-starts each group from its stationary distribution. Supply time and group
-columns, along with the predictors, when preparing new rows.
+Supply time and group columns, along with the predictors, when preparing new
+rows. The returned row positions follow group and time order.
+
+```python
+forecast = model.formula.prepare(future_data, history=observations)
+means = forecast.formula.expected_response(draws)
+simulated = forecast.formula.posterior_predict(draws, key=jax.random.key(27))
+```
+
+`history` supplies observed responses alongside their group, time and predictors.
+Each group is conditioned on its last complete historical observation. Future
+times in that group must be strictly later. For each posterior draw, the
+forecast adds `ar**d` times the last observed residual to the fitted mean, with
+`d` measured from the anchor. The history predictors use the fitted recipe
+and the same draw as the future predictors. Groups absent from history start
+from the stationary law. The prepared `rows` refer to the future table.
+
+Historical anchors must use fitted predictor and random-effect levels.
+`allow_new_levels=True` still permits new random-effect levels in future
+data. Use `sample_new_groups` to expand draws for those levels.
 
 ## Select priors and bounds
 
@@ -598,9 +708,7 @@ sampled as a prior source. The posterior can still be proper.
 Categorical formulas use the per-category linear predictors described above.
 Monotonic interactions are available for population-level effects. The `t2`
 form supports two cubic margins at specified ranks. Truncation supports
-Gaussian responses. Gaussian AR(1) prediction starts a new trajectory for each
-group. Von Mises and zero-inflated Binomial currently lack predictive sampling
-through `posterior_predict`.
+Gaussian responses.
 `center=False` is not supported; use `0 + Intercept + ...` for an uncentred
 intercept, or keep the default centred intercept. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.

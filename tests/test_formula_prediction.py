@@ -12,6 +12,143 @@ from jax.experimental import checkify
 from flatppl import CompilationError, flatppl, from_formula
 
 
+@pytest.mark.parametrize("rho", [-0.65, 0.0])
+def test_ar_forecast_conditions_on_the_last_observed_residual(rho: float) -> None:
+    model = from_formula(
+        "y | ar(time=t, group=g) ~ x + (1 | g)",
+        {
+            "x": [0, 1, 2, 3],
+            "y": [0.2, 1.3, -0.4, 1.1],
+            "t": [0, 1, 0, 1],
+            "g": ["A", "A", "B", "B"],
+        },
+        priors=[
+            {"class": "sigma", "prior": "constant(0.7)"},
+            {"class": "sd", "group": "g", "prior": "constant(0.8)"},
+        ],
+    )
+    history = {
+        "x": [7.5, 0.5, 1.5],
+        "y": [4.0, 1.0, None],
+        "t": [3, 1, 9],
+        "g": ["A", "A", "A"],
+    }
+    future = {
+        "x": [3.0, 4.0, 6.0, 1.0, 8.0, 2.0, None],
+        "t": [11, 7, 8, 7, 4, 7, 99],
+        "g": ["C", "B", "A", "C", "A", "A", "A"],
+    }
+    prediction = model.formula.prepare(future, history=history, allow_new_levels=True)
+    rows = prediction.formula.rows
+    assert rows == (4, 5, 2, 1, 3, 0)
+    assert prediction.constant("N") == len(rows)
+    assert "formula_model" in prediction.bindings
+    assert prediction.formula.new_group_shapes == {"z_g": (1,)}
+    point = {
+        "temp_Intercept": 0.2,
+        "b": jnp.array([0.4]),
+        "ar": rho,
+        "z_g": jnp.array([1.3, -0.5]),
+    }
+    expanded = prediction.formula.sample_new_groups(point, key=jax.random.key(183))
+    effects = dict(zip("ABC", np.asarray(expanded["z_g"]), strict=True))
+
+    def mean(x: float, group: str) -> float:
+        return 0.2 + 0.4 * (x - 1.5) + 0.8 * effects[group]
+
+    anchor_residual = 4.0 - mean(7.5, "A")
+    times = np.asarray(future["t"])[list(rows)]
+    groups = np.asarray(future["g"])[list(rows)]
+    predictors = np.asarray(future["x"], dtype=float)[list(rows)]
+    expected = np.array(
+        [mean(x, group) for x, group in zip(predictors, groups, strict=True)]
+    )
+    expected[groups == "A"] += rho ** (times[groups == "A"] - 3) * anchor_residual
+    np.testing.assert_allclose(
+        prediction.formula.expected_response(expanded), expected, atol=2e-6
+    )
+
+    covariance = 0.7**2 / (1 - rho**2) * rho ** np.abs(times[:, None] - times)
+    same_group = groups[:, None] == groups
+    covariance *= same_group
+    a = groups == "A"
+    covariance[np.ix_(a, a)] *= 1 - rho ** (
+        2 * (np.minimum(times[a, None], times[a]) - 3)
+    )
+    count = 30_000
+    arrays = {name: np.asarray(value) for name, value in expanded.items()}
+    batch = {
+        name: np.broadcast_to(value, (count, *value.shape))
+        for name, value in arrays.items()
+    }
+    key = jax.random.key(184)
+    draw = prediction.formula.posterior_predict
+    checked = jax.jit(checkify.checkify(lambda points: draw(points, key=key)))
+    errors, observed = checked(batch)
+    errors.throw()
+    np.testing.assert_allclose(observed.mean(axis=0), expected, atol=0.024, rtol=0)
+    np.testing.assert_allclose(
+        np.cov(observed, rowvar=False), covariance, atol=0.032, rtol=0
+    )
+    np.testing.assert_array_equal(draw(expanded, key=key), draw(expanded, key=key))
+
+
+def test_ar_forecast_with_shared_group_coordinates() -> None:
+    model = from_formula(
+        "y | ar(time=t, group=g) ~ 0 + (1 + x | panel | g)",
+        {"y": [0.0, 2.0], "x": [0.0, 1.0], "t": [0, 1], "g": ["A", "A"]},
+        priors=[
+            {"class": "sigma", "prior": "constant(1)"},
+            {"class": "sd", "group": "g", "prior": "constant(1)"},
+        ],
+    )
+    forecast = model.formula.prepare(
+        {"x": [3.0], "t": [3], "g": ["A"]},
+        history={"y": [2.0], "x": [1.0], "t": [1], "g": ["A"]},
+    ).formula
+    group = model.formula.recipe["predictors"]["mu"]["groups"][0]
+    point = {"ar": -0.5, group["z"]: np.zeros((2, 1)), group["correlation"]: np.eye(2)}
+    np.testing.assert_allclose(forecast.expected_response(point), [0.5])
+
+
+def test_ar_forecast_requires_future_times_and_prediction_mode() -> None:
+    data = {"y": [0.0, 1.0], "t": [0, 2], "g": ["A", "A"]}
+    model = from_formula("y | ar(time=t, group=g) ~ 1", data)
+    for time in [1, 2]:
+        with pytest.raises(
+            CompilationError, match="must follow the latest history time"
+        ):
+            model.formula.prepare({"t": [time], "g": ["A"]}, history=data)
+    with pytest.raises(ValueError, match="history requires prediction mode"):
+        model.formula.prepare(data, mode="training", history=data)
+    with pytest.raises(CompilationError, match="history times must be unique"):
+        model.formula.prepare({"t": [3], "g": ["A"]}, history={**data, "t": [2, 2]})
+    no_observations = model.formula.prepare(
+        {"t": [3], "g": ["A"]}, history={**data, "y": [float("nan"), float("nan")]}
+    )
+    assert no_observations.formula.rows == (0,)
+
+
+def test_ar_forecast_prepares_file_backed_rows(tmp_path: Path) -> None:
+    data = {"y": [0.0, 1.0], "t": [0, 2], "g": ["A", "A"]}
+    model = from_formula(
+        "y | ar(time=t, group=g) ~ 1",
+        data,
+        priors=[
+            {"class": "sigma", "prior": "constant(0.7)"},
+            {"class": "ar", "prior": "constant(-0.6)"},
+        ],
+    )
+    history = tmp_path / "history.csv"
+    history.write_text("y,t,g\n3,2,A\n1,0,A\n", encoding="utf-8")
+    future = tmp_path / "future.csv"
+    future.write_text("t,g\n4,A\n3,A\n1,C\n", encoding="utf-8")
+    prepared = model.formula.prepare(future, history=history)
+    assert prepared.formula.rows == (1, 0, 2)
+    found = prepared.formula.expected_response({"temp_Intercept": 1.0})
+    np.testing.assert_allclose(found, [-0.2, 1.72, 1.0], atol=2e-6)
+
+
 def test_batched_response_means_and_observed_scores() -> None:
     model = from_formula(
         "y | weights(w) ~ x",
@@ -375,3 +512,112 @@ def test_grouped_ar_prediction_follows_stationary_trajectories() -> None:
     np.testing.assert_allclose(
         np.cov(samples.T), stationary_variance * np.array(correlations), atol=0.065
     )
+
+
+def test_population_response_integrates_correlated_slopes_under_log_link() -> None:
+    model = from_formula(
+        "y ~ 0 + (1 + x | site) + (1 | area)",
+        {
+            "y": [1, 3, 2, 2],
+            "x": [0.0, 1.0, 0.0, 1.0],
+            "site": ["a", "a", "b", "b"],
+            "area": ["east", "west", "east", "west"],
+        },
+        family="poisson",
+        priors=[
+            {
+                "class": "sd",
+                "group": "site",
+                "coef": "Intercept",
+                "prior": "constant(0.4)",
+            },
+            {"class": "sd", "group": "site", "coef": "x", "prior": "constant(0.6)"},
+            {"class": "sd", "group": "area", "prior": "constant(0.4)"},
+        ],
+    )
+    xs = np.array([0.0, 0.5, 0.5, -0.5])
+    view = model.formula.prepare(
+        {
+            "x": xs,
+            "site": ["a", "new", "new", "new"],
+            "area": ["west", "west", "west", "east"],
+        },
+        allow_new_levels=True,
+    ).formula
+    assert view.group_terms == {
+        "z_area": (("mu", "area"),),
+        "z_site": (("mu", "site"),),
+    }
+    lower = np.array([[1.0, 0.0], [0.5, math.sqrt(0.75)]])
+    draws = {
+        "L_site": np.broadcast_to(lower, (2, 3, 2, 2)),
+        "z_area": np.stack((np.zeros((2, 3)), np.arange(6).reshape(2, 3) / 6), axis=-1),
+        "z_site": np.full((2, 3, 2, 2), 5.0),
+    }
+    zero = view.zero_group_effects(draws, groups="z_site")
+    exponent = 0.4 * draws["z_area"][..., [1, 1, 1, 0]]
+    conditional = np.exp(exponent)
+    np.testing.assert_allclose(view.expected_response(zero), conditional, rtol=2e-6)
+    assert zero["z_area"] is draws["z_area"]
+
+    count = 8193
+    without_site = {name: value for name, value in draws.items() if name != "z_site"}
+    mean, error = view.marginal_expected_response(
+        without_site, groups=["z_site"], key=jax.random.key(72), samples=count
+    )
+    # The row-specific variance is w' Sigma w with w = (1, x).
+    group_factor = np.diag([0.4, 0.6]) @ lower
+    variance = np.square(np.column_stack((np.ones_like(xs), xs)) @ group_factor).sum(
+        axis=1
+    )
+    expected = np.exp(exponent + 0.5 * variance)
+    expected_error = expected * np.sqrt(np.expm1(variance) / count)
+    np.testing.assert_array_less(np.abs(mean - expected), 5 * expected_error)
+    np.testing.assert_allclose(error, expected_error, rtol=0.18)
+    np.testing.assert_array_equal(mean[..., 1], mean[..., 2])
+    np.testing.assert_array_equal(error[..., 1], error[..., 2])
+
+
+def test_population_zero_effects_accepts_a_model_with_only_group_coordinates() -> None:
+    view = from_formula(
+        "y ~ 0 + (1 | site)",
+        {"y": [1.0, 2.0], "site": ["a", "b"]},
+        priors=[
+            {"class": "sd", "group": "site", "prior": "constant(0.7)"},
+            {"class": "sigma", "prior": "constant(1)"},
+        ],
+    ).formula
+    np.testing.assert_array_equal(
+        view.expected_response(view.zero_group_effects({})), [0.0, 0.0]
+    )
+    count = 2048
+    mean, error = view.marginal_expected_response(
+        {}, key=jax.random.key(12), samples=count
+    )
+    expected_error = 0.7 / math.sqrt(count)
+    np.testing.assert_array_less(np.abs(mean), 5 * expected_error)
+    np.testing.assert_allclose(error, expected_error, rtol=0.08)
+    draws = {"z_site": np.ones((2, 3, 2))}
+    np.testing.assert_array_equal(
+        view.expected_response(view.zero_group_effects(draws)), np.zeros((2, 3, 2))
+    )
+    mean, error = view.marginal_expected_response(
+        draws, groups=(), key=jax.random.key(13), samples=2
+    )
+    np.testing.assert_allclose(mean, 0.7)
+    np.testing.assert_array_equal(error, np.zeros((2, 3, 2)))
+
+
+def test_population_marginal_rejects_the_inverse_link_singularity() -> None:
+    view = from_formula(
+        "y ~ 1 + (1 | site)",
+        {"y": [1.0, 2.0], "site": ["a", "b"]},
+        family="gaussian",
+        link="inverse",
+    ).formula
+    draws = {"temp_Intercept": 1.0, "sd_site": 1.0, "sigma": 1.0}
+    np.testing.assert_allclose(
+        view.expected_response(view.zero_group_effects(draws)), [1.0, 1.0]
+    )
+    with pytest.raises(ValueError, match="inverse"):
+        view.marginal_expected_response(draws, key=jax.random.key(6))

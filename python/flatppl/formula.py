@@ -21,7 +21,7 @@ from ._frozen import freeze
 from ._tables import ipc
 
 if TYPE_CHECKING:
-    from jax import Array
+    import jax
     from jax.typing import DTypeLike
 
     from ._api import Integration
@@ -333,7 +333,7 @@ class FormulaView:
 
     def parameter_draws(
         self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
-    ) -> dict[str, Array]:
+    ) -> dict[str, jax.Array]:
         """Report draws by the coefficient names in ``info["parameters"]``.
 
         Pass sampled model-coordinate bindings, as for :meth:`expected_response`.
@@ -348,7 +348,7 @@ class FormulaView:
 
     def expected_response(
         self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
-    ) -> Array:
+    ) -> jax.Array:
         """Return conditional means for each posterior draw and retained row.
 
         Pass the named constrained coordinates returned by
@@ -370,8 +370,12 @@ class FormulaView:
         return evaluate(self, "expected_response", draws, dtype=dtype)
 
     def posterior_predict(
-        self, draws: Mapping[str, object], *, key: Array, dtype: DTypeLike = "float32"
-    ) -> Array:
+        self,
+        draws: Mapping[str, object],
+        *,
+        key: jax.Array,
+        dtype: DTypeLike = "float32",
+    ) -> jax.Array:
         """Draw one response vector per parameter point from the fitted law.
 
         Draw coordinates and leading axes match :meth:`expected_response`.
@@ -390,7 +394,7 @@ class FormulaView:
 
     def log_likelihood(
         self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
-    ) -> Array:
+    ) -> jax.Array:
         """Return pointwise log likelihoods for each draw and retained row.
 
         Returns unweighted scores of the fitted observation law, including
@@ -415,7 +419,11 @@ class FormulaView:
         return all(self.module.bindings[name].kind != "observation" for name in names)
 
     def sample_new_groups(
-        self, draws: Mapping[str, object], *, key: Array, dtype: DTypeLike = "float32"
+        self,
+        draws: Mapping[str, object],
+        *,
+        key: jax.Array,
+        dtype: DTypeLike = "float32",
     ) -> dict[str, object]:
         """Expand fitted posterior draws for a prepared prediction with new groups.
 
@@ -454,11 +462,11 @@ class FormulaView:
         self,
         draws: Mapping[str, object],
         *,
-        key: Array,
+        key: jax.Array,
         groups: Sequence[str] | None = None,
         samples: int = 256,
         dtype: DTypeLike = "float32",
-    ) -> tuple[Array, Array]:
+    ) -> tuple[jax.Array, jax.Array]:
         """Estimate the response mean averaged over selected fitted group distributions.
 
         Selection and draw coordinates follow :meth:`zero_group_effects`.

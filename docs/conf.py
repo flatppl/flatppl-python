@@ -73,7 +73,6 @@ autodoc_type_aliases = {
     "CompiledIncrementalScore": "flatppl.CompiledIncrementalScore",
     "ScoreExecutor": "flatppl.ScoreExecutor",
     "CoordinateFunction": "flatppl.CoordinateFunction",
-    "Array": "jax.Array",
     "DTypeLike": "jax.typing.DTypeLike",
     "FormulaView": "flatppl.formula.FormulaView",
     "LogDensity": "flatppl.inference.LogDensity",

@@ -84,6 +84,39 @@ class ReductionDecision:
 
 
 @dataclass(frozen=True)
+class PosteriorUpdate:
+    """A source update and its sampling decision in Rust StableHLO lowering.
+
+    A matched family is conditional on valid parameters and positive evidence.
+    A missing family means the compiler found no matching rule. Scalar
+    parameters appear when static evaluation succeeds at float64 precision.
+    """
+
+    binding: str
+    backend: Literal["rust-stablehlo"]
+    field: str | None
+    family: str | None
+    likelihoods: tuple[str, ...]
+    parameters: tuple[float, ...] | None
+    sampling: Literal["exact_iid", "not_used", "lowering_refused"]
+
+
+def posterior_updates(rows: list[dict[str, Any]]) -> tuple[PosteriorUpdate, ...]:
+    return tuple(
+        PosteriorUpdate(
+            row["binding"],
+            row["backend"],
+            row["field"],
+            row["family"],
+            tuple(row["likelihoods"]),
+            None if row["parameters"] is None else tuple(row["parameters"]),
+            row["sampling"],
+        )
+        for row in rows
+    )
+
+
+@dataclass(frozen=True)
 class ModelAnalysis:
     """Structural query facts and decisions from a selected reduction pass.
 
@@ -106,6 +139,7 @@ class ModelAnalysis:
     preparation_refusal: str | None
     preparing: bool
     sufficient_statistics: bool
+    posterior_updates: tuple[PosteriorUpdate, ...] = ()
 
 
 def analysis(value: dict[str, Any]) -> ModelAnalysis:
@@ -165,4 +199,5 @@ def analysis(value: dict[str, Any]) -> ModelAnalysis:
         value["preparation_refusal"],
         value["preparing"],
         value["sufficient_statistics"],
+        posterior_updates(value["posterior_updates"]),
     )

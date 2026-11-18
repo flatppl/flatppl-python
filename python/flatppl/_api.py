@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import jax.typing
     from jax.typing import DTypeLike
 
-    from ._analysis import ModelAnalysis
+    from ._analysis import ModelAnalysis, PosteriorUpdate
     from ._graph import Graph
     from ._incremental import IncrementalScore
     from ._jax import Batch, CompiledFunction
@@ -78,9 +78,15 @@ class CompilationError(Exception):
         excerpt: The source line the span starts on, or ``None``.
         import_chain: The labels of the importing sources, outermost first.
         message: The diagnostic text.
+        posterior_updates: Source posterior decisions available during query analysis.
     """
 
     def __init__(self, diagnostic: Mapping[str, Any]) -> None:
+        from ._analysis import posterior_updates
+
+        self.posterior_updates: tuple[PosteriorUpdate, ...] = posterior_updates(
+            diagnostic.get("posterior_updates", [])
+        )
         self.stage: str = diagnostic["stage"]
         self.source: str = diagnostic["source"]
         self.span: tuple[int, int] | None = _span(diagnostic["span"])
@@ -906,7 +912,8 @@ class Module:
 
         Returns:
             Immutable terms, dependency paths, components, Normal candidates
-            and decisions from the actual selected reduction pass.
+            and decisions from the selected reduction pass. Posterior updates
+            identify matched families and exact IID sampling in Rust StableHLO.
 
         Raises:
             CompilationError: The query cannot lower, a data input is invalid,

@@ -142,8 +142,9 @@ Bind a different size on the original module and compile a new function.
 Bind arrays, records, or tables the same way when their values must be fixed at
 compile time. Binding copies the supplied values, including device arrays, to
 host constants. Pass changing data through runtime inputs to reuse compilation.
-Fixed numeric arrays must be nonempty. Python binding currently accepts finite
-real constants, integers, and Booleans; complex constants are unsupported.
+Fixed numeric arrays must be nonempty. Use Python complex values or NumPy
+complex arrays to bind values declared with `complexes`. Both components must
+be finite.
 
 ## Runtime indices and categories
 

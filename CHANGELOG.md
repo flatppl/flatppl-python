@@ -7,6 +7,9 @@ tagged release.
 
 ### Added
 
+- Complex scalars and arrays can serve as query arguments, results, and fixed
+  values. Supported complex queries use real component derivatives through JAX.
+
 - Finite two-dimensional weights support numerical `totalmass`, `normalize`
   and JAX gradients through `Integration`.
 

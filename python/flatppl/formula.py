@@ -203,10 +203,11 @@ class FormulaView:
             allow_new_levels: In prediction mode, retain unseen group levels.
                 Expand fitted draws with :meth:`sample_new_groups` before
                 evaluating them. Unseen fixed-effect levels always raise.
-            history: For Gaussian AR(1) prediction, a table or path with
+            history: For Gaussian AR, MA, or ARMA prediction, a table or path with
                 observed responses, predictors, group and time. Each group's
                 forecast starts at its last complete historical observation.
-                Groups absent from history start from the stationary law.
+                Groups absent from history start from the stationary law for
+                AR(1) or from zero residuals and innovations for conditional ARMA.
 
         Returns:
             A new module in the same context, with its own row selection.

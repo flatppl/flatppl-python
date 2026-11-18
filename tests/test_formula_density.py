@@ -6,7 +6,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pytest
+import numpy.typing as npt
 
 from flatppl import Module, flatppl, from_formula
 
@@ -154,10 +154,10 @@ def test_reported_draws_preserve_axes_and_fitted_parameter_roles() -> None:
 def test_correlated_groups_score_on_their_model_coordinates() -> None:
     data = {"x": [0.0, 1.0, 2.0], "y": [1.0, 2.0, 3.0], "g": ["A", "B", "A"]}
     model = from_formula("y ~ x + (1 + x | g)", data)
-    with pytest.raises(ValueError, match="unconstraining chart"):
-        model.formula.logdensity()
     density = model.formula.logdensity(unconstrained=False)
+    fitted = model.formula.logdensity()
     np.testing.assert_array_equal(density.init["L_g"], np.eye(2))
+    np.testing.assert_array_equal(fitted.init["L_g"], [0.0])
     assert np.isfinite(float(density(density.init)))
     point = {**density.init, "L_g": [[1.0, 0.0], [0.5, math.sqrt(0.75)]]}
     authored = _authored_query(
@@ -167,9 +167,74 @@ def test_correlated_groups_score_on_their_model_coordinates() -> None:
         "L_g = cartpow(reals, [2, 2])",
     )
     np.testing.assert_allclose(density(point), authored.compile()(point))
+    free = fitted.unconstrain(point)
+    np.testing.assert_allclose(free["L_g"], [np.arctanh(0.5)], rtol=1e-6)
+    np.testing.assert_allclose(fitted.constrain(free)["L_g"], point["L_g"], rtol=1e-6)
+    np.testing.assert_allclose(fitted(free), density(point) + math.log(0.75))
     np.testing.assert_allclose(
         model.formula.parameter_draws(point)["cor_g__Intercept__x"], 0.5
     )
+
+
+def test_correlation_chart_uses_strict_lower_jacobian() -> None:
+    data = {
+        "x": [0.0, 1.0, 2.0],
+        "w": [1.0, 1.0, 0.0],
+        "y": [1.0, 2.0, 3.0],
+        "g": ["A", "B", "A"],
+    }
+    view = from_formula(
+        "y ~ x + w + (1 + x | joint | g)",
+        data,
+        dpars={"sigma": {"formula": "sigma ~ (1 | joint | g)"}},
+    ).formula
+    mu_group = view.recipe["predictors"]["mu"]["groups"][0]
+    sigma_group = view.recipe["predictors"]["sigma"]["groups"][0]
+    name = mu_group["correlation"]
+    assert isinstance(name, str) and sigma_group["correlation"] == name
+    with_jacobian = view.logdensity()
+    without_jacobian = view.logdensity(jacobian=False)
+    u = np.asarray([0.35, -0.63, 0.81])
+    free = {**with_jacobian.init, name: u}
+    lower = np.tril_indices(3, k=-1)
+
+    def constrain(v: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
+        return np.asarray(with_jacobian.constrain({**free, name: v})[name])
+
+    matrix = constrain(u)
+    partials = np.tanh(u)
+    remaining = np.sqrt(1.0 - partials**2)
+    expected = [
+        [1.0, 0.0, 0.0],
+        [partials[0], remaining[0], 0.0],
+        [partials[1], remaining[1] * partials[2], remaining[1] * remaining[2]],
+    ]
+    np.testing.assert_allclose(matrix, expected, rtol=1e-6)
+    point = with_jacobian.constrain(free)
+    np.testing.assert_allclose(with_jacobian.unconstrain(point)[name], u, rtol=1e-6)
+    step = 0.002
+    jacobian = np.column_stack(
+        [
+            (constrain(u + delta) - constrain(u - delta))[lower] / (2 * step)
+            for delta in step * np.eye(3)
+        ]
+    )
+    _, logdet = np.linalg.slogdet(jacobian)
+    correction = with_jacobian(free) - without_jacobian(free)
+    np.testing.assert_allclose(correction, logdet, atol=1e-4)
+
+    corrected = with_jacobian.grad(free)[name]
+    uncorrected = without_jacobian.grad(free)[name]
+    np.testing.assert_allclose(
+        corrected - uncorrected, -np.asarray([2, 3, 2]) * partials, rtol=1e-5
+    )
+
+    # Inverting an interior point survives tanh rounding to one in f32.
+    extreme = {**free, name: [10.0, -12.0, 8.0]}
+    round_trip = with_jacobian.unconstrain(with_jacobian.constrain(extreme))
+    np.testing.assert_allclose(round_trip[name], extreme[name], rtol=1e-6)
+    invalid = {**point, name: matrix + np.eye(3, k=1)}
+    assert not np.isfinite(with_jacobian.unconstrain(invalid)[name]).any()
 
 
 def test_direct_density_retains_affine_prior_bounds() -> None:

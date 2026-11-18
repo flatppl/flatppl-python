@@ -8,6 +8,7 @@ contrasts, row selection and prior construction all run in Rust. See
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from . import _native  # pyright: ignore[reportMissingModuleSource]
-from ._api import Context, Module, flatppl, native_call
+from ._api import CompilationError, Context, Module, flatppl, native_call
 from ._frozen import freeze
 from ._tables import ipc
 
@@ -280,8 +281,9 @@ class FormulaView:
         Options have the same meaning as in :meth:`flatppl.Module.logdensity`.
         Model points use the sampled binding names from ``Pi_post``. The density
         includes the prior and the likelihood of the bound observations. The
-        model needs fixed continuous parameter supports. Score correlated group
-        factors in model coordinates with ``unconstrained=False``.
+        model needs fixed continuous parameter supports. Correlation factors
+        use vectors of free partial-correlation coordinates. ``constrain`` maps
+        them to full Cholesky matrices, as used in model coordinates.
         """
         if not self._has_observations():
             raise ValueError(
@@ -298,26 +300,8 @@ class FormulaView:
             for group in predictor["groups"]
             if (name := group.get("correlation")) is not None
         }
-        if correlations and unconstrained:
-            names = ", ".join(sorted(correlations))
-            raise ValueError(
-                f"no unconstraining chart for correlation factors {names}; "
-                "use unconstrained=False to score model coordinates"
-            )
-
         from ._inference import build
 
-        initial: dict[str, object] = {}
-        if correlations:
-            import numpy as np
-
-            from ._jax import float_dtype
-
-            dtype_name = float_dtype(dtype)
-            for name in correlations:
-                shape = self.module.bindings[name].shape
-                assert shape and shape[0] is not None
-                initial[name] = np.eye(shape[0], dtype=dtype_name)
         return build(
             self._posterior_query,
             None,
@@ -328,8 +312,48 @@ class FormulaView:
             target=target,
             integration=integration,
             optimize_forward=optimize_forward,
-            initial_fields=initial,
+            correlation_factors=tuple(sorted(correlations)),
+            initial_fields=(
+                self._wiener_initial() if "decision_column" in self.info else None
+            ),
         )
+
+    def _wiener_initial(self) -> dict[str, float]:
+        import numpy as np
+
+        try:
+            response = self.module.constant("y_data")
+        except CompilationError:
+            return {}
+        times = np.asarray(response, dtype=float)
+        if not times.size:
+            return {}
+
+        latest = float(np.min(times))
+        if latest <= 0.0 or not math.isfinite(latest):
+            return {}
+        bindings = self.module.bindings
+        if bindings["ndt"].kind in ("parameter", "draw"):
+            domain = bindings["ndt"].domain
+            if domain is None:
+                return {}
+            lower = max(0.0, float(domain.get("lo", 0.0)))
+            upper = min(latest, float(domain.get("hi", math.inf)))
+            if lower < upper:
+                return {"ndt": lower + 0.5 * (upper - lower)}
+        if "temp_Intercept_ndt" in bindings:
+            predictor = self.recipe["predictors"]["ndt"]
+            binding = bindings["temp_Intercept_ndt"]
+            domain = binding.domain
+            if (
+                predictor["link"] == "log"
+                and not predictor["formula"]["offsets"]
+                and binding.kind in ("parameter", "draw")
+                and domain is not None
+                and domain["set"] == "reals"
+            ):
+                return {"temp_Intercept_ndt": math.log(latest) - math.log(2.0)}
+        return {}
 
     def parameter_draws(
         self, draws: Mapping[str, object], *, dtype: DTypeLike = "float32"
@@ -361,7 +385,8 @@ class FormulaView:
         ``info["response_levels"]`` order. Censoring returns latent response
         means. Truncation and mixture families use their predictive laws.
         Paired Gaussian models append a response axis in
-        ``info["response_columns"]`` order.
+        ``info["response_columns"]`` order. Wiener models return the marginal
+        mean response time.
         """
         from ._formula_prediction import evaluate
 
@@ -384,6 +409,8 @@ class FormulaView:
         Categorical and ordinal outputs are one-based codes in
         ``info["response_levels"]`` order. Paired Gaussian models append a
         response axis with both correlated draws in ``info["response_columns"]`` order.
+        Wiener models return a two-column array of response times and decision
+        codes (0 for the lower boundary and 1 for the upper boundary).
 
         Raises:
             CompilationError: The response kernel has no sample lowering.
@@ -401,8 +428,9 @@ class FormulaView:
         censoring and truncation. Prepare held-out observations with
         ``mode="training"``. Bind encoded ``y_data`` directly for uncensored
         responses, along with ``y2_data`` for paired Gaussian models. A paired
-        model returns one joint score for each row. Draw coordinates and leading
-        axes match :meth:`expected_response`.
+        model returns one joint score for each row. Wiener models require
+        ``dec_data`` alongside ``y_data`` and score the joint time and decision.
+        Draw coordinates and leading axes match :meth:`expected_response`.
         """
         from ._formula_prediction import evaluate
 
@@ -416,6 +444,8 @@ class FormulaView:
         names = (
             ("y_data", "y2_data") if "response_columns" in self.info else ("y_data",)
         )
+        if "decision_column" in self.info:
+            names += ("dec_data",)
         return all(self.module.bindings[name].kind != "observation" for name in names)
 
     def sample_new_groups(

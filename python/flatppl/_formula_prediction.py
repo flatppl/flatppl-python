@@ -41,11 +41,12 @@ def _query(view: FormulaView, operation: Operation, seed_size: int) -> Module:
             f"point = elementof({_domain_text(domain)})",
         ]
         if operation == "sample":
-            output = (
-                "colstack([response.y, response.y2])"
-                if "response_columns" in view.info
-                else "response.y"
-            )
+            if "decision_column" in view.info:
+                output = "colstack([response.y, response.decision])"
+            elif "response_columns" in view.info:
+                output = "colstack([response.y, response.y2])"
+            else:
+                output = "response.y"
             lines.extend(
                 [
                     "_response_kernel = _model.K_model",
@@ -159,7 +160,7 @@ def sample_response(
 ) -> jax.Array:
     """Draw from the prepared observation law with an explicit key."""
     family = view.info["family"]
-    if family in ("categorical", "cumulative"):
+    if family in ("categorical", "cumulative", "acat"):
         # Native broadcast sampling does not yet lower a vector of probabilities
         # per row. Each categorical row is independent given the model point.
         probs = evaluate(view, "expected_response", draws, dtype=dtype)

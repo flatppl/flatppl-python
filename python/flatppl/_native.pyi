@@ -90,7 +90,10 @@ class Context:
         dtype: str,
     ) -> tuple[Module, Module, Module, Module, str]: ...
     def transform(
-        self, module: Module, logdensity: bool
+        self,
+        module: Module,
+        logdensity: bool,
+        correlation_factors: Sequence[str] | None = None,
     ) -> tuple[Module, Module, Module]: ...
     def normal_coordinates(
         self,

@@ -433,6 +433,32 @@ def test_rng_pairs_chaining_and_output_order() -> None:
             np.testing.assert_array_equal(actual, expected)
 
 
+def test_rand_updates_a_conjugate_posterior_from_runtime_observations() -> None:
+    with jax.enable_x64():
+        posterior = flatppl("""
+            p = elementof(unitinterval)
+            obs = elementof(cartpow(booleans, 4))
+            seed = elementof(nonnegintegers)
+            K = functionof(iid(Bernoulli(p), 4), p=p)
+            P = bayesupdate(likelihoodof(K, obs), joint(p=Beta(1, 1)))
+            inputs = (obs, seed)
+            outputs = rand(normalize(P), rnginit(seed))
+        """).compile(autodiff=False)
+        beta = flatppl("""
+            a = elementof(posreals)
+            b = elementof(posreals)
+            seed = elementof(nonnegintegers)
+            inputs = (a, b, seed)
+            outputs = rand(Beta(a, b), rnginit(seed))
+        """).compile(autodiff=False)
+        for data in [[True, True, True, False], [False] * 4]:
+            successes = sum(data)
+            sample, state = posterior(jnp.asarray(data), 42)
+            expected, next_state = beta(1.0 + successes, 5.0 - successes, 42)
+            np.testing.assert_array_equal(sample["p"], expected)
+            np.testing.assert_array_equal(state, next_state)
+
+
 def test_lkj_sampling_returns_a_correlation_matrix_and_threaded_state() -> None:
     with jax.enable_x64():
         draw = flatppl("""

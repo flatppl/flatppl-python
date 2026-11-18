@@ -40,10 +40,21 @@ query, `CompilationError.posterior_updates` retains the source matches.
 Other FlatPPL engines can support different sampling methods.
 
 For each matched posterior, `logdensityof(normalize(P), point)` scores the
-normalized law. For Beta priors with Bernoulli or Binomial observations,
-`totalmass(P)` gives the evidence. Use `log(totalmass(P))` for small
-probabilities. For the single success above, the evidence is 0.5 and the
-normalized posterior density at `record(p=0.75)` is 1.5.
+normalized law. Use `totalmass(P)` for the evidence or `log(totalmass(P))`
+to keep very small values in log space. The single success above has evidence
+0.5 and posterior density 1.5 at `record(p=0.75)`.
+
+Rust recognizes Beta with Bernoulli or Binomial counts, Gamma with Poisson
+counts, Normal with an unknown Normal mean, InverseGamma with an unknown
+Normal variance, and Dirichlet with Categorical, Categorical0 or Multinomial
+observations. Count evidence preserves each observed allocation. For example,
+under the same Gamma prior, observing Poisson counts `[1, 1]` has twice the
+mass of `[0, 2]`. Both give the same normalized posterior.
+
+For repeated scores with new prior parameters, call
+`preparation, score, names = query.prepare_likelihood("y")` on a supported
+IID evidence query. Run the preparation when the data changes. Its output
+includes any count coefficients or Gaussian scatter needed by the score.
 
 ## Incremental scores
 

@@ -1,11 +1,15 @@
 # Log densities for inference packages
 
-Samplers and optimisers need the same three things: a log density on a
-position, a starting position, and a way between constrained and unconstrained
-coordinates. `module.logdensity(...)` returns all three as a
-{class}`~flatppl.inference.LogDensity`, with the names, shapes and bounds that
-diagnostics and optimisers read. The package ships no adapter
-for any inference package. The gallery shows each package on these fields:
+A FlatPPL query declares `inputs` and `outputs`. Compile it with
+{meth}`~flatppl.Module.compile`, or use
+{meth}`~flatppl.Module.compile_transformed` for coordinate maps and an optional
+Jacobian correction.
+
+{meth}`~flatppl.Module.logdensity` is a convenience constructor for inference.
+Give it a scalar query or the name of a measure or likelihood. For a name it
+builds a FlatPPL query, then uses the same compiled coordinate maps. The
+{class}`~flatppl.inference.LogDensity` bundles the callable, gradient, starting
+point, bounds, and parameter metadata. The gallery shows how to use these fields:
 [BlackJAX NUTS and variational inference](examples/blackjax_nuts_vi.rst),
 [NumPyro](examples/numpyro_nuts.rst), [Optax](examples/optax_fit.rst),
 [ArviZ](examples/arviz_diagnostics.rst), [iminuit](examples/iminuit_errors.rst),

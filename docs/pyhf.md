@@ -3,7 +3,9 @@
 `from_pyhf` converts a pyhf model or workspace into an ordinary FlatPPL module.
 The bundled Rust converter performs the conversion and does not need the Python
 `pyhf` package. `model.pyhf` then lays the module out the way pyhf lays out its
-model, and `model.logdensity("likelihood")` prepares it for fits and samplers.
+model. The [inference convenience constructor](inference.md),
+`model.logdensity("likelihood")`, builds a query using the measurement's fit
+bounds, initial values, and fixed components.
 
 ## Start in float64
 

@@ -11,6 +11,15 @@ tagged release.
   Gaussian censoring and truncation, and nonlinear predictors for Student
   and count families. Rust retains the fitted predictor state for new rows.
 
+- Formula views evaluate batched conditional means, predictive draws and
+  pointwise log likelihoods in fitted model coordinates. Opt-in prediction
+  for new group levels samples their effects from the fitted population.
+
+- Formulas support Weibull and exponential censoring, grouped Gaussian AR(1),
+  monotonic interactions, cubic bivariate tensor smooths, and nonlinear scalar
+  and cumulative predictors. Predictive draws support truncated Gaussian and
+  hurdle count laws.
+
 - Exact shared Beta and Dirichlet marginals preserve observation dependence and
   coefficients. Affine Gaussian queries support exact marginal scoring and
   conditional scoring and sampling through `disintegrate`.

@@ -75,6 +75,43 @@ def _leaves(schema: Schema) -> Iterator[TensorSchema]:
             yield from _leaves(item["value"])
 
 
+def pack_tensor(
+    value: Any, dtype_name: str, path: str, *, copy_host: bool = False
+) -> jax.Array:
+    """Convert a tensor without silently narrowing integers or discarding complex parts."""
+    dtype = jnp.dtype(dtype_name)
+    if dtype.kind in "iu" and not any(
+        isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
+    ):
+        host = np.asarray(value)
+        if host.dtype.kind not in "iu":
+            raise TypeError(f"{path} requires {dtype}, got {host.dtype}")
+        if host.size and not np.can_cast(host.dtype, dtype, casting="safe"):
+            limits = np.iinfo(dtype)
+            if int(host.min()) < limits.min or int(host.max()) > limits.max:
+                raise ValueError(
+                    f"{path} contains integers outside the range of {dtype}"
+                )
+        value = host.astype(dtype, copy=False)
+    supplied_dtype = getattr(value, "dtype", None)
+    if supplied_dtype is not None:
+        supplied = jnp.dtype(supplied_dtype)
+        if supplied.kind == "c" or (dtype.kind != "f" and supplied != dtype):
+            raise TypeError(f"{path} requires {dtype}, got {supplied_dtype}")
+    elif dtype.kind == "f" and any(
+        jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(value)
+    ):
+        raise TypeError(f"{path} requires real values")
+    if copy_host and not any(
+        isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
+    ):
+        value = np.array(value, copy=True)
+    array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)  # pyright: ignore[reportUnknownMemberType]
+    if dtype.kind in "biu" and array.dtype != dtype:
+        raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
+    return array.astype(dtype)
+
+
 def _pack(
     schema: Schema,
     value: Any,
@@ -84,41 +121,12 @@ def _pack(
     copy_host: bool = False,
 ) -> None:
     if schema["kind"] == "tensor":
-        dtype = jnp.dtype(schema["dtype"])
-        if dtype.kind in "iu" and not any(
-            isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
-        ):
-            host = np.asarray(value)
-            if host.dtype.kind not in "iu":
-                raise TypeError(f"{path} requires {dtype}, got {host.dtype}")
-            if host.size and not np.can_cast(host.dtype, dtype, casting="safe"):
-                limits = np.iinfo(dtype)
-                if int(host.min()) < limits.min or int(host.max()) > limits.max:
-                    raise ValueError(
-                        f"{path} contains integers outside the range of {dtype}"
-                    )
-            value = host.astype(dtype, copy=False)
-        supplied_dtype = getattr(value, "dtype", None)
-        if supplied_dtype is not None:
-            supplied = jnp.dtype(supplied_dtype)
-            if supplied.kind == "c" or (dtype.kind != "f" and supplied != dtype):
-                raise TypeError(f"{path} requires {dtype}, got {supplied_dtype}")
-        elif dtype.kind == "f" and any(
-            jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(value)
-        ):
-            raise TypeError(f"{path} requires real values")
-        if copy_host and not any(
-            isinstance(leaf, (jax.Array, Tracer)) for leaf in jax.tree.leaves(value)
-        ):
-            value = np.array(value, copy=True)
-        array = jnp.asarray(value, dtype=dtype if dtype.kind == "f" else None)  # pyright: ignore[reportUnknownMemberType]
-        if dtype.kind in "biu" and array.dtype != dtype:
-            raise TypeError(f"{path} requires {dtype}, got {array.dtype}")
+        array = pack_tensor(value, schema["dtype"], path, copy_host=copy_host)
         if array.shape != tuple(schema["shape"]):
             raise ValueError(
                 f"{path} requires shape {tuple(schema['shape'])}, got {array.shape}"
             )
-        leaves[schema["index"]] = array.astype(dtype)
+        leaves[schema["index"]] = array
     elif schema["kind"] == "tuple":
         components = (
             cast(Sequence[Any], value) if isinstance(value, (tuple, list)) else None

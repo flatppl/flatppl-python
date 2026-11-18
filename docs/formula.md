@@ -144,15 +144,73 @@ print(design)
 The training mean of `x` is 2.5, so the new design column contains `4 - 2.5`
 and `5 - 2.5`. The original model still has its four training rows.
 
-Use the prediction module's `K_model` to score or generate responses at chosen
-parameters. The tutorial shows how to integrate its conditional density over
-posterior draws. A new array shape may require compilation.
+## Compute posterior predictions
 
-`prediction.set(y_data=...)` binds observations when needed.
-`prepare(new_data, mode="training")` also binds the supplied response while
-retaining the original recipe and prior defaults. For a new fit or a
-cross-validation fold, call `from_formula` again to learn a new recipe.
-Unseen factor and group levels currently raise a conversion error.
+Pass named model coordinates from any sampler. For free coordinates, convert
+each point with the fitted density's `constrain` function. All fields must
+share their leading draw axes. A single parameter point also works.
+
+```{testcode} formula
+import jax
+
+draws = {"temp_Intercept": [4.0, 5.0], "b": [[2.0], [2.0]], "sigma": [0.5, 1.0]}
+print(prediction.formula.expected_response(draws))
+simulated = prediction.formula.posterior_predict(draws, key=jax.random.key(27))
+print(simulated.shape)
+```
+
+```{testoutput} formula
+[[ 7.  9.]
+ [ 8. 10.]]
+(2, 2)
+```
+
+Results retain the leading draw axes and append the rows in `formula.rows`
+order. `expected_response` returns conditional means, Bernoulli success
+probabilities, or Binomial expected successes. Ordinal and categorical
+predictions append a probability axis in `info["response_levels"]` order.
+Von Mises has no arithmetic expected-response query.
+
+`posterior_predict` samples the response law, including residual variation
+and any row dependence. Binomial, categorical and ordinal rows use JAX
+samplers with the fitted probabilities. Categorical and ordinal draws are
+one-based category codes. Binomial trial counts must fit exactly in the
+selected precision. Other families use the sample lowering of `K_model`.
+
+Reusing a JAX key reproduces the draws. Censored models predict latent
+responses. Truncated models draw within their bounds. Gaussian AR(1)
+prediction starts a stationary residual trajectory for each group, in the
+prepared time order. Follow the [JAX runtime check guide](jax.md#runtime-checks)
+when staging a predictive call with `jax.jit`.
+
+`log_likelihood(draws)` returns unweighted pointwise scores with censoring
+events and truncation normalizers. Gaussian AR(1) scores
+use the ordered innovations. To encode held-out observations and bind their
+data, use `prepare(data, mode="training")`. For uncensored responses already
+encoded in prepared row order, use `prediction.set(y_data=...)`. Call
+`from_formula` again for a new fit or a cross-validation fold that needs new
+defaults.
+
+Each call accepts `dtype="float64"` after JAX x64 is enabled.
+
+### Predict for unseen groups
+
+Unseen grouping levels raise by default. Pass `allow_new_levels=True` in
+prediction mode to retain them. Levels used as fixed-effect factors must
+already occur in the training recipe.
+
+```python
+prediction = model.formula.prepare(new_data, allow_new_levels=True)
+group_key, response_key = jax.random.split(jax.random.key(27))
+expanded = prediction.formula.sample_new_groups(draws, key=group_key)
+means = prediction.formula.expected_response(expanded)
+simulated = prediction.formula.posterior_predict(expanded, key=response_key)
+```
+
+Each new level receives one effect per posterior draw from the fitted group
+distribution. Rows for the same level share that effect. Reuse the expanded
+coordinates to compare conditional means and response draws at the same
+effects.
 
 ## Model a family parameter
 
@@ -211,10 +269,10 @@ model = from_formula(
 prediction = model.formula.prepare({"x": [3.0, -1.0]})
 ```
 
-Gaussian, Student, Bernoulli, and count formulas support this option. This
-includes Binomial with `trials`, Geometric, Poisson, Negative Binomial, and the
-listed zero-inflated and hurdle count families. The family link applies to the
-full expression. This 2PL model uses standard Normal ability priors and
+All scalar response families support this option, including Binomial with
+`trials`. The family link applies to the full expression. Cumulative models
+use the expression as their location predictor and estimate ordered thresholds.
+This 2PL model uses standard Normal ability priors and
 estimates a positive item discrimination through `exp(ld)`.
 
 ```python
@@ -308,9 +366,7 @@ component is the listed base law conditioned on a positive response. Thus
 The base mean, shape and scale parameterizations are unchanged. Direct `zi`
 and `hu` parameters default to `Beta(1, 1)`; their predictors default to logit.
 For hurdle lognormal response-based priors, zeros are replaced by 0.1 before
-taking logs, following brms. Rust can evaluate hurdle-count densities and
-gradients, but forward sampling their positive-count component is not yet
-implemented.
+taking logs, following brms.
 
 von Mises responses are radians in `[-pi, pi]`, with concentration
 `kappa`; its default inverse link is `2 * atan(eta)`.
@@ -368,7 +424,11 @@ monotonic = from_formula(
 monotonic_prediction = monotonic.formula.prepare({"dose": [0, 2, 3]})
 ```
 
-Additive `mo()` terms can accompany ordinary predictors and group terms. For
+Use `mo(dose) * treatment` to add main effects and an interaction, or
+`mo(dose):x` for just the interaction with `x`. Use `mo(dose):mo(stage)`
+for a product of monotonic effects. Repeated `id` values in a predictor,
+as in `mo(dose, id="spacing") * treatment`, share one simplex across
+effects with the same number of steps. For
 ordered factors, the recipe retains the order of levels used in training. The
 `simo` prior class selects the step proportions, which default to a symmetric
 Dirichlet prior. Each term supports up to 4,096 steps.
@@ -405,8 +465,15 @@ differences. A factor with one retained level gets one curve.
 
 The default rank is 10. Rank must be at least 3 and no greater than the number
 of distinct retained training values, which is currently limited to 2,000.
-`s` takes a numeric column and `by` takes a factor column. Tensor products,
-other bases, custom knots and smooth interactions are outside this subset.
+`s` takes a numeric column and `by` takes a factor column.
+
+Use `t2(x, z)` for a bivariate surface with natural cubic spline margins.
+Each margin defaults to rank 5. Set `k=4` for two equal ranks or
+`k=c(4, 6)` for separate ranks. A term-specific `sds` prior such as
+`coef="t2(x, z)"` applies separately to each of the three penalized blocks.
+The three unpenalized columns use class `b` and coefficients `t2xz_1` through
+`t2xz_3`. The deterministic affine basis can give different coefficient scales
+from mgcv. Prediction reuses the fitted knots and extends each margin linearly.
 
 ## Response weights and known observation scales
 
@@ -451,7 +518,7 @@ new_rows = weighted.formula.prepare(pl.DataFrame({"x": [4.0], "s": [0.25]}))
 
 ## Censored and truncated responses
 
-Gaussian formulas accept `y | cens(status) ~ x` for exact, left-censored, and
+Gaussian, Weibull, and exponential formulas accept `y | cens(status) ~ x` for exact, left-censored, and
 right-censored observations. Supply `cens(status, upper)` for interval rows,
 with `y` as the lower bound. Use `0`, `-1`, `1`, and `2` or the labels `none`,
 `left`, `right`, and `interval`. The upper endpoint is used only for interval
@@ -461,8 +528,19 @@ rows. `log_lik` scores the observed events. Prediction through
 Use `y | trunc(lb=lower, ub=upper) ~ x` to condition a Gaussian response on a
 range. Bounds can be numbers or columns. Omit one bound for a half-line. The
 kernel and the likelihood use the truncated law. Supply any bound columns
-when preparing new rows. Rust can score the truncated kernel. Forward sampling
-raises a lowering error.
+when preparing new rows.
+
+## Grouped Gaussian AR(1)
+
+Use `y | ar(time=t, group=site) ~ x` for Gaussian residuals that follow a
+stationary AR(1) process independently within each group. Times must be unique
+integers within a group. The lag across a gap of `d` time steps is `ar**d`.
+Class `ar` selects the coefficient prior, which defaults to `uniform(-1, 1)`.
+The scalar `sigma` is the one-step innovation standard deviation.
+
+The returned row positions follow group and time order. Prepared data
+starts each group from its stationary distribution. Supply time and group
+columns, along with the predictors, when preparing new rows.
 
 ## Select priors and bounds
 
@@ -517,9 +595,12 @@ sampled as a prior source. The posterior can still be proper.
 
 ## Current limits
 
-The nonlinear section lists the supported response families. Monotonic terms
-support additive effects. Censoring and truncation currently support Gaussian
-responses.
+Categorical formulas use the per-category linear predictors described above.
+Monotonic interactions are available for population-level effects. The `t2`
+form supports two cubic margins at specified ranks. Truncation supports
+Gaussian responses. Gaussian AR(1) prediction starts a new trajectory for each
+group. Von Mises and zero-inflated Binomial currently lack predictive sampling
+through `posterior_predict`.
 `center=False` is not supported; use `0 + Intercept + ...` for an uncentred
 intercept, or keep the default centred intercept. Arbitrary R function calls are
 not evaluated. Unsupported terms, selectors and engine lowerings raise errors.

@@ -9,7 +9,8 @@ tagged release.
 
 - Complex scalars and arrays can serve as query arguments, results, and fixed
   values. Supported complex queries use real component derivatives through JAX.
-  Enzyme alpha 22 supports forward and reverse derivatives of scans with complex state.
+  Forward and reverse derivatives support scans with complex state and
+  conditional branches with complex results, including literal values.
 
 - Finite two-dimensional weights support numerical `totalmass`, `normalize`
   and JAX gradients through `Integration`.

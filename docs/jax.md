@@ -61,6 +61,7 @@ state, and conditional branches that return complex values. A branch can return
 a complex literal. Under `jax.vmap`, each batch element can take a different
 branch. JAX supplies its usual gradients for real outputs. A derivative request
 that needs unsupported complex tensor operations raises `TypeError`.
+For BlackJAX, use the [Cartesian coordinates for complex parameters](transforms.md#complex-parameters-with-blackjax).
 
 For numerical scalar marginals and normalizers, enable
 [integration](integration.md) explicitly. These support first derivatives of

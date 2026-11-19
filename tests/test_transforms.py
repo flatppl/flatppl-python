@@ -116,6 +116,30 @@ def test_nested_records_keep_outputs_and_add_density_correction_once() -> None:
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_complex_scalar_chart_has_unit_volume_and_real_gradients(dtype: str) -> None:
+    with jax.enable_x64(dtype == "float64"):
+        target = flatppl("""
+            z = elementof(complexes)
+            inputs = z
+            outputs = -(real(z) - 1)^2 - 2 * (imag(z) + 2)^2
+        """).compile_transformed(logdensity=True, dtype=dtype)
+        free = jnp.asarray([[0.25, -0.5], [-0.75, 1.25]], dtype=dtype)
+        constrain = jax.jit(jax.vmap(target.constrain))
+        unconstrain = jax.jit(jax.vmap(target.unconstrain))
+        points = constrain(free)
+        np.testing.assert_array_equal(points, free[:, 0] + 1j * free[:, 1])
+        np.testing.assert_array_equal(unconstrain(points), free)
+
+        values, gradients = jax.jit(jax.vmap(jax.value_and_grad(target.unconstrained)))(
+            free
+        )
+        a, b = free[:, 0] - 1, free[:, 1] + 2
+        np.testing.assert_array_equal(values, -a * a - 2 * b * b)
+        np.testing.assert_array_equal(values, jax.vmap(target.constrained)(points))
+        np.testing.assert_array_equal(gradients, jnp.stack((-2 * a, -4 * b), axis=-1))
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_fixed_likelihood_keeps_transformed_values_and_batched_gradients(
     dtype: str,
 ) -> None:
@@ -152,6 +176,18 @@ def test_vector_products_keep_separate_constrained_and_free_offsets() -> None:
     np.testing.assert_allclose(target.constrain(u), x, atol=1e-7)
     np.testing.assert_allclose(target.unconstrain(x), u, atol=1e-7)
     np.testing.assert_allclose(target.unconstrained(u), -jnp.sum(x * x) + u[-1])
+
+
+def test_complex_vector_products_interleave_free_coordinates() -> None:
+    target = flatppl("""
+        p = elementof(cartprod(cartpow(complexes, 2), cartpow(posreals, 1)))
+        inputs = p
+        outputs = p
+    """).compile_transformed()
+    free = jnp.array([1.0, -2.0, 0.25, 3.0, np.log(2.0)], dtype=jnp.float32)
+    point = jnp.array([1 - 2j, 0.25 + 3j, 2.0 + 0j], dtype=jnp.complex64)
+    np.testing.assert_allclose(jax.jit(target.constrain)(free), point, rtol=2e-6)
+    np.testing.assert_allclose(jax.jit(target.unconstrain)(point), free, rtol=2e-6)
 
 
 def test_interval_tails_have_finite_density_gradients_without_clipping() -> None:

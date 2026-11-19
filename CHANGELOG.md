@@ -11,6 +11,8 @@ tagged release.
   values. Supported complex queries use real component derivatives through JAX.
   Forward and reverse derivatives support scans with complex state and
   conditional branches with complex results, including literal values.
+  Inference coordinate maps use real and imaginary components for complex
+  parameters, including arrays and record fields.
 
 - Finite two-dimensional weights support numerical `totalmass`, `normalize`
   and JAX gradients through `Integration`.

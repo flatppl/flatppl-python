@@ -79,11 +79,11 @@ def _elements(
         limits = _limits(domain)
         if limits is None:
             raise ValueError(f"no element bounds for the set {kind!r}")
-    lo, hi = limits
+    lower, upper = limits
     if split_complex:
         # In a positional product, a real slot embeds with imaginary part zero.
-        return [lo, 0.0] * count, [hi, 0.0] * count
-    return [lo] * count, [hi] * count
+        return [lower, 0.0] * count, [upper, 0.0] * count
+    return [lower] * count, [upper] * count
 
 
 def _box(domain: Mapping[str, Any], schema: Mapping[str, Any]) -> tuple[Any, Any]:
@@ -138,27 +138,22 @@ def _flat_position(
     position: Any,
 ) -> tuple[jax.Array, Callable[[jax.Array], Any], Any]:
     """Flatten real coordinates, splitting complex model leaves into component pairs."""
-    leaves, layout = jax.tree.flatten(position)
-    complex_leaves = tuple(jnp.iscomplexobj(leaf) for leaf in leaves)
-    if not any(complex_leaves):
-        vector, unravel = ravel_pytree(position)
-        return vector, unravel, position
-    packed = layout.unflatten(
-        [
-            jnp.stack((leaf.real, leaf.imag), axis=-1) if split else leaf
-            for leaf, split in zip(leaves, complex_leaves, strict=True)
-        ]
-    )
+    if not any(jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(position)):
+        vector, restore = ravel_pytree(position)
+        return vector, restore, position
+
+    def pack(leaf: jax.Array, split: bool) -> jax.Array:
+        return jnp.stack((leaf.real, leaf.imag), axis=-1) if split else leaf
+
+    def unpack(leaf: jax.Array, split: bool) -> jax.Array:
+        return jax.lax.complex(leaf[..., 0], leaf[..., 1]) if split else leaf
+
+    complex_leaves = jax.tree.map(jnp.iscomplexobj, position)
+    packed = jax.tree.map(pack, position, complex_leaves)
     vector, unravel_packed = ravel_pytree(packed)
 
     def unravel(values: jax.Array) -> Any:
-        leaves = jax.tree.leaves(unravel_packed(values))
-        return layout.unflatten(
-            [
-                jax.lax.complex(leaf[..., 0], leaf[..., 1]) if split else leaf
-                for leaf, split in zip(leaves, complex_leaves, strict=True)
-            ]
-        )
+        return jax.tree.map(unpack, unravel_packed(values), complex_leaves)
 
     return vector, unravel, packed
 

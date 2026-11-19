@@ -90,3 +90,113 @@ def test_paired_gaussian_predictive_draws_preserve_the_joint_residual_covariance
     np.testing.assert_allclose(
         np.cov(flattened, rowvar=False), np.kron(np.eye(2), covariance), atol=0.22
     )
+
+
+def test_gaussian_bernoulli_shared_effects_score_both_responses() -> None:
+    model = from_formula(
+        ("first ~ 1 + (1 | shared | subject)", "passed ~ 1 + (1 | shared | subject)"),
+        {
+            "first": [1.0, None, 2.0, 3.0],
+            "passed": ["yes", "yes", None, "no"],
+            "subject": ["a", "a", "b", "b"],
+        },
+        family=("gaussian", "bernoulli"),
+        priors=[
+            {"class": "sd", "group": "subject", "prior": "constant(2)"},
+            {
+                "class": "sd",
+                "group": "subject",
+                "dpar": "mu2",
+                "prior": "constant(0.5)",
+            },
+        ],
+    )
+    rho = 0.6
+    innovations = np.array([[0.5, -1.0], [1.0, 0.25]])
+    point = {
+        "temp_Intercept": 0.2,
+        "temp_Intercept_mu2": -0.4,
+        "sigma": 1.3,
+        "z_subject_joint": innovations,
+        "L_subject_joint": np.array([[1.0, 0.0], [rho, 0.8]]),
+    }
+    mean = np.array([1.2, -1.8])
+    logit = np.array([0.15, -0.6])
+    probability = 1 / (1 + np.exp(-logit))
+    normal = -0.5 * ((np.array([1.0, 3.0]) - mean) / 1.3) ** 2 - np.log(
+        1.3 * np.sqrt(2 * np.pi)
+    )
+    expected = normal + np.array([np.log(probability[0]), np.log1p(-probability[1])])
+    assert model.formula.rows == (0, 3)
+    assert model.formula.info["paired_response_levels"] == (
+        {"kind": "text", "value": "no"},
+        {"kind": "text", "value": "yes"},
+    )
+    np.testing.assert_allclose(
+        model.formula.expected_response(point),
+        np.column_stack([mean, probability]),
+        rtol=2e-6,
+    )
+    np.testing.assert_allclose(model.formula.log_likelihood(point), expected, rtol=2e-6)
+    posterior = model.formula.logdensity(unconstrained=False)(point)
+    prior = model.logdensity("Pi_prior", unconstrained=False)(point)
+    np.testing.assert_allclose(posterior - prior, expected.sum(), rtol=2e-6)
+
+    def score(correlation: jax.Array) -> jax.Array:
+        lower = jnp.eye(2).at[1, 0].set(correlation)
+        lower = lower.at[1, 1].set(jnp.sqrt(1 - correlation**2))
+        return model.formula.log_likelihood({**point, "L_subject_joint": lower}).sum()
+
+    logit_derivative = 0.5 * (innovations[0] - rho * innovations[1] / 0.8)
+    derivative = (np.array([1, 0]) - probability) @ logit_derivative
+    np.testing.assert_allclose(jax.grad(score)(jnp.array(rho)), derivative, rtol=2e-6)
+
+    held_out = model.formula.prepare(
+        {"first": [1.0], "passed": ["yes"], "subject": ["a"]}, mode="training"
+    )
+    np.testing.assert_allclose(
+        held_out.formula.log_likelihood(point), expected[:1], rtol=2e-6
+    )
+
+
+def test_gaussian_bernoulli_predictive_draws_use_the_second_link() -> None:
+    model = from_formula(
+        ("first ~ 1", "passed ~ 1"),
+        {"first": [1.0, 2.0], "passed": [1, 0]},
+        family=("gaussian", "bernoulli"),
+        link=(None, "probit"),
+    )
+    point = {"temp_Intercept": 1.2, "temp_Intercept_mu2": 0.5, "sigma": 1.3}
+    probability = 0.6914624612740131
+    expected = [[1.2, probability], [1.2, probability]]
+    np.testing.assert_allclose(
+        model.formula.expected_response(point), expected, rtol=2e-6
+    )
+    draws = {name: np.full((4096,), value) for name, value in point.items()}
+    samples = np.asarray(
+        model.formula.posterior_predict(draws, key=jax.random.key(237))
+    )
+    assert samples.shape == (4096, 2, 2)
+    np.testing.assert_array_equal(np.unique(samples[..., 1]), [0, 1])
+    np.testing.assert_allclose(samples.mean(axis=0), expected, atol=0.07)
+    variances = [1.3**2, probability * (1 - probability)] * 2
+    np.testing.assert_allclose(
+        np.cov(samples.reshape(-1, 4), rowvar=False), np.diag(variances), atol=0.12
+    )
+
+
+def test_gaussian_bernoulli_marginalization_checks_the_second_family() -> None:
+    model = from_formula(
+        ("first ~ 1", "passed ~ 1 + (1 | subject)"),
+        {"first": [1.0, 2.0], "passed": [1, 0], "subject": ["a", "b"]},
+        family=("gaussian", "bernoulli"),
+        link=(None, "log"),
+    )
+    point = {
+        "temp_Intercept": 1.2,
+        "temp_Intercept_mu2": -1.0,
+        "sd_subject_mu2": 0.5,
+        "sigma": 1.3,
+    }
+    with pytest.raises(ValueError, match="for bernoulli with link 'log'"):
+        model.formula.marginal_expected_response(point, key=jax.random.key(237))

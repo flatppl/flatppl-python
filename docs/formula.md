@@ -307,6 +307,27 @@ uses the corresponding outcome's scale. Paired models support ordinary
 predictor terms and scalar residual scales. Give group terms the same ID, as
 in `(1 | ability | site)` in both formulas, to fit a joint site covariance.
 
+### Predict a Gaussian and a Bernoulli response
+
+Pass the two families in formula order. A shared group ID fits correlated
+subject effects across outcomes.
+
+```{testcode} formula
+mixed = from_formula(
+    ("score ~ 1 + (1 | ability | subject)", "passed ~ 1 + (1 | ability | subject)"),
+    {"score": [6.0, 8.0, 7.0], "passed": [0, 1, 1], "subject": ["a", "a", "b"]},
+    family=("gaussian", "bernoulli"),
+)
+```
+
+Given the predictors and group effects, the responses are independent.
+Training retains complete rows and `log_likelihood` sums both scores per
+row. The second prediction column contains success probabilities for
+`expected_response` and binary codes for `posterior_predict`. The Bernoulli
+link defaults to logit. Set `link=(None, "probit")` to use probit instead.
+`info["paired_response_levels"]` lists the fitted labels in code order. Use
+`dpar="mu2"` for the Bernoulli predictor's priors.
+
 ## Model a family parameter
 
 Use `dpars` to give a family parameter its own formula. For example, both the

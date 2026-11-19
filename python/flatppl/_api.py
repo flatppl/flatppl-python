@@ -1200,7 +1200,7 @@ class Module:
         """Compile a query and canonical coordinate wrappers for its input.
 
         By default, the query must have one continuous ``elementof`` input,
-        which may be a record or array of parameters. Bind fixed data first.
+        which may be a record, table or array of parameters. Bind fixed data first.
         Rust chooses the transforms from the declared domains and emits them
         with the query into StableHLO. No Python callback runs during execution.
         Select ``normal_coordinate`` to transform one scalar input or record

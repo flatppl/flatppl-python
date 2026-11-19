@@ -14,6 +14,8 @@ tagged release.
   Inference coordinate maps use real and imaginary components for complex
   parameters, including arrays and record fields.
 
+- Table parameters use compiled column-wise coordinate maps for inference.
+
 - Finite two-dimensional weights support numerical `totalmass`, `normalize`
   and JAX gradients through `Integration`.
 

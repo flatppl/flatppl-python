@@ -67,13 +67,13 @@ version transforms inputs without adding a density correction. Use
 | `ordered(n)` | First entry and log gaps |
 | `zerosum(n)` | `n - 1` coordinates |
 | `stdsimplex(n)` | `n - 1` stick-breaking coordinates |
-| Records and supported products/arrays | Composed component charts |
+| Records, tables and supported products/arrays | Composed component charts |
 
 Arrays must contain scalar domains. Products may contain scalars or flat
-vectors. Length-one simplex/zero-sum domains, arrays with structured cells,
-tables and discrete domains are unsupported. Bind sizes and bounds before
-compilation. The query must have one continuous `elementof` input, which can be
-a record of all model parameters. Bind fixed data with `.set(...)` first.
+vectors. Length-one simplex/zero-sum domains, arrays with structured cells and
+discrete domains are unsupported. Bind sizes and bounds before compilation.
+The query must have one continuous `elementof` input. Bind fixed data with
+`.set(...)` first.
 
 Initial values must lie in the domain's interior. Transforms do not clip
 invalid values or boundary points. Discrete latent variables need another
@@ -111,6 +111,39 @@ draws = jax.jit(jax.vmap(target.constrain))(positions)
 ```
 
 Here the sampler starts at `[0, 0]` and `draws` is a native complex JAX array.
+
+## Table parameters
+
+A table uses the chart of each column on every row. Both coordinate layouts use
+dicts of column arrays. The complex amplitude below takes two real coordinates
+per row, and the positive width takes its log.
+
+```{testcode}
+import jax
+import jax.numpy as jnp
+from flatppl import flatppl
+
+density = flatppl("""
+    p = elementof(cartpow(cartprod(amplitude = complexes, width = posreals), 2))
+    inputs = p
+    outputs = -sum(abs2.(p.amplitude)) - sum(p.width)
+""").logdensity()
+position = {
+    "amplitude": jnp.array([[1.0, 2.0], [-0.5, 0.25]]),
+    "width": jnp.log(jnp.array([2.0, 4.0])),
+}
+parameters = jax.jit(density.constrain)(position)
+print(parameters["amplitude"].tolist())
+print([round(float(x)) for x in density.grad(position)["width"]])
+```
+
+```{testoutput}
+[(1+2j), (-0.5+0.25j)]
+[-1, -3]
+```
+
+Each log-width `u` contributes `-exp(u) + u` to the score. Its gradient is
+`1 - width`, which gives −1 and −3 at widths 2 and 4.
 
 ## Batches, precision and execution
 

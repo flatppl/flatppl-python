@@ -51,6 +51,12 @@ observations. A named joint prior can combine these updates when each
 likelihood factor uses one prior field and every field has a matching factor.
 `posterior_updates` reports the fields in prior order.
 
+With named Normal priors, an affine Normal observation can couple multiple
+coefficients. For explicit scalar factors with known noise, Rust scores the
+joint Gaussian posterior, computes its evidence and draws correlated samples.
+The update supports up to 64 rows including priors. `posterior_updates`
+reports one `MvNormal` entry for the joint law.
+
 Count evidence preserves each observed allocation. For example,
 under the same Gamma prior, observing Poisson counts `[1, 1]` has twice the
 mass of `[0, 2]`. Both give the same normalized posterior.

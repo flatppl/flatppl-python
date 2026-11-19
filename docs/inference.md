@@ -118,8 +118,9 @@ starting point is zero in free coordinates, which is `rate = 1`.
 
 ## Records and bounds
 
-A record input gives a dict position. This query scores a pyhf likelihood with
-the signal strength `mu` restricted to its fit bounds:
+A record input gives a dict position. A table input gives a dict of column
+arrays, with nested dicts for nested tables. This query scores a pyhf
+likelihood with the signal strength `mu` restricted to its fit bounds:
 
 ```{testcode}
 from flatppl import Context, flatppl, from_pyhf
@@ -186,14 +187,14 @@ for each domain.
 | `flat` | `fn`, `grad`, `potential`, `init`, `unravel` and `names` over one vector. |
 | `transformed` | The four compiled functions of `compile_transformed`. |
 
-The flat vector orders record fields as JAX does, by name. `flat.names` labels
-each element with one-based indices, as in `beta[2]`. Nested fields use dotted
-paths. A complex leaf of shape `S` has real bounds of shape `S + (2,)`, with
-unbounded real and imaginary components on `complexes`. When a positional
-product promotes a real component to complex, its imaginary bounds are both
-zero. The flat vector uses the same real/imaginary order, even with
-`unconstrained=False`. `flat.unravel` reconstructs native complex arrays in
-model coordinates.
+The flat vector orders record fields and table columns as JAX does, by name.
+`flat.names` labels each element with one-based indices, as in `beta[2]`.
+Nested fields use dotted paths. A complex leaf of shape `S` has real bounds
+of shape `S + (2,)`, with unbounded real and imaginary components on
+`complexes`. When a positional product promotes a real component to complex,
+its imaginary bounds are both zero. The flat vector uses the same
+real/imaginary order, even with `unconstrained=False`. `flat.unravel`
+reconstructs native complex arrays in model coordinates.
 
 `init` is the point at zero free coordinates: 0 for `reals`, 1 for `posreals`,
 the midpoint of a finite interval, and the uniform simplex.

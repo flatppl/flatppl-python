@@ -35,9 +35,9 @@ class FlatLogDensity:
     """A :class:`LogDensity` over one flat vector.
 
     The vector holds the leaves of :attr:`LogDensity.init` in JAX's pytree
-    order, which sorts record fields by name. Each complex element occupies
-    two consecutive real slots, real part first. Use it for packages that
-    take a flat array, such as iminuit and nutpie.
+    order, which sorts record fields and table columns by name. Each complex
+    element occupies two consecutive real slots, real part first. Use it for
+    packages that take a flat array, such as iminuit and nutpie.
 
     Attributes:
         fn: The log density of a vector.
@@ -62,7 +62,7 @@ class LogDensity:
     """A scalar log density prepared for samplers and optimisers.
 
     Get it from :meth:`flatppl.Module.logdensity`. A position is the query's
-    input: a dict for a record input, otherwise an array. In unconstrained
+    input: a dict for a record or table, otherwise an array. In unconstrained
     coordinates every real vector is a valid position, and :attr:`fn` includes
     the log-Jacobian of :attr:`constrain` unless ``jacobian=False``.
 
@@ -79,7 +79,7 @@ class LogDensity:
         constrain: Map unconstrained coordinates to model parameters.
         unconstrain: Map interior model parameters to unconstrained
             coordinates.
-        names: The parameter names in order. Nested record fields use dotted paths.
+        names: The parameter names in order. Nested fields and columns use dotted paths.
         shapes: Each parameter's shape in model coordinates.
         dtype: ``"float32"`` or ``"float64"``.
         bounds: ``(lower, upper)``, with the structure of a model position.

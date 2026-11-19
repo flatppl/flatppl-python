@@ -237,6 +237,91 @@ def test_a_real_slot_of_a_complex_positional_product_has_zero_imaginary_bounds()
     np.testing.assert_array_equal(upper, [[np.inf, np.inf], [np.inf, 0]])
 
 
+def test_table_density_preserves_nested_columns_in_both_coordinate_modes() -> None:
+    query = flatppl("""
+        row = cartprod(cartprod(width = posreals), cartprod(signal = cartprod(amplitude = complexes)))
+        p = elementof(cartpow(row, 3))
+        inputs = p
+        outputs = -sum(abs2.(p.signal.amplitude)) - sum(p.width .* [1, 2, 3])
+    """)
+    free = query.logdensity()
+    model = query.logdensity(unconstrained=False)
+    assert free.names == ("width", "signal.amplitude")
+    assert dict(free.shapes) == {"width": (3,), "signal.amplitude": (3,)}
+    np.testing.assert_array_equal(free.init["signal"]["amplitude"], np.zeros((3, 2)))
+    np.testing.assert_array_equal(model.init["width"], np.ones(3))
+    assert model.flat.init.dtype == jnp.float32
+
+    lower, upper = free.bounds
+    np.testing.assert_array_equal(lower["width"], np.zeros(3))
+    np.testing.assert_array_equal(upper["width"], np.full(3, np.inf))
+    np.testing.assert_array_equal(
+        lower["signal"]["amplitude"], np.full((3, 2), -np.inf)
+    )
+    np.testing.assert_array_equal(upper["signal"]["amplitude"], np.full((3, 2), np.inf))
+
+    pairs = jnp.array([[1.0, 0.25], [0.5, -0.75], [-0.25, 2.0]])
+    widths = jnp.array([1.0, 2.0, 4.0])
+    log_widths = jnp.log(widths)
+    amplitude = pairs[:, 0] + 1j * pairs[:, 1]
+    point = {"signal": {"amplitude": amplitude}, "width": widths}
+    position = {"signal": {"amplitude": pairs}, "width": log_widths}
+    np.testing.assert_array_equal(
+        jax.jit(free.constrain)(position)["signal"]["amplitude"], amplitude
+    )
+    np.testing.assert_allclose(jax.jit(free.unconstrain)(point)["width"], log_widths)
+
+    rates = jnp.arange(1.0, 4.0)
+    model_value = -jnp.sum(pairs**2) - jnp.dot(rates, widths)
+    flat_names = (
+        *(f"signal.amplitude[{row + 1},{part + 1}]" for row, part in np.ndindex(3, 2)),
+        "width[1]",
+        "width[2]",
+        "width[3]",
+    )
+    assert model.flat.names == free.flat.names == flat_names
+    for density, structured, tail, value, width_gradient in (
+        (
+            free,
+            position,
+            log_widths,
+            model_value + jnp.sum(log_widths),
+            1 - rates * widths,
+        ),
+        (model, point, widths, model_value, -rates),
+    ):
+        vector = jnp.concatenate((pairs.ravel(), tail))
+        gradient = jnp.concatenate((-2 * pairs.ravel(), width_gradient))
+        np.testing.assert_allclose(jax.jit(density.fn)(structured), value, rtol=2e-6)
+        np.testing.assert_allclose(jax.jit(density.flat.fn)(vector), value, rtol=2e-6)
+        np.testing.assert_allclose(density.flat.grad(vector), gradient, rtol=2e-6)
+
+    restored = model.flat.unravel(jnp.concatenate((pairs.ravel(), widths)))
+    np.testing.assert_array_equal(restored["signal"]["amplitude"], amplitude)
+
+
+def test_iid_table_measure_preserves_column_support() -> None:
+    density = flatppl("""
+        amplitude = logweighted(z -> -abs2(z) - log(pi), Lebesgue(complexes))
+        row = joint(amplitude = amplitude, width = Exponential(1))
+        prior = iid(row, 2)
+    """).logdensity("prior")
+    np.testing.assert_array_equal(density.constrain(density.init)["width"], np.ones(2))
+    np.testing.assert_array_equal(density.bounds[0]["width"], np.zeros(2))
+
+    pairs = jnp.array([[1.0, 2.0], [-0.5, 0.25]])
+    widths = jnp.array([2.0, 4.0])
+    log_widths = jnp.log(widths)
+    score, gradient = jax.jit(jax.value_and_grad(density.fn))(
+        {"amplitude": pairs, "width": log_widths}
+    )
+    expected = (
+        -jnp.sum(pairs**2) - 2 * np.log(np.pi) - jnp.sum(widths) + jnp.sum(log_widths)
+    )
+    np.testing.assert_allclose(score, expected, rtol=2e-6)
+    np.testing.assert_allclose(gradient["width"], 1 - widths, rtol=2e-6)
+
+
 SPEC: dict[str, Any] = {
     "channels": [
         {

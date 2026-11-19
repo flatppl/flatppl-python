@@ -86,10 +86,31 @@ def _elements(
     return [lower] * count, [upper] * count
 
 
-def _box(domain: Mapping[str, Any], schema: Mapping[str, Any]) -> tuple[Any, Any]:
-    if schema["kind"] == "record":
-        sets = {f["name"]: f["set"] for f in domain["fields"]}
-        parts = {f["name"]: _box(sets[f["name"]], f["value"]) for f in schema["fields"]}
+def _field_domains(domain: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    if domain["set"] == "cartprod":
+        return {
+            name: child
+            for part in domain["of"]
+            for name, child in _field_domains(part).items()
+        }
+    return {field["name"]: field["set"] for field in domain["fields"]}
+
+
+def _box(
+    domain: Mapping[str, Any], schema: Mapping[str, Any], *, rows: int = 1
+) -> tuple[Any, Any]:
+    """Build bounds from a model set, repeating row fields along table columns."""
+    kind = schema["kind"]
+    if kind == "table":
+        rows = schema["rows"]
+        if domain["set"] == "cartpow":
+            domain = domain["of"]
+    if kind in ("record", "table"):
+        sets = _field_domains(domain)
+        parts = {
+            f["name"]: _box(sets[f["name"]], f["value"], rows=rows)
+            for f in schema["fields"]
+        }
         return (
             {name: part[0] for name, part in parts.items()},
             {name: part[1] for name, part in parts.items()},
@@ -100,6 +121,9 @@ def _box(domain: Mapping[str, Any], schema: Mapping[str, Any]) -> tuple[Any, Any
     if dtype.kind == "c":
         shape += (2,)
         dtype = np.dtype("float32" if dtype.itemsize == 8 else "float64")
+    if rows != 1:
+        lo *= rows
+        hi *= rows
     return (
         np.asarray(lo, dtype=dtype).reshape(shape),
         np.asarray(hi, dtype=dtype).reshape(shape),
@@ -417,7 +441,7 @@ def build(
 
     fn = transformed.unconstrained if unconstrained else transformed.constrained
     init = free if unconstrained else point
-    shapes = _model_shapes(schema, "" if schema["kind"] == "record" else name)
+    shapes = _model_shapes(schema, name if schema["kind"] == "tensor" else "")
 
     grad = jax.jit(jax.grad(fn))  # pyright: ignore[reportUnknownMemberType]
 

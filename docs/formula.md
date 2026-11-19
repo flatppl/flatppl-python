@@ -434,6 +434,7 @@ Pass `family` and, optionally, `link` to `from_formula`:
 | `lognormal`, `hurdle_lognormal` | `identity` | `inverse` |
 | `exgaussian` | `identity` | `log`, `inverse`, `softplus`, `squareplus` |
 | `bernoulli`, `binomial`, `beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
+| `beta_binomial` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity` |
 | `zero_inflated_binomial`, `zero_inflated_beta` | `logit` | `probit`, `probit_approx`, `cloglog`, `cauchit`, `softit`, `identity`, `log` |
 | `poisson`, `negbinomial`, `geometric` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
 | `zero_inflated_poisson`, `zero_inflated_negbinomial` | `log` | `identity`, `sqrt`, `softplus`, `squareplus` |
@@ -456,6 +457,15 @@ The `exgaussian` family is the sum of a Normal with location `mu - beta`
 and standard deviation `sigma`, and an exponential with mean `beta`.
 The response mean is `mu`. Both `sigma` and `beta` must be positive and
 can have their own predictors in `dpars`, with a log link by default.
+
+Use `family="beta_binomial"` and `y | trials(n) ~ x` for overdispersed
+success counts. Each row draws its own success probability from
+`Beta(mu * phi, (1 - mu) * phi)`. The mean count is `n * mu`.
+Use a nonnegative integer or a column of nonnegative integer trial counts.
+Zero trials give zero successes. The mean probability must lie strictly
+between zero and one, and precision `phi` must be positive. Precision can have
+its own predictor in `dpars`, with a log link by default. Prediction uses the
+trial count for each new row.
 
 Binomial and zero-inflated binomial formulas require `y | trials(n) ~ ...`.
 Use a positive integer or a column of positive trial counts. Prediction needs

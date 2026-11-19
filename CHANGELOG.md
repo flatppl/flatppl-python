@@ -9,6 +9,7 @@ tagged release.
 
 - Complex scalars and arrays can serve as query arguments, results, and fixed
   values. Supported complex queries use real component derivatives through JAX.
+  Enzyme alpha 22 supports forward and reverse derivatives of scans with complex state.
 
 - Finite two-dimensional weights support numerical `totalmass`, `normalize`
   and JAX gradients through `Integration`.
@@ -81,8 +82,7 @@ tagged release.
 
 ### Changed
 
-- The package pins Enzyme alpha 21, which reuses one batched LU factorization
-  in `vmap(value_and_grad)` for linear solves.
+- Linear solves reuse one batched LU factorization in `vmap(value_and_grad)`.
 
 - CPU solves avoid redundant result masks when the caller already guards
   every use with the same pivot validity check.

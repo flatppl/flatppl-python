@@ -43,6 +43,9 @@ def _query(view: FormulaView, operation: Operation, seed_size: int) -> Module:
         if operation == "sample":
             if "decision_column" in view.info:
                 output = "colstack([response.y, response.decision])"
+            elif view.info.get("paired_family") == "bernoulli":
+                # Keep the Gaussian and Bernoulli outputs typed at the query boundary.
+                output = "(response.y, response.y2)"
             elif "response_columns" in view.info:
                 output = "colstack([response.y, response.y2])"
             else:
@@ -126,7 +129,11 @@ def evaluate(
         )
         seed_dtype = compiled.schema["inputs"][1]["value"]["dtype"]
         inputs = (arrays, bytes_.astype(seed_dtype))
-    return cast(jax.Array, _batch_call(compiled, shape, *inputs))
+    result = _batch_call(compiled, shape, *inputs)
+    if operation == "sample" and view.info.get("paired_family") == "bernoulli":
+        continuous, binary = cast(tuple[jax.Array, jax.Array], result)
+        return jnp.stack((continuous, binary.astype(continuous.dtype)), axis=-1)
+    return cast(jax.Array, result)
 
 
 def _batch_call(
@@ -311,11 +318,13 @@ _MARGINAL_BATCH_SIZE = 256
 def _validate_marginal_groups(
     view: FormulaView, blocks: Mapping[str, tuple[int, ...]]
 ) -> None:
-    family = view.info["family"]
     nonlinear = view.recipe.get("nonlinear", {}).get("parameters", ())
     locations = {"mu", "mu2"} if "response_columns" in view.info else {"mu"}
     for name in blocks:
         for parameter, _ in view.group_terms[name]:
+            family = view.info["family"]
+            if parameter == "mu2":
+                family = view.info.get("paired_family", family)
             link = view.recipe["predictors"][parameter]["link"]
             if (
                 parameter in nonlinear
@@ -325,7 +334,7 @@ def _validate_marginal_groups(
                     and (parameter not in locations or family not in _REAL_LOCATIONS)
                 )
                 or (
-                    parameter == "mu"
+                    parameter in locations
                     and link == "log"
                     and family in _PROBABILITY_LOCATIONS
                 )

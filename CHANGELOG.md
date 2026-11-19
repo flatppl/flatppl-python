@@ -47,6 +47,10 @@ tagged release.
 - A pair of Gaussian formulas fits two correlated outcomes. The fitted model
   exposes paired conditional means and predictive draws, plus joint row scores.
 
+- A Gaussian and a Bernoulli formula can share correlated group effects.
+  The model returns means, success probabilities, predictive draws, and joint
+  row scores.
+
 - Exact shared Beta and Dirichlet marginals preserve observation dependence and
   coefficients. Affine Gaussian queries support exact marginal scoring and
   conditional scoring and sampling through `disintegrate`.

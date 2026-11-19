@@ -47,7 +47,11 @@ to keep very small values in log space. The single success above has evidence
 Rust recognizes Beta with Bernoulli or Binomial counts, Gamma with Poisson
 counts, Normal with an unknown Normal mean, InverseGamma with an unknown
 Normal variance, and Dirichlet with Categorical, Categorical0 or Multinomial
-observations. Count evidence preserves each observed allocation. For example,
+observations. A named joint prior can combine these updates when each
+likelihood factor uses one prior field and every field has a matching factor.
+`posterior_updates` reports the fields in prior order.
+
+Count evidence preserves each observed allocation. For example,
 under the same Gamma prior, observing Poisson counts `[1, 1]` has twice the
 mass of `[0, 2]`. Both give the same normalized posterior.
 

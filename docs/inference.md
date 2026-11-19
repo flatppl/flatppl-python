@@ -182,12 +182,18 @@ for each domain.
 | `constrain`, `unconstrain` | Coordinate maps, compiled. |
 | `fixed` | A likelihood's fixed components, which the position omits. |
 | `names`, `shapes` | Parameter names and their shapes in model coordinates. |
-| `bounds` | `(lower, upper)` pytrees in model coordinates. |
+| `bounds` | `(lower, upper)` pytrees with the structure of the model position. |
 | `flat` | `fn`, `grad`, `potential`, `init`, `unravel` and `names` over one vector. |
 | `transformed` | The four compiled functions of `compile_transformed`. |
 
 The flat vector orders record fields as JAX does, by name. `flat.names` labels
-each element, such as `beta[2]`, counting from one as FlatPPL does.
+each element with one-based indices, as in `beta[2]`. Nested fields use dotted
+paths. A complex leaf of shape `S` has real bounds of shape `S + (2,)`, with
+unbounded real and imaginary components on `complexes`. When a positional
+product promotes a real component to complex, its imaginary bounds are both
+zero. The flat vector uses the same real/imaginary order, even with
+`unconstrained=False`. `flat.unravel` reconstructs native complex arrays in
+model coordinates.
 
 `init` is the point at zero free coordinates: 0 for `reals`, 1 for `posreals`,
 the midpoint of a finite interval, and the uniform simplex.

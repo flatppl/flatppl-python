@@ -167,6 +167,76 @@ def test_simplex_positions_have_one_free_coordinate_fewer() -> None:
     assert [b.tolist() for b in density.bounds] == [[0.0] * 3, [1.0] * 3]
 
 
+def test_complex_record_density_uses_real_flat_coordinates_in_both_modes() -> None:
+    query = flatppl("""
+        p = elementof(cartprod(sub = cartprod(z = cartpow(complexes, [2, 3])), s = posreals))
+        inputs = p
+        outputs = -sum(abs2.(p.sub.z)) - 2 * p.s
+    """)
+    free = query.logdensity()
+    model = query.logdensity(unconstrained=False)
+    assert free.names == model.names == ("sub.z", "s")
+    assert dict(free.shapes) == {"sub.z": (2, 3), "s": ()}
+    np.testing.assert_array_equal(free.init["sub"]["z"], np.zeros((2, 3, 2)))
+    np.testing.assert_array_equal(model.init["sub"]["z"], np.zeros((2, 3)))
+    assert model.init["sub"]["z"].dtype == jnp.complex64
+    assert model.flat.init.dtype == jnp.float32
+    assert float(model.init["s"]) == 1.0
+    lower, upper = free.bounds
+    np.testing.assert_array_equal(lower["sub"]["z"], np.full((2, 3, 2), -np.inf))
+    np.testing.assert_array_equal(upper["sub"]["z"], np.full((2, 3, 2), np.inf))
+    assert float(lower["s"]) == 0.0
+
+    pairs = jnp.arange(12, dtype=jnp.float32).reshape(2, 3, 2) / 8 - 0.5
+    real_part, imag_part = pairs[..., 0], pairs[..., 1]
+    point = {"sub": {"z": real_part + 1j * imag_part}, "s": jnp.float32(2.0)}
+    free_vector = jnp.concatenate((jnp.array([jnp.log(2.0)]), pairs.ravel()))
+    model_vector = free_vector.at[0].set(2.0)
+    score = -np.sum(np.asarray(pairs) ** 2) - 4
+
+    assert (
+        model.flat.names
+        == free.flat.names
+        == (
+            "s",
+            *(
+                f"sub.z[{row + 1},{col + 1},{part + 1}]"
+                for row, col, part in np.ndindex(2, 3, 2)
+            ),
+        )
+    )
+    np.testing.assert_allclose(free.flat.fn(free_vector), score + np.log(2), rtol=2e-6)
+    np.testing.assert_allclose(model.flat.fn(model_vector), score, rtol=2e-6)
+    np.testing.assert_allclose(model.fn(point), score, rtol=2e-6)
+    np.testing.assert_allclose(
+        model.grad(point)["sub"]["z"], -2 * point["sub"]["z"].conj()
+    )
+    np.testing.assert_allclose(
+        free.flat.grad(free_vector),
+        jnp.concatenate((jnp.array([-3.0]), -2 * pairs.ravel())),
+    )
+    np.testing.assert_allclose(
+        model.flat.grad(model_vector),
+        jnp.concatenate((jnp.array([-2.0]), -2 * pairs.ravel())),
+    )
+    np.testing.assert_array_equal(
+        model.flat.unravel(model_vector)["sub"]["z"], point["sub"]["z"]
+    )
+
+
+def test_a_real_slot_of_a_complex_positional_product_has_zero_imaginary_bounds() -> (
+    None
+):
+    density = flatppl("""
+        p = elementof(cartprod(complexes, posreals))
+        inputs = p
+        outputs = -abs2(p[1]) - real(p[2])
+    """).logdensity(unconstrained=False)
+    lower, upper = density.bounds
+    np.testing.assert_array_equal(lower, [[-np.inf, -np.inf], [0, 0]])
+    np.testing.assert_array_equal(upper, [[np.inf, np.inf], [np.inf, 0]])
+
+
 SPEC: dict[str, Any] = {
     "channels": [
         {

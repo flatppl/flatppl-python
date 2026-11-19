@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -52,29 +52,38 @@ def _limits(domain: Mapping[str, Any]) -> tuple[float, float] | None:
     }[kind]
 
 
-def _elements(domain: Mapping[str, Any]) -> tuple[list[float], list[float]]:
-    """Each scalar element's bounds, flattened in row-major order."""
+def _elements(
+    domain: Mapping[str, Any], *, split_complex: bool
+) -> tuple[list[float], list[float]]:
+    """Each element's bounds, with real and imaginary parts for complex tensors."""
     kind = domain["set"]
     if kind == "cartpow":
-        lo, hi = _elements(domain["of"])
+        lo, hi = _elements(domain["of"], split_complex=split_complex)
         count = math.prod(domain["shape"])
         return lo * count, hi * count
     if kind == "cartprod":
         lo: list[float] = []
         hi: list[float] = []
         for part in domain["of"]:
-            part_lo, part_hi = _elements(part)
+            part_lo, part_hi = _elements(part, split_complex=split_complex)
             lo += part_lo
             hi += part_hi
         return lo, hi
-    if kind == "stdsimplex":
-        return [0.0] * domain["n"], [1.0] * domain["n"]
-    if kind in ("ordered", "zerosum"):
-        return [-math.inf] * domain["n"], [math.inf] * domain["n"]
-    limits = _limits(domain)
-    if limits is None:
-        raise ValueError(f"no element bounds for the set {kind!r}")
-    return [limits[0]], [limits[1]]
+    if kind == "complexes":
+        return [-math.inf, -math.inf], [math.inf, math.inf]
+    count = 1
+    if kind in ("ordered", "zerosum", "stdsimplex"):
+        count = domain["n"]
+        limits = (0.0, 1.0) if kind == "stdsimplex" else (-math.inf, math.inf)
+    else:
+        limits = _limits(domain)
+        if limits is None:
+            raise ValueError(f"no element bounds for the set {kind!r}")
+    lower, upper = limits
+    if split_complex:
+        # In a positional product, a real slot embeds with imaginary part zero.
+        return [lower, 0.0] * count, [upper, 0.0] * count
+    return [lower] * count, [upper] * count
 
 
 def _box(domain: Mapping[str, Any], schema: Mapping[str, Any]) -> tuple[Any, Any]:
@@ -86,11 +95,26 @@ def _box(domain: Mapping[str, Any], schema: Mapping[str, Any]) -> tuple[Any, Any
             {name: part[1] for name, part in parts.items()},
         )
     shape = tuple(schema["shape"])
-    lo, hi = _elements(domain)
+    dtype = np.dtype(schema["dtype"])
+    lo, hi = _elements(domain, split_complex=dtype.kind == "c")
+    if dtype.kind == "c":
+        shape += (2,)
+        dtype = np.dtype("float32" if dtype.itemsize == 8 else "float64")
     return (
-        np.asarray(lo, dtype=schema["dtype"]).reshape(shape),
-        np.asarray(hi, dtype=schema["dtype"]).reshape(shape),
+        np.asarray(lo, dtype=dtype).reshape(shape),
+        np.asarray(hi, dtype=dtype).reshape(shape),
     )
+
+
+def _model_shapes(schema: Mapping[str, Any], name: str) -> dict[str, tuple[int, ...]]:
+    """Each native model leaf's shape in query order."""
+    if schema["kind"] == "tensor":
+        return {name: tuple(schema["shape"])}
+    shapes: dict[str, tuple[int, ...]] = {}
+    for field in schema["fields"]:
+        key = f"{name}.{field['name']}" if name else field["name"]
+        shapes.update(_model_shapes(field["value"], key))
+    return shapes
 
 
 def _component_names(name: str, shape: tuple[int, ...]) -> list[str]:
@@ -108,6 +132,30 @@ def _flat_names(position: Any, name: str) -> tuple[str, ...]:
         key = ".".join(str(k.key) for k in path) if path else name  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]
         names += _component_names(key, tuple(np.shape(leaf)))  # pyright: ignore[reportUnknownArgumentType]
     return tuple(names)
+
+
+def _flat_position(
+    position: Any,
+) -> tuple[jax.Array, Callable[[jax.Array], Any], Any]:
+    """Flatten real coordinates, splitting complex model leaves into component pairs."""
+    if not any(jnp.iscomplexobj(leaf) for leaf in jax.tree.leaves(position)):
+        vector, restore = ravel_pytree(position)
+        return vector, restore, position
+
+    def pack(leaf: jax.Array, split: bool) -> jax.Array:
+        return jnp.stack((leaf.real, leaf.imag), axis=-1) if split else leaf
+
+    def unpack(leaf: jax.Array, split: bool) -> jax.Array:
+        return jax.lax.complex(leaf[..., 0], leaf[..., 1]) if split else leaf
+
+    complex_leaves = jax.tree.map(jnp.iscomplexobj, position)
+    packed = jax.tree.map(pack, position, complex_leaves)
+    vector, unravel_packed = ravel_pytree(packed)
+
+    def unravel(values: jax.Array) -> Any:
+        return jax.tree.map(unpack, unravel_packed(values), complex_leaves)
+
+    return vector, unravel, packed
 
 
 def _free_set(
@@ -369,19 +417,14 @@ def build(
 
     fn = transformed.unconstrained if unconstrained else transformed.constrained
     init = free if unconstrained else point
-    if schema["kind"] == "record":
-        names = tuple(f["name"] for f in schema["fields"])
-        shapes = {f["name"]: tuple(f["value"]["shape"]) for f in schema["fields"]}
-    else:
-        names = (name,)
-        shapes = {name: tuple(schema["shape"])}
+    shapes = _model_shapes(schema, "" if schema["kind"] == "record" else name)
 
     grad = jax.jit(jax.grad(fn))  # pyright: ignore[reportUnknownMemberType]
 
     def negated(position: Any) -> jax.Array:
         return -fn(position)
 
-    vector, unravel = ravel_pytree(init)
+    vector, unravel, packed = _flat_position(init)
 
     def flat_fn(x: jax.Array) -> jax.Array:
         return fn(unravel(x))
@@ -395,7 +438,7 @@ def build(
         potential=jax.jit(flat_negated),  # pyright: ignore[reportUnknownMemberType]
         init=vector,
         unravel=unravel,
-        names=_flat_names(init, name),
+        names=_flat_names(packed, name),
     )
     return LogDensity(
         fn=fn,
@@ -404,7 +447,7 @@ def build(
         init=init,
         constrain=transformed.constrain,
         unconstrain=transformed.unconstrain,
-        names=names,
+        names=tuple(shapes),
         shapes=MappingProxyType(shapes),
         dtype=float_dtype(dtype),
         bounds=model_bounds,

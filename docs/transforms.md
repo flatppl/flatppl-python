@@ -60,6 +60,7 @@ version transforms inputs without adding a density correction. Use
 | Declared domain | Free coordinates |
 | --- | --- |
 | `reals` | Unchanged |
+| `complexes` | Two real coordinates, real part first |
 | `posreals`, `nonnegreals` | Log of the positive value |
 | Finite interval | Scaled logit |
 | One-sided interval | Log distance from the finite bound |
@@ -77,6 +78,39 @@ a record of all model parameters. Bind fixed data with `.set(...)` first.
 Initial values must lie in the domain's interior. Transforms do not clip
 invalid values or boundary points. Discrete latent variables need another
 inference strategy or a supported marginalization before using NUTS.
+
+## Complex parameters with BlackJAX
+
+For a complex parameter, the free coordinates are its real and imaginary
+parts. A complex array of shape `S` has free shape `S + (2,)`. The Cartesian
+chart has zero log-volume. In a record each field uses its own chart.
+
+```python
+import blackjax
+import jax
+from flatppl import flatppl
+
+target = flatppl("""
+    z = elementof(complexes)
+    inputs = z
+    outputs = (logdensityof(Normal(1.0, 0.8), real(z))
+               + logdensityof(Normal(-0.5, 1.3), imag(z)))
+""").logdensity()
+
+warmup_key, draw_key = jax.random.split(jax.random.key(42))
+adapt = blackjax.window_adaptation(blackjax.nuts, target.fn)
+(state, parameters), _ = adapt.run(warmup_key, target.init, num_steps=400)
+sampler = blackjax.nuts(target.fn, **parameters)
+
+def step(state, key):
+    state, _ = sampler.step(key, state)
+    return state, state.position
+
+_, positions = jax.lax.scan(step, state, jax.random.split(draw_key, 1_000))
+draws = jax.jit(jax.vmap(target.constrain))(positions)
+```
+
+Here the sampler starts at `[0, 0]` and `draws` is a native complex JAX array.
 
 ## Batches, precision and execution
 

@@ -294,11 +294,13 @@ paired = from_formula(
 prediction = paired.formula.prepare({"hours": [2, 4]})
 ```
 
-Training retains rows complete for both responses and their predictors.
+Training retains rows with both sets of predictors and at least one observed
+response. `log_likelihood` returns one score per retained row. It uses the
+marginal Normal law when only one Gaussian response is observed.
+Use a typed column if every entry in that outcome is missing.
 Prediction needs the predictors for both formulas. Means and draws end in a
 `(rows, 2)` array in `info["response_columns"]` order. The two outcomes in a
-row share residual covariance. `log_likelihood` returns their joint score per
-row.
+row share residual covariance.
 
 Use `dpar="mu2"` for the second mean's coefficient and group priors. Use
 classes `sigma` and `sigma2` for the residual scales and `rescor` for their
@@ -315,14 +317,15 @@ subject effects across outcomes.
 ```{testcode} formula
 mixed = from_formula(
     ("score ~ 1 + (1 | ability | subject)", "passed ~ 1 + (1 | ability | subject)"),
-    {"score": [6.0, 8.0, 7.0], "passed": [0, 1, 1], "subject": ["a", "a", "b"]},
+    {"score": [6.0, None, 7.0], "passed": [0, 1, None], "subject": ["a", "a", "b"]},
     family=("gaussian", "bernoulli"),
 )
 ```
 
 Given the predictors and group effects, the responses are independent.
-Training retains complete rows and `log_likelihood` sums both scores per
-row. The second prediction column contains success probabilities for
+`log_likelihood` sums the observed responses' scores per row. Prepare
+held-out data with partial responses using `mode="training"`. The second
+prediction column contains success probabilities for
 `expected_response` and binary codes for `posterior_predict`. The Bernoulli
 link defaults to logit. Set `link=(None, "probit")` to use probit instead.
 `info["paired_response_levels"]` lists the fitted labels in code order. Use

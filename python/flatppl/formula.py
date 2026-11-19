@@ -442,8 +442,9 @@ class FormulaView:
         Returns unweighted scores of the fitted observation law, including
         censoring and truncation. Prepare held-out observations with
         ``mode="training"``. Bind encoded ``y_data`` directly for uncensored
-        responses, along with ``y2_data`` for paired models. A paired
-        model returns one joint score for each row. Wiener models require
+        responses, along with ``y2_data`` for fully observed paired models.
+        With partial outcomes, the paired model scores the observed outcomes
+        in each retained row. Wiener models require
         ``dec_data`` alongside ``y_data`` and score the joint time and decision.
         Draw coordinates and leading axes match :meth:`expected_response`.
         """

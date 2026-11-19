@@ -51,6 +51,8 @@ tagged release.
   The model returns means, success probabilities, predictive draws, and joint
   row scores.
 
+- Paired formulas retain rows with one observed outcome and score that outcome.
+
 - Exact shared Beta and Dirichlet marginals preserve observation dependence and
   coefficients. Affine Gaussian queries support exact marginal scoring and
   conditional scoring and sampling through `disintegrate`.

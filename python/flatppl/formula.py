@@ -42,10 +42,10 @@ def _table_source(data: object) -> tuple[bytes | None, str | None]:
 def from_formula(
     formula: str | tuple[str, str],
     data: object,
-    family: str = "gaussian",
+    family: str | tuple[str, str] = "gaussian",
     priors: Sequence[Mapping[str, object]] | None = None,
     *,
-    link: str | None = None,
+    link: str | tuple[str | None, str | None] | None = None,
     dpars: Mapping[str, Mapping[str, object]] | None = None,
     nlpars: Mapping[str, str] | None = None,
     context: Context | None = None,
@@ -61,17 +61,21 @@ def from_formula(
 
     Args:
         formula: An R-style formula, such as ``"y ~ x + group"``. A pair of
-            formulas fits two Gaussian responses with correlated residuals.
+            formulas fits a Gaussian response with a second Gaussian or
+            Bernoulli response.
         data: A CSV, JSON or Arrow IPC path, or a pandas or Polars dataframe,
             Arrow table or record batch, another dataframe interchange producer,
             or a mapping of column names to arrays. Categories, numeric
             precision and nulls reach Rust intact.
-        family: The observation family. Rust selects its default link.
+        family: The observation family or a pair of families in formula order.
+            Rust selects each default link. A single Gaussian family with a
+            formula pair fits correlated Gaussian residuals.
         priors: Prior entries, for example
             ``[{"class": "b", "prior": "Normal(0, 2)"}]``. Omitted entries use
             the frontend's brms defaults, including improper Lebesgue priors for
             ordinary regression coefficients.
-        link: Override the family's default link.
+        link: Override the default link. With a family pair, pass a pair of
+            links in formula order to set both links explicitly.
         dpars: Formulas for family parameters, for example
             ``{"sigma": {"formula": "sigma ~ x", "link": "log"}}``.
             Rust validates each predictor and chooses any omitted link.
@@ -90,14 +94,24 @@ def from_formula(
         TypeError: The data cannot be transported as a table.
         ValueError: The table has duplicate column names.
     """
-    spec: dict[str, object] = {"family": family, "options": options}
+    spec: dict[str, object] = {"options": options}
+    if isinstance(family, str):
+        spec["family"] = family
+    else:
+        spec["family"], spec["paired_family"] = family
     if isinstance(formula, str):
         spec["formula"] = formula
     else:
         spec["formula"], spec["paired_formula"] = formula
     if priors is not None:
         spec["priors"] = list(priors)
-    if link is not None:
+    if isinstance(link, tuple):
+        first_link, second_link = link
+        if first_link is not None:
+            spec["link"] = first_link
+        if second_link is not None:
+            spec["paired_link"] = second_link
+    elif link is not None:
         spec["link"] = link
     if dpars is not None:
         spec["dpars"] = {name: dict(predictor) for name, predictor in dpars.items()}
@@ -385,9 +399,8 @@ class FormulaView:
         counts. Categorical and ordinal families append a class axis in
         ``info["response_levels"]`` order. Censoring returns latent response
         means. Truncation and mixture families use their predictive laws.
-        Paired Gaussian models append a response axis in
-        ``info["response_columns"]`` order. Wiener models return the marginal
-        mean response time.
+        Paired models append a response axis in ``info["response_columns"]``
+        order. Wiener models return the marginal mean response time.
         """
         from ._formula_prediction import evaluate
 
@@ -408,8 +421,9 @@ class FormulaView:
         Supply a JAX PRNG key for reproducible sampling. Reusing a key
         reproduces the same draws. Censored models return latent responses.
         Categorical and ordinal outputs are one-based codes in
-        ``info["response_levels"]`` order. Paired Gaussian models append a
-        response axis with both correlated draws in ``info["response_columns"]`` order.
+        ``info["response_levels"]`` order. Paired models append a response axis
+        in ``info["response_columns"]`` order and use zero or one for draws
+        in a Bernoulli column.
         Wiener models return a two-column array of response times and decision
         codes (0 for the lower boundary and 1 for the upper boundary).
 
@@ -428,7 +442,7 @@ class FormulaView:
         Returns unweighted scores of the fitted observation law, including
         censoring and truncation. Prepare held-out observations with
         ``mode="training"``. Bind encoded ``y_data`` directly for uncensored
-        responses, along with ``y2_data`` for paired Gaussian models. A paired
+        responses, along with ``y2_data`` for paired models. A paired
         model returns one joint score for each row. Wiener models require
         ``dec_data`` alongside ``y_data`` and score the joint time and decision.
         Draw coordinates and leading axes match :meth:`expected_response`.

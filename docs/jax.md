@@ -7,7 +7,7 @@ derivative rules for the imported program.
 ## Supported transformations
 
 The pinned dependency set is JAX/jaxlib 0.12.0.1 with our Enzyme
-`0.0.15+flatppl.21` alpha wheels. See [installation](installation.md).
+`0.0.15+flatppl.22` alpha wheels. See [installation](installation.md).
 
 | Operation | Current status |
 | --- | --- |
@@ -56,8 +56,10 @@ General real metric contractions support runtime indefinite matrices, repeated
 indices, batches, and raised outputs. Complex scalar and array values use
 `complex64` with `dtype="float32"` and `complex128` with `dtype="float64"`.
 Enzyme differentiates supported complex expressions through real and imaginary
-components. JAX supplies its usual gradients for real outputs. A derivative
-request that needs unsupported complex tensor operations raises `TypeError`.
+components. Scans with complex inputs and state support both `jax.jvp` and
+`jax.vjp`, including under `jax.vmap`. JAX supplies its usual gradients for real
+outputs. A derivative request that needs unsupported complex tensor operations
+raises `TypeError`.
 
 For numerical scalar marginals and normalizers, enable
 [integration](integration.md) explicitly. These support first derivatives of

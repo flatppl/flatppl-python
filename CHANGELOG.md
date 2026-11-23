@@ -97,6 +97,11 @@ tagged release.
 
 ### Changed
 
+- Matrix likelihoods pair each observation with its parameter when a
+  higher-order function computes that parameter.
+
+- Compiling grouped Normal likelihoods with repeated values uses less memory.
+
 - Normal likelihoods can pool observations with identical fixed predictor rows
   and a shared scale. Long GPU scans with compact real state can execute four
   steps per loop.

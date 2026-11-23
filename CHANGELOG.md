@@ -97,6 +97,10 @@ tagged release.
 
 ### Changed
 
+- Normal likelihoods can pool observations with identical fixed predictor rows
+  and a shared scale. Long GPU scans with compact real state can execute four
+  steps per loop.
+
 - Linear solves reuse one batched LU factorization in `vmap(value_and_grad)`.
 
 - CPU solves avoid redundant result masks when the caller already guards

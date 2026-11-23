@@ -7,6 +7,10 @@ tagged release.
 
 ### Added
 
+- Compiled queries prepare eligible fixed-data likelihood summaries once and
+  reuse them for scores, gradients and batches. `prepare_fixed_data=False`
+  keeps reductions in the score.
+
 - Complex scalars and arrays can serve as query arguments, results, and fixed
   values. Supported complex queries use real component derivatives through JAX.
   Forward and reverse derivatives support scans with complex state and

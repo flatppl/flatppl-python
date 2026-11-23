@@ -301,7 +301,8 @@ also covers Dirichlet families. Component counts and cell shapes remain static.
 
 A module caches its exports, so compiling it again with the same options skips
 the Rust compiler. The jitted programs live in one cache for the whole process,
-keyed by StableHLO text, batch axes, `autodiff` and `optimize_forward`. A second
+keyed by StableHLO text, batch axes, shared summary count, `autodiff` and
+`optimize_forward`. A second
 `compile()` of the same query, even from a new module, reuses the compiled XLA
 program. The cache holds up to 256 programs, one per unbatched query and one per
 batch shape, and drops the least recently used first. A cached program keeps

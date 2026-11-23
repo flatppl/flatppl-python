@@ -1,9 +1,8 @@
 # Incremental query execution
 
 `analyze` returns immutable Rust facts and leaves the query unchanged. Without
-`prepare=True`, decisions follow ordinary default compilation, including its
-passes before and after fixed file loading. That pass may reduce expressions
-without creating a reusable preparation ABI. Explicit preparation reports
+`prepare=True`, it reports the ordinary likelihood reductions before and after
+fixed file loading. Explicit preparation reports
 summary names or a refusal; honor the overall refusal even if a local rewrite
 was possible. `sufficient_statistics=False` reports disabled candidates.
 Unrecognized expressions have no decision. Components describe structural
@@ -69,6 +68,14 @@ after `load_data` reads them. The same Rust analysis supplies
 the updated law for `densityof(normalize(P), point)`, its log density and
 seeded draws for all eight matched pairs.
 
+By default, `compile()`, `compile_transformed()` and `logdensity()` compute
+eligible summaries of fixed data once for the module's data snapshot, precision
+and device. Scores, gradients and batches reuse those arrays. Calling `set()`
+with new data or loading files in a fresh context prepares the new binding.
+`CompiledFunction.preparation_stablehlo` contains the program that produced the
+summaries. It is `None` for an inline score. A failed preparation check also
+uses the inline score so that calls retain their usual runtime checks.
+
 A compiled query reads live observations on every call. To reuse one dataset,
 call `preparation, online, names = query.prepare_likelihood("y")` and run the
 preparation each time the dataset changes. The online query accepts the
@@ -80,8 +87,8 @@ scores can prepare live counts for fixed trial counts from 1 through 63.
 Categorical and Categorical0 scores can prepare a histogram when observations
 outnumber categories.
 
-Both `compile()` and `logdensity()` accept `sufficient_statistics=False`
-to disable the optional likelihood reduction pass.
+Pass `prepare_fixed_data=False` to keep likelihood reductions inside the score.
+Pass `sufficient_statistics=False` to disable the reductions themselves.
 
 ## Incremental scores
 

@@ -66,6 +66,7 @@ class Export(TypedDict):
     output_names: list[str | None]
     batch_shape: NotRequired[list[int]]
     runtime_status: NotRequired[RuntimeStatus]
+    preparation: NotRequired[Export]
 
 
 class InputInfo(TypedDict):

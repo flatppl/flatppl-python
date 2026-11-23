@@ -432,6 +432,28 @@ The flag is an XLA backend option, not a portable StableHLO guarantee. See
 [XLA's command-buffer settings](https://github.com/openxla/xla/blob/main/xla/debug_options_flags.cc)
 and [dynamic-loop execution](https://github.com/openxla/xla/blob/main/xla/backends/gpu/runtime/while_thunk.cc).
 
+### Tune short scoring loops on NVIDIA GPUs
+
+XLA normally needs five eligible operations to form a CUDA graph. Shorter loops
+can spend more time launching kernels than computing the score. Set the threshold
+on the outermost `jax.jit`. For a scoring loop that uses `checks="raise"`, compile
+the checked function.
+
+```python
+from jax.experimental import checkify
+
+run = jax.jit(
+    checkify.checkify(run_steps),
+    compiler_options={"xla_gpu_graph_min_graph_size": 4},
+)
+```
+
+On GH200, a four-kernel regression score with `checks="raise"` fell from 12.3 to
+7.9 µs per step. The score and gradient together still took 10.3 µs. With the
+default checks, compile `run_steps` directly. The same score then used three
+kernels and needed a threshold of three for graph replay.
+Time the warmed loop on your GPU. [XLA command-buffer tuning](https://openxla.org/xla/command_buffer_tutorial).
+
 ## Matrix derivatives
 
 `lower_cholesky`, `MvNormal`, `Wishart`, `InverseWishart` and `LKJ` support first

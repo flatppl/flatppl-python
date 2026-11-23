@@ -35,12 +35,12 @@ type _Call = Callable[..., tuple[jax.Array, ...]]
 # module. Retry without the ignores after each JAX bump.
 
 # Jitted programs shared by every compiled function in the process, keyed by
-# StableHLO text, batch axes, autodiff and optimize_forward. The least recently
-# used program goes first. A cached program keeps the module that built it
+# StableHLO text, batch axes, shared summary count and compiler flags. The least
+# recently used program goes first. A cached program keeps the module that built it
 # alive, because its batching rule exports from that module.
 PROGRAM_CACHE_SIZE = 256
 _OPERATION = re.compile(r'(?:= |^\s+)"?stablehlo\.([a-z_]+)', re.MULTILINE)
-_programs: OrderedDict[tuple[str, Axes, bool, bool], _Call] = OrderedDict()
+_programs: OrderedDict[tuple[str, Axes, int, bool, bool], _Call] = OrderedDict()
 
 
 def float_dtype(dtype: DTypeLike) -> str:
@@ -261,11 +261,14 @@ def _compiled_call(
     export_batch: ExportBatch,
     autodiff: bool,
     optimize_forward: bool,
+    prepared_count: int,
 ) -> _Call:
     def specialize(shape: tuple[int, ...], input_axes: Axes) -> _Call:
         specialization = exported if not shape else export_batch(shape, input_axes)
         source = specialization["stablehlo"]
-        key = (source, input_axes, autodiff, optimize_forward)
+        # An explicit score may have the same source and allow its summary
+        # arguments to be mapped. A fixed-data score shares them across cells.
+        key = (source, input_axes, prepared_count, autodiff, optimize_forward)
         cached = _programs.get(key)
         if cached is not None:
             _programs.move_to_end(key)
@@ -357,7 +360,23 @@ def _compiled_call(
         return program
 
     count = sum(1 for item in exported["inputs"] for _ in _leaves(item["value"]))
-    return specialize((), ((),) * count)
+    return specialize((), ((),) * (count + prepared_count))
+
+
+def run_preparation(preparation: Export) -> tuple[jax.Array, ...] | None:
+    """Execute the zero-input program and return its summaries on the device."""
+    source = preparation["stablehlo"]
+
+    @jax.jit  # pyright: ignore[reportUnknownMemberType]
+    def run() -> tuple[jax.Array, ...]:
+        return tuple(hlo_call(source=source))
+
+    results = cast(tuple[jax.Array, ...], run())
+    if (status := preparation.get("runtime_status")) and int(
+        jax.device_get(results[status["index"]])
+    ):
+        return None
+    return tuple(results[leaf["index"]] for leaf in _leaves(preparation["output"]))
 
 
 #: Device status for a distribution parameter outside its declared value set.
@@ -433,6 +452,8 @@ class CompiledFunction:
 
     Attributes:
         stablehlo: The emitted StableHLO text of the unbatched query.
+        preparation_stablehlo: The zero-input program used to prepare fixed
+            data, or ``None`` when the query scores directly.
         schema: A read-only description of the interface with the keys
             ``entry_point``, ``inputs`` (entries with ``name`` and ``value``),
             ``output``, ``multiple_outputs`` and ``output_names``. Each value
@@ -443,12 +464,14 @@ class CompiledFunction:
     """
 
     stablehlo: str
+    preparation_stablehlo: str | None
     schema: Mapping[str, Any]
     _call: _Call = field(repr=False)
     _input_count: int = field(repr=False)
     _requires_x64: bool = field(repr=False)
     _gradient: bool = field(repr=False)
     _checks: str = field(repr=False)
+    _summaries: tuple[jax.Array, ...] = field(repr=False)
 
     def __init__(
         self,
@@ -456,6 +479,7 @@ class CompiledFunction:
         *,
         autodiff: bool,
         export_batch: ExportBatch,
+        summaries: tuple[jax.Array, ...] = (),
         optimize_forward: bool = False,
         gradient: bool = False,
         checks: Literal["nan", "raise"] = "nan",
@@ -465,31 +489,41 @@ class CompiledFunction:
         if exported["entry_point"] != "main":
             raise ValueError("Enzyme-JAX requires an export with entry point main")
         source = exported["stablehlo"]
+        preparation = exported.get("preparation")
         schema = freeze(
-            {key: value for key, value in exported.items() if key != "stablehlo"}
+            {k: v for k, v in exported.items() if k not in ("stablehlo", "preparation")}
         )
         inputs = [
             leaf for item in exported["inputs"] for leaf in _leaves(item["value"])
         ]
         outputs = tuple(_leaves(exported["output"]))
+        prepared = () if preparation is None else tuple(_leaves(preparation["output"]))
         requires_x64 = any(
             leaf["dtype"] in ("float64", "complex128", "int64", "uint64")
-            for leaf in (*inputs, *outputs)
+            for leaf in (*inputs, *outputs, *prepared)
         )
         if requires_x64 and not jax.config.x64_enabled:
             raise ValueError(
                 "enable JAX x64 to represent this query's 64-bit ABI values"
             )
 
-        call = _compiled_call(exported, export_batch, autodiff, optimize_forward)
+        call = _compiled_call(
+            exported, export_batch, autodiff, optimize_forward, len(summaries)
+        )
 
         object.__setattr__(self, "stablehlo", source)
+        object.__setattr__(
+            self,
+            "preparation_stablehlo",
+            None if preparation is None else preparation["stablehlo"],
+        )
         object.__setattr__(self, "schema", schema)
         object.__setattr__(self, "_call", call)
         object.__setattr__(self, "_input_count", len(inputs))
         object.__setattr__(self, "_requires_x64", requires_x64)
         object.__setattr__(self, "_gradient", gradient)
         object.__setattr__(self, "_checks", checks)
+        object.__setattr__(self, "_summaries", summaries)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Evaluate the query.
@@ -543,7 +577,7 @@ class CompiledFunction:
         leaves: list[jax.Array | None] = [None] * self._input_count
         for item in self.schema["inputs"]:
             _pack(item["value"], values[item["name"]], leaves, item["name"])
-        result = self._call(*leaves)
+        result = self._call(*leaves, *self._summaries)
         if status := self.schema.get("runtime_status"):
             index = int(status["index"])
             error = _status_for_check(result[index])

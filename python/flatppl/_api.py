@@ -7,8 +7,9 @@ import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from threading import Lock
 from types import MappingProxyType, NotImplementedType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, overload
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -127,7 +128,37 @@ type _ExportKey = tuple[
     str,
     Batch | None,
     bool,
+    bool,
 ]
+
+
+class _FixedData:
+    """Prepared device values shared by the compiled views of one data binding."""
+
+    def __init__(self) -> None:
+        self._results: dict[tuple[str, object], tuple[jax.Array, ...] | None] = {}
+        self._lock = Lock()
+
+    def bind(self, preparation: Export) -> tuple[jax.Array, ...] | None:
+        import jax
+        from jax.core import eval_context
+
+        from ._jax import run_preparation
+
+        # Compile may run while tracing a sharded score. Keep the arrays
+        # uncommitted so each subsequent call controls its own placement.
+        with eval_context(), self._lock:
+            device = jax.config.jax_default_device
+            if device is None:
+                mesh = jax.sharding.get_mesh()
+                local = () if mesh.empty else mesh.local_devices
+                # jaxlib does not ship a stub for Device.
+                device = cast(object, local[0] if local else jax.local_devices()[0])  # pyright: ignore[reportUnknownMemberType]
+            key = (preparation["stablehlo"], device)
+            if key not in self._results:
+                with jax.set_mesh(None), jax.default_device(device):
+                    self._results[key] = run_preparation(preparation)
+            return self._results[key]
 
 
 @dataclass(frozen=True, repr=False)
@@ -462,7 +493,12 @@ class Module:
     """
 
     def __init__(
-        self, native: _native.Module, context: Context, *, gradient: bool = False
+        self,
+        native: _native.Module,
+        context: Context,
+        *,
+        gradient: bool = False,
+        _fixed_data: _FixedData | None = None,
     ) -> None:
         self._native = native
         self._context = context
@@ -470,6 +506,7 @@ class Module:
         self._gradient = gradient
         self._formula: FormulaView | None = None
         self._exports: dict[_ExportKey, Export] = {}
+        self._fixed_data = _fixed_data if _fixed_data is not None else _FixedData()
         items: list[BindingInfo] = json.loads(native.bindings())
         label = native.source_name
         self._bindings = MappingProxyType(
@@ -783,6 +820,7 @@ class Module:
         source = build(self, outputs, inputs, layout)
         query = flatppl(source, context=self._context)
         query._gradient = gradient
+        query._fixed_data = self._fixed_data
         return query
 
     def graph(self) -> Graph:
@@ -983,11 +1021,12 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
     ) -> CompiledFunction:
         """Compile the module's ``inputs`` and ``outputs`` into a JAX function.
 
-        The module caches exports per dtype, autodiff mode, integration
-        settings and target, so a repeated call skips the Rust compiler.
+        The module reuses exports for the same compiler options and prepared
+        summaries for the same data binding and device.
 
         Args:
             dtype: ``"float32"`` or ``"float64"``, or an equal JAX dtype.
@@ -1005,8 +1044,9 @@ class Module:
                 give the same values.
             sufficient_statistics: Reduce independent likelihood factors to
                 data-only summaries. ``False`` keeps ordinary factor scoring.
-                Runtime data requires :meth:`prepare_likelihood` to retain
-                summaries across score calls.
+            prepare_fixed_data: Compute eligible summaries of fixed data once
+                at compilation. With ``False``, reductions run inside the
+                score. Use :meth:`prepare_likelihood` to bind live inputs.
             checks: How a distribution parameter outside its declared value
                 set, such as ``sigma <= 0`` for ``Normal``, reports. ``"nan"``
                 makes that call's floating-point results NaN, needs no
@@ -1049,7 +1089,7 @@ class Module:
             else (integration.rtol, integration.atol, integration.max_intervals)
         )
 
-        def export(batch: Batch | None = None) -> Export:
+        def export(prepare: bool, batch: Batch | None = None) -> Export:
             key = (
                 dtype_name,
                 autodiff,
@@ -1057,9 +1097,10 @@ class Module:
                 target_name,
                 batch,
                 sufficient_statistics,
+                prepare,
             )
             if key not in self._exports:
-                self._exports[key] = json.loads(
+                result: Export = json.loads(
                     native_call(
                         self._native.export,
                         dtype_name,
@@ -1068,17 +1109,36 @@ class Module:
                         batch,
                         target_name,
                         sufficient_statistics=sufficient_statistics,
+                        prepare_fixed_data=prepare,
                     )
                 )
+                if batch is not None:
+                    # Every batch shares the scalar preparation and its values.
+                    result.pop("preparation", None)
+                self._exports[key] = result
             return self._exports[key]
+
+        prepare = prepare_fixed_data and sufficient_statistics
+        exported = export(prepare)
+        summaries = ()
+        if preparation := exported.get("preparation"):
+            bound = self._fixed_data.bind(preparation)
+            if bound is None:
+                # The inline score preserves the order and policy of every
+                # runtime check, including checks that depend on live inputs.
+                prepare = False
+                exported = export(prepare)
+            else:
+                summaries = bound
 
         def export_batch(
             shape: tuple[int, ...], axes: tuple[tuple[int | None, ...], ...]
         ) -> Export:
-            return export((shape, axes))
+            return export(prepare, (shape, axes))
 
         return CompiledFunction(
-            export(),
+            exported,
+            summaries=summaries,
             autodiff=autodiff,
             export_batch=export_batch,
             optimize_forward=optimize_forward,
@@ -1143,6 +1203,7 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
         normal_coordinate: None = None,
         normal_coordinates: None = None,
         data_inputs: Sequence[str] = (),
@@ -1160,6 +1221,7 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
         normal_coordinate: str | Sequence[str],
         normal_coordinates: None = None,
         data_inputs: Sequence[str] = (),
@@ -1177,6 +1239,7 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
         normal_coordinate: None = None,
         normal_coordinates: Sequence[str | Sequence[str]],
         data_inputs: Sequence[str] = (),
@@ -1193,6 +1256,7 @@ class Module:
         target: Literal["cpu", "gpu"] | None = None,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
         normal_coordinate: str | Sequence[str] | None = None,
         normal_coordinates: Sequence[str | Sequence[str]] | None = None,
         data_inputs: Sequence[str] = (),
@@ -1218,6 +1282,7 @@ class Module:
             target: Lowering profile, as in :meth:`compile`.
             checks: Parameter value-set reporting, as in :meth:`compile`.
             sufficient_statistics: Likelihood reduction, as in :meth:`compile`.
+            prepare_fixed_data: Reuse fixed-data summaries, as in :meth:`compile`.
             normal_coordinate: Select one unconstrained scalar query input for
                 a conditional Normal map. Returns a Normal companion bundle.
                 Other inputs keep their original coordinates and domains.
@@ -1303,7 +1368,7 @@ class Module:
 
             def checked(module: _native.Module) -> CoordinateFunction:
                 return CoordinateFunction(
-                    Module(module, self._context).compile(
+                    Module(module, self._context, _fixed_data=self._fixed_data).compile(
                         dtype=dtype,
                         autodiff=autodiff,
                         integration=integration,
@@ -1311,6 +1376,7 @@ class Module:
                         target=target,
                         checks=checks,
                         sufficient_statistics=sufficient_statistics,
+                        prepare_fixed_data=prepare_fixed_data,
                     )
                 )
 
@@ -1322,6 +1388,7 @@ class Module:
                 target=target,
                 checks=checks,
                 sufficient_statistics=sufficient_statistics,
+                prepare_fixed_data=prepare_fixed_data,
             )
             if not isinstance(metadata, str):
                 return NormalCoordinatesFunction(
@@ -1352,6 +1419,7 @@ class Module:
             target=target,
             checks=checks,
             sufficient_statistics=sufficient_statistics,
+            prepare_fixed_data=prepare_fixed_data,
         )
 
     def _compile_coordinate_charts(
@@ -1365,6 +1433,7 @@ class Module:
         autodiff: bool = True,
         checks: Literal["nan", "raise"] = "nan",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
         correlation_factors: Sequence[str] = (),
     ) -> TransformedFunction:
         from ._transforms import TransformedFunction
@@ -1387,10 +1456,12 @@ class Module:
                 target=target,
                 checks=checks,
                 sufficient_statistics=sufficient_statistics,
+                prepare_fixed_data=prepare_fixed_data,
             )
 
         unconstrained, constrain, unconstrain = (
-            compile_module(Module(module, self._context)) for module in native
+            compile_module(Module(module, self._context, _fixed_data=self._fixed_data))
+            for module in native
         )
         return TransformedFunction(
             compile_module(self), unconstrained, constrain, unconstrain
@@ -1408,6 +1479,7 @@ class Module:
         integration: Integration | None = None,
         optimize_forward: bool = False,
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = True,
     ) -> LogDensity:
         """Construct a log-density convenience object for inference.
 
@@ -1451,6 +1523,7 @@ class Module:
             integration: Numerical integration settings, as in :meth:`compile`.
             optimize_forward: Enable extra Enzyme passes, as in :meth:`compile`.
             sufficient_statistics: Reduce independent likelihood factors, as in :meth:`compile`.
+            prepare_fixed_data: Reuse fixed-data summaries, as in :meth:`compile`.
 
         Returns:
             The log density, its gradient, starting point, coordinate maps and
@@ -1490,6 +1563,7 @@ class Module:
             integration=integration,
             optimize_forward=optimize_forward,
             sufficient_statistics=sufficient_statistics,
+            prepare_fixed_data=prepare_fixed_data,
         )
 
 

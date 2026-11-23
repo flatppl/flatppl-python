@@ -162,4 +162,5 @@ class Module:
         batch: tuple[Sequence[int], Sequence[Sequence[int | None]]] | None = None,
         target: str = "cpu",
         sufficient_statistics: bool = True,
+        prepare_fixed_data: bool = False,
     ) -> str: ...
